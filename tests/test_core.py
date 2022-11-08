@@ -80,8 +80,8 @@ def test_add_integer_inputs():
     a = make_tensor((3, 2), device="cuda", dtype=torch.float32)
 
     thunder_result = traced_foo(3, 4, a)
-    python_result = 3 + 4 + a
-    assert_close(thunder_result, python_result)
+    torch_result = 3 + 4 + a
+    assert_close(thunder_result, torch_result)
 
 
 def test_add_integer_constants():
@@ -94,8 +94,22 @@ def test_add_integer_constants():
     a = make_tensor((2, 4), device="cuda", dtype=torch.float32)
 
     thunder_result = traced_foo(a)
-    python_result = 5 + a
-    assert_close(thunder_result, python_result)
+    torch_result = 5 + a
+    assert_close(thunder_result, torch_result)
+
+
+def test_add_floats():
+    def foo(a, b):
+        c = tlang.add(2.0, a)
+        return tlang.add(b, c)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = make_tensor((2, 4), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(0.7, a)
+    torch_result = 2.0 + 0.7 + a
+    assert_close(thunder_result, torch_result)
 
 
 def test_integer_isinstance_mimicry():
@@ -136,6 +150,49 @@ def test_integer_isinstance_mimicry():
 #     thunder_result = traced_foo(3, 4)
 #     python_result = 3 + 4
 #     assert_close(thunder_result, python_result)
+
+
+def test_abs():
+    def foo(a):
+        return tlang.abs(a)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = make_tensor((2, 8), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a)
+    torch_result = torch.abs(a)
+    assert_close(thunder_result, torch_result)
+
+
+def test_abs_integer():
+    def foo(a, b):
+        a_abs = tlang.abs(a)
+        return tlang.add(a_abs, b)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = -3
+    b = make_tensor((1, 8), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b)
+    torch_result = 3 + b
+    assert_close(thunder_result, torch_result)
+
+
+def test_abs_float():
+    def foo(a, b):
+        a_abs = tlang.abs(a)
+        return tlang.add(a_abs, b)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = -2.7
+    b = make_tensor((1, 8), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b)
+    torch_result = abs(a) + b
+    assert_close(thunder_result, torch_result)
 
 
 def test_elementwise_binary_prim_shape_mismatch():

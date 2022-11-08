@@ -1,6 +1,7 @@
 from enum import Enum, auto
 import operator
 from numbers import Number
+import builtins
 
 from .trace import get_trace
 from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy, NumberLike
@@ -22,14 +23,17 @@ from .utils import (
 # This file depends on trace.py, proxies.py, and utils.py.
 
 __all__ = [
-    # Elementwise binary operations
+    # Elementwise unary prims
+    "abs",
+    # Elementwise binary prims
     "add",
-    # Shape operations
+    # Shape prims
     "broadcast_in_dim",
 ]
 
 
 class Ops(Enum):
+    ABS = auto()
     ADD = auto()
     BROADCAST_IN_DIM = auto()
 
@@ -101,12 +105,41 @@ def _make_prim(id, meta, name, *, number_handler=None):
 
 
 #
-# Elementwise binary operations
+# Elementwise unary prims
+#
+
+
+def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
+    # Tensor case
+    if isinstance(a, TensorProxy):
+        return TensorProxy(tensor=a)
+
+    # Number case
+    check(
+        isinstance(a, NumberLike),
+        lambda: f"Elementwise unary primitives don't support inputs of type {type(a)}!",
+    )
+
+    check(
+        number_handler is not None,
+        lambda: f"The elementwise unary primitive {name} doesn't support number inputs!",
+    )
+
+    a_typ = get_numberlike_type(a)
+    va = get_numberlike_value(a)
+    value = number_handler(va)
+    return proxy(value)
+
+
+abs = _make_prim(Ops.ABS, _elementwise_unary_meta, "abs", number_handler=builtins.abs)
+
+#
+# Elementwise binary prims
 #
 
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
-def _elementwise_binary_meta(a, b, *, name, number_handler=None):
+def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
 
     # Tensors or Number inputs only
     if not isinstance(a, (TensorProxy, NumberLike)):
@@ -124,7 +157,7 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None):
             a.dtype == b.dtype,
             lambda: f"Elementwise binary primitives require the dtypes of the inputs tensors to be the same! But got dtypes {a.dtype} and {b.dtype}!",
         )
-        return TensorProxy(shape=a.shape, dtype=a.dtype)
+        return TensorProxy(tensor=a)
 
     # scalar x scalar case
     if isinstance(a, NumberLike) and isinstance(b, NumberLike):
@@ -140,15 +173,9 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None):
             lambda: f"Elementwise binary primitives require the types of numbers to be the same! But got types {a.typ} and {b.typ}!",
         )
 
-        # TODO: support other number types
-        check(
-            a_typ is int,
-            f"Elementwise binary primitives currently don't support number x number inputs that aren't integers, but found type {a_typ}",
-        )
-
         va, vb = get_numberlike_value(a), get_numberlike_value(b)
         value = number_handler(va, vb)
-        return IntegerProxy(value)
+        return proxy(value)
 
     # tensor x scalar case
     tensor = a if isinstance(a, TensorProxy) else b
@@ -160,7 +187,7 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None):
 add = _make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
 
 #
-# Shape operations
+# Shape prims
 #
 
 
