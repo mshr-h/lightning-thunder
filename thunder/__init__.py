@@ -59,7 +59,6 @@ def make_traced(fn: Callable) -> Callable:
         proxy_result = fn(*proxies)
         t.add_output(proxy_result)
 
-        # Augments args with tensor shape information\
         nv_result, fusion = nvfuser(t, *args)
 
         reset_trace(trace_token)
