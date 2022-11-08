@@ -17,9 +17,13 @@ __all__ = [
 ]
 
 # Maps the Thunder primitives to their corresponding nvfuser operation names
-# TODO: directly to the nvfuser operations, not their names
+# TODO: map directly to the nvfuser operations, not their names
 ops_to_nvfuser_ops_map = {
+    # Elementwise unary prims
+    prims.Ops.ABS: "abs",
+    # Elementwise binary prims
     prims.Ops.ADD: "add",
+    # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
 }
 
@@ -28,8 +32,6 @@ def _get_nvfuser_op(fd, op):
     return getattr(fd.ops, ops_to_nvfuser_ops_map[op])
 
 
-# TODO: add constant support
-# TODO: add support for non-tensor args
 # TODO: add kwarg support
 # TODO: review call conventions, tensor instantiation options and cache with NVIDIA
 def execute(trace_or_fusion, *args):
@@ -54,8 +56,18 @@ def execute(trace_or_fusion, *args):
             elif isinstance(arg, int):
                 nv = fd.define_scalar(DataType.Int)
                 proxy_to_nv_map[p.name] = nv
+            # TODO NVIDIA: float numbers can't use define_scalar
+            #   this defines them as contants for now
+            #   NOTE: doesn't add them to nv_inputs, because constants aren't inputs
+            elif isinstance(arg, float):
+                nv = fd.define_constant(arg)
+                proxy_to_nv_map[p.name] = nv
             else:
                 raise AssertionError(f"execute(): Received unknown input type: {arg}")
+
+        # Filters constant arguments
+        # TODO NVIDIA: FIXME
+        args = list(filter(lambda x: not isinstance(x, float), args))
 
         # Convert constants
         for constant in t.constants:
@@ -84,7 +96,7 @@ def execute(trace_or_fusion, *args):
 
             nv_args = tuple(map(_proxy_to_nv, sym.args))
 
-            # TODO: support multiple returns
+            # TODO: support multiple returns from a call
             nv_result = nv_op(*nv_args)
             proxy_to_nv_map[sym.result.name] = nv_result
 

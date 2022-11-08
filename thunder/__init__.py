@@ -58,7 +58,6 @@ def make_traced(fn: Callable) -> Callable:
         # TODO: support multiple return values
         proxy_result = fn(*proxies)
         t.add_output(proxy_result)
-        print(t)
 
         nv_result, fusion = nvfuser(t, *args)
 

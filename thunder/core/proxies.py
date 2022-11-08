@@ -90,6 +90,19 @@ class IntegerProxy(NumberProxy, int):
         raise AssertionError("Not Implemented!")
 
 
+class FloatProxy(NumberProxy, float):
+    def __new__(cls, value, name=None):
+        return float.__new__(cls, value)
+
+    def __init__(self, value, name=None):
+        # TODO: update to call a number name function
+        name = name if name is not None else get_trace().constant_name()
+        NumberProxy.__init__(self, float, name, value)
+
+    def __repr__(self):
+        return f"[FloatProxy name={self.name} value={self.value}]"
+
+
 # TODO: want this to pass isinstance(p, torch.Tensor) and isinstance(p, np.array) depending on
 #   language context
 # TODO: add method resolution through language context
@@ -155,6 +168,8 @@ def proxy(x):
         return x
     if isinstance(x, int):
         return IntegerProxy(value=x)
+    if isinstance(x, float):
+        return FloatProxy(value=x)
 
     raise AssertionError(f"Can't proxy unknown type {type(x)}")
 

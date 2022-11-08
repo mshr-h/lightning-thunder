@@ -14,6 +14,8 @@ from . import utils
 __all__ = [
     # Shape operations
     "expand",
+    # Elemenwise unary operations
+    "abs",
     # Elementwise binary operations
     "add",
 ]
@@ -104,6 +106,13 @@ def _maybe_broadcast(*args):
         return x
 
     return tuple(__maybe_broadcast(x, common_shape) for x in args)
+
+
+#
+# Elementwise unary operations
+#
+def abs(a):
+    return prims.abs(a)
 
 
 #
