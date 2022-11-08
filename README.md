@@ -1,1 +1,1 @@
-# lightning-thunder
+Thunder is pre-alpha.
