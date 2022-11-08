@@ -23,6 +23,7 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.ABS: "abs",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
+    prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
 }
@@ -32,42 +33,61 @@ def _get_nvfuser_op(fd, op):
     return getattr(fd.ops, ops_to_nvfuser_ops_map[op])
 
 
-# TODO: add kwarg support
-# TODO: review call conventions, tensor instantiation options and cache with NVIDIA
-def execute(trace_or_fusion, *args):
-    # Executes an existing fusion
-    if isinstance(trace_or_fusion, Fusion):
-        fs = trace_or_fusion
-        nvf_out = fs.execute(args)[0]
-        return nvf_out, fs
+_torch_dtype_to_nvfuser_dtype_map = {
+    torch.cdouble: DataType.ComplexDouble,
+    torch.cfloat: DataType.ComplexFloat,
+    torch.double: DataType.Double,
+    torch.float: DataType.Float,
+    torch.half: DataType.Half,
+    torch.bfloat16: DataType.BFloat16,
+    torch.long: DataType.Int,
+    torch.int: DataType.Int32,
+    torch.bool: DataType.Bool,
+    # Python scalars
+    complex: DataType.ComplexDouble,
+    float: DataType.Double,
+    int: DataType.Int,
+    bool: DataType.Bool,
+}
 
+
+# TODO: add kwarg support
+def execute(t, *args, shape_args=None):
     # Constructs a fusion from a trace
-    t = trace_or_fusion
     proxy_to_nv_map = {}
     fs = Fusion()
     with FusionDefinition(fs) as fd:
-        assert len(args) == len(t.inputs)
-
         # Converts inputs
         for arg, p in zip(args, t.inputs):
             if isinstance(arg, torch.Tensor):
-                nv = fd.define_tensor(sizes=arg.shape, strides=arg.stride())
+                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[arg.dtype]
+                nv = fd.define_tensor(
+                    sizes=arg.shape, strides=arg.stride(), dtype=nv_dtype
+                )
                 proxy_to_nv_map[p.name] = nv
             elif isinstance(arg, int):
-                nv = fd.define_scalar(DataType.Int)
+                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[int]
+                nv = fd.define_scalar(nv_dtype)
                 proxy_to_nv_map[p.name] = nv
-            # TODO NVIDIA: float numbers can't use define_scalar
-            #   this defines them as contants for now
-            #   NOTE: doesn't add them to nv_inputs, because constants aren't inputs
             elif isinstance(arg, float):
-                nv = fd.define_constant(arg)
+                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[float]
+                nv = fd.define_scalar(nv_dtype)
                 proxy_to_nv_map[p.name] = nv
             else:
                 raise AssertionError(f"execute(): Received unknown input type: {arg}")
 
-        # Filters constant arguments
-        # TODO NVIDIA: FIXME
-        args = list(filter(lambda x: not isinstance(x, float), args))
+        # TODO: experimental, only here for discussion
+        # Adds symbolic shape information as new args
+        # NOTE: this happens after regular args because we want this inputs
+        #   to be defined after all others
+        # length_args = deque()
+        # for arg, p in zip(args, t.inputs):
+        #     if isinstance(arg, torch.Tensor):
+        #         for l, lp in zip(arg.shape, p.shape):
+        #             nv_dtype = _torch_dtype_to_nvfuser_dtype_map[int]
+        #             nv = fd.define_scalar(nv_dtype)
+        #             proxy_to_nv_map[lp.name] = nv
+        #             length_args.append(l)
 
         # Convert constants
         for constant in t.constants:
@@ -79,11 +99,12 @@ def execute(trace_or_fusion, *args):
 
             def _proxy_to_value(x):
                 if isinstance(x, NumberProxy):
+                    # NOTE: experimental for symbolic shapes (see above)
+                    # return proxy_to_nv_map[x.name]
                     return x.value
 
                 return x
 
-            # TODO: support symbolic integer proxies
             def _proxy_to_nv(x):
                 # TODO: always enumerating every element of a sequence seems expensive
                 #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
@@ -104,5 +125,7 @@ def execute(trace_or_fusion, *args):
         for out in t.outputs:
             fd.add_output(proxy_to_nv_map[out.name])
 
+    # NOTE: experimental for symbolic shapes (see above)
+    # nvf_out = fs.execute(args + tuple(length_args))[0]
     nvf_out = fs.execute(args)[0]
     return nvf_out, fs

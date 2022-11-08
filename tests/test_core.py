@@ -112,6 +112,21 @@ def test_add_floats():
     assert_close(thunder_result, torch_result)
 
 
+def test_sub():
+    def foo(a, b):
+        return tlang.sub(a, b)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    b = torch.testing.make_tensor((2, 2), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b)
+    torch_result = a - b
+
+    torch.testing.assert_close(thunder_result, torch_result)
+
+
 def test_integer_isinstance_mimicry():
     def foo(a, b):
         if isinstance(a, int):
