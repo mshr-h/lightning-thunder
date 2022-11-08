@@ -27,6 +27,7 @@ __all__ = [
     "abs",
     # Elementwise binary prims
     "add",
+    "sub",
     # Shape prims
     "broadcast_in_dim",
 ]
@@ -35,6 +36,7 @@ __all__ = [
 class Ops(Enum):
     ABS = auto()
     ADD = auto()
+    SUB = auto()
     BROADCAST_IN_DIM = auto()
 
 
@@ -185,6 +187,8 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
 
 
 add = _make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
+
+sub = _make_prim(Ops.SUB, _elementwise_binary_meta, "sub", number_handler=operator.sub)
 
 #
 # Shape prims

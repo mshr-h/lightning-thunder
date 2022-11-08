@@ -120,8 +120,13 @@ def abs(a):
 #
 
 # TODO: add type promotion
-# TODO: add scalar support
 def add(a, b):
     a, b = _maybe_broadcast(a, b)
 
     return prims.add(a, b)
+
+
+def sub(a, b):
+    a, b = _maybe_broadcast(a, b)
+
+    return prims.sub(a, b)
