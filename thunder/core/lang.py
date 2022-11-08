@@ -49,7 +49,7 @@ def expand(a, *shape):
         shape_[offset_idx] = requested_length if requested_length != -1 else x
 
     # At this point shape must be valid
-    utils.check_valid_shape(shape_)
+    # utils.check_valid_shape(shape_)
 
     return prims.broadcast_in_dim(
         a, shape_, tuple(range(offset, len(a.shape) + offset))
@@ -61,6 +61,11 @@ def _compute_broadcast_shape(*_shapes):
     Computes the common shape with the fewest dimensions that all input shapes can be broadcast to.
     """
     shapes = tuple(x for x in filter(lambda x: x is not None, _shapes))
+
+    # Short-circuits if there are no inputs shapes
+    #   This might happen in calls like add(2, 3)
+    if len(shapes) == 0:
+        return None
 
     common_shape = [
         1,

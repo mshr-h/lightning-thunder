@@ -1,8 +1,17 @@
 from enum import Enum, auto
+import operator
+from numbers import Number
 
 from .trace import get_trace
-from .proxies import TensorProxy, proxy
-from .utils import check, check_same_dtype, same_shape
+from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy, NumberLike
+from .utils import (
+    check,
+    check_same_dtype,
+    same_shape,
+    dtype_to_type,
+    get_numberlike_type,
+    get_numberlike_value,
+)
 
 # This file defines Thunder's "primitive" operations. These are the
 #   "building blocks" for all of Thunder's operators.
@@ -63,14 +72,27 @@ class Prim(object):
         return f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
 
 
-def _make_prim(id, meta, name):
+def _make_prim(id, meta, name, *, number_handler=None):
     ops_to_meta_functions_map[id] = meta
     ops_to_pretty_name_map[id] = name
 
     # TODO: update the signature
-    def _fn(*args, **kwargs):
+    # TODO: improve kwarg handling
+    def _fn(*_args, **kwargs):
         t = get_trace()
-        result = meta(*args, **kwargs)
+
+        # Identifies number constants in args
+        # TODO: review other types of constants
+        def _extract_constant(x):
+            if isinstance(x, Number) and not isinstance(x, NumberProxy):
+                p = proxy(x)
+                t.add_constant(p)
+                return p
+            return x
+
+        args = tuple(map(_extract_constant, _args))
+
+        result = meta(*args, **kwargs, name=name, number_handler=number_handler)
         sym = Prim(id, name, result, *args, **kwargs)
         t.add_symbol(sym)
         return result
@@ -82,34 +104,67 @@ def _make_prim(id, meta, name):
 # Elementwise binary operations
 #
 
-# TODO: add type promotion
-# TODO: add scalar support
+# TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
-def _elementwise_binary_meta(a, b):
-    # TODO: improve type checks
+def _elementwise_binary_meta(a, b, *, name, number_handler=None):
 
-    if not isinstance(a, TensorProxy):
+    # Tensors or Number inputs only
+    if not isinstance(a, (TensorProxy, NumberLike)):
         raise ValueError(f"Unexpected type {type(a)}!")
-    if not isinstance(b, TensorProxy):
+    if not isinstance(b, (TensorProxy, NumberLike)):
         raise ValueError(f"Unexpected type {type(b)}!")
 
-    # TODO: improve error messages
-    check(
-        same_shape(a.shape, b.shape),
-        lambda: f"Elementwise binary primitives require the shapes of the tensors to be the same!",
-    )
-    check_same_dtype(a.dtype, b.dtype)
+    # tensor x tensor case
+    if isinstance(a, TensorProxy) and isinstance(b, TensorProxy):
+        check(
+            same_shape(a.shape, b.shape),
+            lambda: f"Elementwise binary primitives require the shapes of the inputs tensors to be the same! But got shapes {a.shape} and {b.shape}!",
+        )
+        check(
+            a.dtype == b.dtype,
+            lambda: f"Elementwise binary primitives require the dtypes of the inputs tensors to be the same! But got dtypes {a.dtype} and {b.dtype}!",
+        )
+        return TensorProxy(shape=a.shape, dtype=a.dtype)
 
-    return TensorProxy(shape=a.shape, dtype=a.dtype)
+    # scalar x scalar case
+    if isinstance(a, NumberLike) and isinstance(b, NumberLike):
+        check(
+            number_handler is not None,
+            lambda: f"The elementwise binary primitive {name} doesn't support number x number inputs!",
+        )
+
+        a_typ = get_numberlike_type(a)
+        b_typ = get_numberlike_type(b)
+        check(
+            a_typ is b_typ,
+            lambda: f"Elementwise binary primitives require the types of numbers to be the same! But got types {a.typ} and {b.typ}!",
+        )
+
+        # TODO: support other number types
+        check(
+            a_typ is int,
+            f"Elementwise binary primitives currently don't support number x number inputs that aren't integers, but found type {a_typ}",
+        )
+
+        va, vb = get_numberlike_value(a), get_numberlike_value(b)
+        value = number_handler(va, vb)
+        return IntegerProxy(value)
+
+    # tensor x scalar case
+    tensor = a if isinstance(a, TensorProxy) else b
+    number = b if tensor is a else a
+
+    return TensorProxy(tensor=tensor)
 
 
-add = _make_prim(Ops.ADD, _elementwise_binary_meta, "add")
+add = _make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
 
 #
 # Shape operations
 #
 
-def broadcast_in_dim_meta(a, shape, broadcast_dimensions):
+
+def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
     return TensorProxy(shape=shape, dtype=a.dtype)
 
 

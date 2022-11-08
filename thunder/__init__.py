@@ -25,7 +25,7 @@ def make_traced(fn: Callable) -> Callable:
 
       def foo(a, b):
         return tlang.add(a, b)
-    
+
       traced_foo = thunder.make_traced(foo)
 
       a = torch.randn(2, 2, device='cuda')
@@ -50,11 +50,7 @@ def make_traced(fn: Callable) -> Callable:
         proxies = deque()
         for arg in args:
 
-            # TODO: add support for non-tensor args
-            # TODO: generalize check to not be torch tensor specific
-            if not isinstance(arg, torch.Tensor):
-                raise NotImplementedError
-
+            # TODO: consider handling types that we won't proxy
             p = proxy(arg)
             inp = t.add_input(p)
             proxies.append(p)
@@ -62,6 +58,7 @@ def make_traced(fn: Callable) -> Callable:
         # TODO: support multiple return values
         proxy_result = fn(*proxies)
         t.add_output(proxy_result)
+        print(t)
 
         nv_result, fusion = nvfuser(t, *args)
 

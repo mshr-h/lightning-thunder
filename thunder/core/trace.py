@@ -179,23 +179,23 @@ class Trace(object):
 
         return self._create_name(idx, self._uppercase)
 
-    def add_input(self, a):
-        self.inputs.append(a)
-        return a
+    def add_input(self, inp):
+        self.inputs.append(inp)
+        return inp
 
     # TODO: review constants, particularly Python lists
-    def add_constant(self, a):
-        self.constants.append(a)
-        return a
+    def add_constant(self, constant):
+        self.constants.append(constant)
+        return constant
 
-    def add_output(self, a):
-        self.outputs.append(a)
-        return a
+    def add_output(self, out):
+        self.outputs.append(out)
+        return out
 
     def add_symbol(self, sym):
         self.symbols.append(sym)
         return sym
 
-    def add_constraint(self, c):
-        self.constraints.append(c)
-        return c
+    def add_constraint(self, constraint):
+        self.constraints.append(constraint)
+        return constraint

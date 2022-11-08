@@ -1,7 +1,8 @@
 from typing import Sequence
+from collections import deque
 
 from thunder.core import prims
-from thunder.core.proxies import TensorProxy, IntegerProxy
+from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
 
 import torch
 
@@ -50,21 +51,34 @@ def execute(trace_or_fusion, *args):
             if isinstance(arg, torch.Tensor):
                 nv = fd.define_tensor(sizes=arg.shape, strides=arg.stride())
                 proxy_to_nv_map[p.name] = nv
+            elif isinstance(arg, int):
+                nv = fd.define_scalar(DataType.Int)
+                proxy_to_nv_map[p.name] = nv
             else:
                 raise AssertionError(f"execute(): Received unknown input type: {arg}")
+
+        # Convert constants
+        for constant in t.constants:
+            nv = fd.define_constant(constant.value)
+            proxy_to_nv_map[constant.name] = nv
 
         for sym in t.symbols:
             nv_op = _get_nvfuser_op(fd, sym.op)
 
+            def _proxy_to_value(x):
+                if isinstance(x, NumberProxy):
+                    return x.value
+
+                return x
+
             # TODO: support symbolic integer proxies
-            def _proxy_to_nv(p):
+            def _proxy_to_nv(x):
                 # TODO: always enumerating every element of a sequence seems expensive
-                if isinstance(p, Sequence):
-                    return tuple(map(_proxy_to_nv, p))
-                if isinstance(p, IntegerProxy):
-                    return p.value
-                if isinstance(p, TensorProxy):
-                    return proxy_to_nv_map[p.name]
+                #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
+                if isinstance(x, Sequence):
+                    return tuple(map(_proxy_to_value, x))
+                if isinstance(x, Proxy):
+                    return proxy_to_nv_map[x.name]
 
                 return p
 
@@ -74,9 +88,9 @@ def execute(trace_or_fusion, *args):
             nv_result = nv_op(*nv_args)
             proxy_to_nv_map[sym.result.name] = nv_result
 
+        # TODO: test support for multiple return arguments
         for out in t.outputs:
             fd.add_output(proxy_to_nv_map[out.name])
 
-    # TODO: consider generalizing to other arg types
     nvf_out = fs.execute(args)[0]
     return nvf_out, fs
