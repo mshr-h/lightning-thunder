@@ -1,5 +1,6 @@
 import operator
 from collections import deque
+from numbers import Number
 
 from .trace import Constraint, get_trace
 
@@ -12,15 +13,30 @@ import torch
 # This file depends on trace.py.
 
 __all__ = [
+    # Number proxies
+    "Proxy",
+    "NumberProxy",
     "IntegerProxy",
     "TensorProxy",
     "proxy",
+    "NumberLike",
 ]
 
-# TODO: consider subclassing or "fake subclassing" int
-# See https://docs.python.org/3/reference/datamodel.html#emulating-numeric-types
-# TODO: this should pass isinstance(p, int)
-class IntegerProxy(object):
+
+class Proxy(object):
+    pass
+
+
+class NumberProxy(Proxy):
+    def __init__(self, python_type, name, value):
+        self.python_type = python_type
+        self.name = name
+        self.value = value
+
+
+# TODO: implement more methods
+#   See https://docs.python.org/3/reference/datamodel.html#emulating-numeric-types
+class IntegerProxy(NumberProxy, int):
     """
     A wrapper for an integer that records the dunder methods called on it and their
     results as constraints.
@@ -28,9 +44,13 @@ class IntegerProxy(object):
     TODO: implement all dunder methods
     """
 
-    def __init__(self, name, value):
-        self.name = name
-        self.value = value
+    def __new__(cls, value, name=None):
+        return int.__new__(cls, value)
+
+    def __init__(self, value, name=None):
+        # TODO: update to call a number name function
+        name = name if name is not None else get_trace().constant_name()
+        NumberProxy.__init__(self, int, name, value)
 
     def __repr__(self):
         return f"[IntegerProxy name={self.name} value={self.value}]"
@@ -73,7 +93,7 @@ class IntegerProxy(object):
 # TODO: want this to pass isinstance(p, torch.Tensor) and isinstance(p, np.array) depending on
 #   language context
 # TODO: add method resolution through language context
-class TensorProxy(object):
+class TensorProxy(Proxy):
     """
     A wrapper for a tensor that records data and metadata accesses.
 
@@ -88,23 +108,30 @@ class TensorProxy(object):
                 return x
 
             # Assumes x is an integer
-            ip = IntegerProxy(f"{name}_{idx}", value=x)
+            ip = IntegerProxy(value=x, name=f"{name}_{idx}")
             return ip
 
         my_shape = tuple(_helper(idx, x) for idx, x in enumerate(shape))
         return my_shape
 
-    def __init__(self, name=None, *, shape, dtype):
+    def __init__(self, *, name=None, tensor=None, shape=None, dtype=None):
         name = name if name is not None else get_trace().tensor_name()
         self.name = name
 
-        # Shape is a tuple of integer proxies
-        self.shape = self._make_shape(name, shape)
+        if tensor is not None:
+            assert isinstance(tensor, TensorProxy)
+            self.shape = tensor.shape
+            self.dtype = tensor.dtype
+        else:
+            assert shape is not None
+            assert dtype is not None
+
+            # Shape is a tuple of integer proxies
+            self.shape = self._make_shape(name, shape)
+            self.dtype = dtype
 
         # TODO: should ndim be an integer proxy, too?
-        self.ndim = len(shape)
-
-        self.dtype = dtype
+        self.ndim = len(self.shape)
 
     def __repr__(self):
         return f"[TensorProxy, name={self.name}, shape={self.shape}]"
@@ -116,16 +143,20 @@ def proxy(x):
     Creates a proxy object.
     """
 
-    # TODO: make this conditional on PyTorch being available
-    # TODO: combine with TensorProxy case below
+    # TODO: make this case conditional on PyTorch being available
+    # TODO: combine this case with the TensorProxy case below
     if isinstance(x, torch.Tensor):
         name = get_trace().tensor_name()
-        return TensorProxy(name, shape=x.shape, dtype=x.dtype)
+        return TensorProxy(name=name, shape=x.shape, dtype=x.dtype)
     if isinstance(x, TensorProxy):
         name = get_trace().tensor_name()
-        return TensorProxy(name, shape=x.shape, dtype=x.dtype)
-    if isinstance(x, IntegerProxy):
-        name = get_trace().tensor_name()
-        return IntegerProxy()
+        return TensorProxy(name=name, shape=x.shape, dtype=x.dtype)
+    if isinstance(x, NumberProxy):
+        return x
+    if isinstance(x, int):
+        return IntegerProxy(value=x)
 
     raise AssertionError(f"Can't proxy unknown type {type(x)}")
+
+
+NumberLike = (NumberProxy, Number)
