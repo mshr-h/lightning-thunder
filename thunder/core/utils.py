@@ -1,7 +1,7 @@
-from typing import Callable, List, Type, Tuple, Union
+from typing import Callable, List, Type, Tuple, Union, Sequence
 from numbers import Number
 
-from .proxies import TensorProxy, NumberProxy, NumberLike
+from .proxies import TensorProxy, NumberProxy
 
 # TODO: remove unconditional torch import
 import torch
@@ -14,14 +14,26 @@ __all__ = [
     # Error checking helpers
     "check",
     # Datatype and Python type-related functions
+    "is_boolean_dtype",
+    "is_integer_dtype",
+    "is_low_precision_dtype",
+    "is_float_dtype",
+    "is_complex_dtype",
+    "corresponding_real_dtype",
+    "corresponding_complex_dtype",
+    "dtype_to_type",
+    "type_to_dtype",
+    "dtype_to_type_ctor",
     "check_same_dtype",
     "get_numberlike_type",
     "get_numberlike_value",
-    "type_to_dtype",
     # Shape-related functions
     "same_shape",
+    "canonicalize_dim",
     "check_valid_length",
     "check_valid_shape",
+    "check_valid_index",
+    "check_no_duplicates",
 ]
 
 # Common types
@@ -57,6 +69,53 @@ _float_dtypes = (torch.float16, torch.bfloat16, torch.float32, torch.float64)
 _complex_dtypes = (torch.complex32, torch.complex64, torch.complex128)
 
 
+def is_boolean_dtype(dtype: torch.dtype) -> bool:
+    assert isinstance(dtype, torch.dtype)
+    return dtype is torch.bool
+
+
+def is_integer_dtype(dtype: torch.dtype) -> bool:
+    assert isinstance(dtype, torch.dtype)
+    return dtype in _integer_dtypes
+
+
+def is_low_precision_dtype(dtype: torch.dtype) -> bool:
+    assert isinstance(dtype, torch.dtype)
+    return dtype in _low_precision_dtypes
+
+
+def is_float_dtype(dtype: torch.dtype) -> bool:
+    assert isinstance(dtype, torch.dtype)
+    return dtype in _float_dtypes
+
+
+def is_complex_dtype(dtype: torch.dtype) -> bool:
+    assert isinstance(dtype, torch.dtype)
+    return dtype in _complex_dtypes
+
+
+_complex_to_real_dtype_map = {
+    torch.complex128: torch.float64,
+    torch.complex64: torch.float32,
+    torch.complex32: torch.float16,
+}
+
+_real_to_complex_dtype_map = {
+    torch.float16: torch.complex32,
+    torch.bfloat16: torch.complex64,
+    torch.float32: torch.complex64,
+    torch.float64: torch.complex128,
+}
+
+
+def corresponding_real_dtype(dtype: torch.dtype) -> torch.dtype:
+    return _complex_to_real_dtype_map[dtype]
+
+
+def corresponding_complex_dtype(dtype: torch.dtype) -> torch.dtype:
+    return _real_to_complex_dtype_map[dtype]
+
+
 def dtype_to_type(dtype: torch.dtype) -> type:
     """
     Computes the corresponding Python type (AKA "type kind") for the
@@ -72,18 +131,6 @@ def dtype_to_type(dtype: torch.dtype) -> type:
         return float
     if dtype in _complex_dtypes:
         return complex
-
-
-_real_to_complex_dtype_map = {
-    torch.float16: torch.complex32,
-    torch.bfloat16: torch.complex64,
-    torch.float32: torch.complex64,
-    torch.float64: torch.complex128,
-}
-
-
-def corresponding_complex_dtype(dtype: torch.dtype) -> torch.dtype:
-    return _real_to_complex_dtype_map[dtype]
 
 
 def type_to_dtype(typ: type) -> torch.dtype:
@@ -103,6 +150,24 @@ def type_to_dtype(typ: type) -> torch.dtype:
         return corresponding_complex_dtype(torch.get_default_dtype())
 
     raise ValueError("Invalid type {typ}!")
+
+
+def dtype_to_type_ctor(dtype: torch.dtype):
+    """
+    Computes the corresponding Python type constructor for the
+    given dtype.
+    """
+
+    if dtype is torch.bool:
+        return bool
+    if dtype in _integer_dtypes:
+        return int
+    if dtype in _float_dtypes:
+        return float
+    if dtype in _complex_dtypes:
+        return complex
+
+    raise ValueError("Invalid dtype!")
 
 
 def get_numberlike_type(x):
@@ -173,13 +238,44 @@ def same_shape(a: ShapeType, b: ShapeType) -> bool:
     return True
 
 
+# "Wraps" a dim (up to one time) for the given rank, allowing dims to be
+# specified using negative indices. For scalar tensors with rank 0, then idx
+# must be in the range [-1, 0]. Otherwise, idx should be in the range [-rank, rank-1].
+def canonicalize_dim(rank: int, idx: int, wrap_scalar: bool = True) -> int:
+    check(rank >= 0, lambda: f"Rank cannot be negative but got {rank}!")
+
+    if rank == 0:
+        check(
+            wrap_scalar,
+            lambda: f"Dimension specified as {idx} but tensor has no dimensions!",
+            exception_type=IndexError,
+        )
+        rank = 1
+
+    if idx >= 0 and idx < rank:
+        return idx
+
+    if idx < 0:
+        _idx = idx + rank
+    else:
+        _idx = idx
+
+    check(
+        _idx >= 0 and _idx < rank,
+        lambda: f"Dimension out of range (expected to be in range of [{-rank}, {rank - 1}], but got {idx})",
+        exception_type=IndexError,
+    )
+
+    return _idx
+
+
 def check_valid_length(length: int):
     """
     Validates that an object represents a valid
     dimension length.
     """
 
-    assert length >= 0
+    check(length >= 0, lambda: f"Found invalid length {length}!")
 
 
 def check_valid_shape(shape: ShapeType):
@@ -189,3 +285,19 @@ def check_valid_shape(shape: ShapeType):
 
     for l in shape:
         check_valid_length(l)
+
+
+def validate_idx(rank: int, idx: int):
+    """
+    Validates that idx is a valid index for the given shape.
+    Assumes the index is already canonicalized.
+    """
+
+    check(
+        idx >= 0 and (idx < rank or idx == 0),
+        lambda: f"Found invalid index {idx} for rank {rank}!",
+    )
+
+
+def check_no_duplicates(dims: Sequence):
+    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in {dims}!")

@@ -4,7 +4,8 @@ from numbers import Number
 import builtins
 
 from .trace import get_trace
-from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy, NumberLike
+from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy
+import thunder.core.utils as utils
 from .utils import (
     check,
     check_same_dtype,
@@ -30,6 +31,8 @@ __all__ = [
     "sub",
     # Shape prims
     "broadcast_in_dim",
+    # Reduction prims
+    "var",
 ]
 
 
@@ -38,6 +41,7 @@ class Ops(Enum):
     ADD = auto()
     SUB = auto()
     BROADCAST_IN_DIM = auto()
+    VAR = auto()
 
 
 # maps from operators to their meta functions
@@ -74,7 +78,7 @@ class Prim(object):
     def __repr__(self):
         result_string = str(self.result)
         arg_string = ", ".join(str(arg) for arg in self.args)
-        kwarg_string = ""
+        kwarg_string = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())
         return f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
 
 
@@ -118,7 +122,7 @@ def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
 
     # Number case
     check(
-        isinstance(a, NumberLike),
+        isinstance(a, Number),
         lambda: f"Elementwise unary primitives don't support inputs of type {type(a)}!",
     )
 
@@ -144,9 +148,9 @@ abs = _make_prim(Ops.ABS, _elementwise_unary_meta, "abs", number_handler=builtin
 def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
 
     # Tensors or Number inputs only
-    if not isinstance(a, (TensorProxy, NumberLike)):
+    if not isinstance(a, (TensorProxy, Number)):
         raise ValueError(f"Unexpected type {type(a)}!")
-    if not isinstance(b, (TensorProxy, NumberLike)):
+    if not isinstance(b, (TensorProxy, Number)):
         raise ValueError(f"Unexpected type {type(b)}!")
 
     # tensor x tensor case
@@ -162,7 +166,7 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
         return TensorProxy(tensor=a)
 
     # scalar x scalar case
-    if isinstance(a, NumberLike) and isinstance(b, NumberLike):
+    if isinstance(a, Number) and isinstance(b, Number):
         check(
             number_handler is not None,
             lambda: f"The elementwise binary primitive {name} doesn't support number x number inputs!",
@@ -202,3 +206,48 @@ def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
 broadcast_in_dim = _make_prim(
     Ops.BROADCAST_IN_DIM, broadcast_in_dim_meta, "broadcast_in_dim"
 )
+
+#
+# Reduction prims
+#
+
+
+def _compute_reduction_output_shape(shape, dims):
+    for idx in dims:
+        utils.validate_idx(len(shape), idx)
+
+    new_shape = []
+    for idx in range(len(shape)):
+        if idx in dims:
+            continue
+
+        new_shape.append(shape[idx])
+
+    return tuple(new_shape)
+
+
+def _reduction_meta(a, dims, *, output_dtype=None):
+    """
+    Meta function for single output reduction operations
+    """
+
+    if output_dtype is None:
+        output_dtype = a.dtype
+
+    output_shape = _compute_reduction_output_shape(a.shape, dims)
+
+    return TensorProxy(
+        shape=output_shape,
+        dtype=output_dtype,
+    )
+
+
+def var_meta(a, dims, *, correction, **kwargs):
+    if utils.is_complex_dtype(a.dtype):
+        output_dtype = utils.corresponding_real_dtype(a.dtype)
+    else:
+        output_dtype = a.dtype
+    return _reduction_meta(a, dims, output_dtype=output_dtype)
+
+
+var = _make_prim(Ops.VAR, var_meta, "var")

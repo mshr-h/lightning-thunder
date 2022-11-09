@@ -26,6 +26,8 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
+    # Reduction prims
+    prims.Ops.VAR: "var",
 }
 
 
@@ -51,32 +53,39 @@ _torch_dtype_to_nvfuser_dtype_map = {
 }
 
 
+def _convert(fd, m, v, p):
+    if isinstance(v, torch.Tensor):
+        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[v.dtype]
+        nv = fd.define_tensor(sizes=v.shape, strides=v.stride(), dtype=nv_dtype)
+        m[p.name] = nv
+    elif isinstance(v, int):
+        # NOTE: this handles both booleans and integers, since Python accepts bools as ints
+        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[type(v)]
+        nv = fd.define_scalar(nv_dtype)
+        m[p.name] = nv
+    elif isinstance(v, float):
+        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[float]
+        nv = fd.define_scalar(nv_dtype)
+        m[p.name] = nv
+    else:
+        raise AssertionError(f"execute(): Received unknown input type: {v}")
+
+
 # TODO: add kwarg support
-def execute(t, *args, shape_args=None):
+def execute(t, *args, **kwargs):
     # Constructs a fusion from a trace
     proxy_to_nv_map = {}
     fs = Fusion()
     with FusionDefinition(fs) as fd:
         # Converts inputs
         for arg, p in zip(args, t.inputs):
-            if isinstance(arg, torch.Tensor):
-                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[arg.dtype]
-                nv = fd.define_tensor(
-                    sizes=arg.shape, strides=arg.stride(), dtype=nv_dtype
-                )
-                proxy_to_nv_map[p.name] = nv
-            elif isinstance(arg, int):
-                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[int]
-                nv = fd.define_scalar(nv_dtype)
-                proxy_to_nv_map[p.name] = nv
-            elif isinstance(arg, float):
-                nv_dtype = _torch_dtype_to_nvfuser_dtype_map[float]
-                nv = fd.define_scalar(nv_dtype)
-                proxy_to_nv_map[p.name] = nv
-            else:
-                raise AssertionError(f"execute(): Received unknown input type: {arg}")
+            _convert(fd, proxy_to_nv_map, arg, p)
+
+        for (k, v), (pk, pv) in zip(kwargs.items(), t.kwargs):
+            _convert(fd, proxy_to_nv_map, v, pv)
 
         # TODO: experimental, only here for discussion
+        # NOTE: enabling this requires changes elsewhere -- just for illustration purposes
         # Adds symbolic shape information as new args
         # NOTE: this happens after regular args because we want this inputs
         #   to be defined after all others
@@ -99,8 +108,6 @@ def execute(t, *args, shape_args=None):
 
             def _proxy_to_value(x):
                 if isinstance(x, NumberProxy):
-                    # NOTE: experimental for symbolic shapes (see above)
-                    # return proxy_to_nv_map[x.name]
                     return x.value
 
                 return x
@@ -109,23 +116,45 @@ def execute(t, *args, shape_args=None):
                 # TODO: always enumerating every element of a sequence seems expensive
                 #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
                 if isinstance(x, Sequence):
-                    return tuple(map(_proxy_to_value, x))
-                if isinstance(x, Proxy):
+                    return tuple(map(_proxy_to_nv, x))
+                if isinstance(x, NumberProxy):
+                    # TODO: discuss with NVIDIA
+                    # NOTE: this means that symbols which are not inputs or constants are
+                    #   passed by value. Examples of these symbols are the lengths of the
+                    #   input tensors' dimensions.
+                    return proxy_to_nv_map.get(x.name, x.value)
+                if isinstance(x, TensorProxy):
                     return proxy_to_nv_map[x.name]
 
-                return p
+                return x
 
             nv_args = tuple(map(_proxy_to_nv, sym.args))
+            nv_kwargs = {k: _proxy_to_nv(v) for k, v in sym.kwargs.items()}
 
             # TODO: support multiple returns from a call
-            nv_result = nv_op(*nv_args)
+            nv_result = nv_op(*nv_args, **nv_kwargs)
             proxy_to_nv_map[sym.result.name] = nv_result
 
         # TODO: test support for multiple return arguments
         for out in t.outputs:
             fd.add_output(proxy_to_nv_map[out.name])
 
-    # NOTE: experimental for symbolic shapes (see above)
-    # nvf_out = fs.execute(args + tuple(length_args))[0]
-    nvf_out = fs.execute(args)[0]
+    # Filters sequences in args, which are currently treated as constants
+    # TODO: revisit this modeling
+    def _arg_filter(x):
+        if isinstance(x, Sequence):
+            return True
+
+        return False
+
+    filtered_args = tuple(arg for arg in args if not _arg_filter(arg))
+
+    # Adds kwargs
+    flattened_kwargs = []
+    for k, v in kwargs.items():
+        flattened_kwargs.append(v)
+
+    args_and_kwargs = filtered_args + tuple(flattened_kwargs)
+
+    nvf_out = fs.execute(args_and_kwargs)[0]
     return nvf_out, fs

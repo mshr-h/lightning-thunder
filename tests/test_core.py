@@ -4,6 +4,7 @@ import torch
 import thunder
 import thunder.core.lang as tlang
 import thunder.core.proxies as proxies
+import thunder.langs.torch as ttorch
 
 from torch.testing import make_tensor, assert_close
 
@@ -216,3 +217,46 @@ def test_elementwise_binary_prim_shape_mismatch():
 
 def test_elementwise_binary_prim_dtype_mismatch():
     pass
+
+
+def test_torch_var():
+    # Tests passing all arguments as function inputs
+    def foo(a, dim, *, keepdim=False, correction=1):
+        return ttorch.var(a, dim, keepdim=keepdim, correction=correction)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+
+    # Full reduction
+    thunder_result = traced_foo(a, [0, 1])
+    torch_result = torch.var(a, [0, 1])
+    assert_close(thunder_result, torch_result)
+
+    # Reduce along dim 1
+    thunder_result = traced_foo(a, [1])
+    torch_result = torch.var(a, [1])
+    assert_close(thunder_result, torch_result)
+
+    # TODO: review with NVIDIA -- how should correction be passed?
+    # Specifying the correction
+    # thunder_result = traced_foo(a, [1], correction=2)
+    # torch_result = torch.var(a, [1], correction=2)
+    # assert_close(thunder_result, torch_result)
+
+    # # Specifying keepdim
+    # thunder_result = traced_foo(a, [1], keepdim=True, correction=2)
+    # torch_result = torch.var(a, [1], keepdim=True, correction=2)
+    # assert_close(thunder_result, torch_result)
+
+    # Tests passing arguments as constants
+    def foo(a):
+        return ttorch.var(a, [0, 1], keepdim=True, correction=2)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a)
+    torch_result = torch.var(a, [0, 1], keepdim=True, correction=2)
+    assert_close(thunder_result, torch_result)

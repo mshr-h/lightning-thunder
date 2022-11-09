@@ -1,8 +1,10 @@
 from typing import Callable, Sequence, Type
 from functools import reduce
+from numbers import Number
 
 from . import prims
 from . import utils
+from .proxies import TensorProxy
 
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
@@ -18,6 +20,8 @@ __all__ = [
     "abs",
     # Elementwise binary operations
     "add",
+    # Data movement and transformation operations
+    "maybe_convert_to_dtype",
 ]
 
 #
@@ -130,3 +134,26 @@ def sub(a, b):
     a, b = _maybe_broadcast(a, b)
 
     return prims.sub(a, b)
+
+
+# TODO: implement ref.cast with an option to enforce safe casting
+def maybe_convert_to_dtype(a, dtype):
+    """
+    Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified.
+    """
+
+    if isinstance(a, TensorProxy):
+        if a.dtype != dtype:
+            return prims.convert_element_type(a, dtype)
+        return a
+    if isinstance(a, Number):
+        return utils.dtype_to_type_ctor(dtype)(a)
+    if isinstance(a, Sequence):
+        return tuple(maybe_convert_to_dtype(x, dtype) for x in a)
+
+    # Passthrough None because some functions wrapped with type promotion
+    # wrapper might have optional args
+    if a is None:
+        return None
+
+    raise ValueError(f"Received type {type(a)} that is neither a tensor or a number!")

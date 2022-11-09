@@ -34,6 +34,10 @@ class NumberProxy(Proxy):
         self.value = value
 
 
+# NOTE: Why no bool proxy? Because bool cannot be subclassed. There are no bool
+#   instances, just True and False. Further, isinstance(True, int) is True in Python!
+#   So bools get handled by IntegerProxy.
+
 # TODO: implement more methods
 #   See https://docs.python.org/3/reference/datamodel.html#emulating-numeric-types
 class IntegerProxy(NumberProxy, int):
@@ -50,10 +54,16 @@ class IntegerProxy(NumberProxy, int):
     def __init__(self, value, name=None):
         # TODO: update to call a number name function
         name = name if name is not None else get_trace().constant_name()
-        NumberProxy.__init__(self, int, name, value)
+
+        # NOTE: bools are also integers in Python
+        python_type = bool if isinstance(value, bool) else int
+        NumberProxy.__init__(self, python_type, name, value)
 
     def __repr__(self):
         return f"[IntegerProxy name={self.name} value={self.value}]"
+
+    def __hash__(self):
+        return super().__hash__()
 
     def __eq__(self, other):
         other_value = other.value if isinstance(other, IntegerProxy) else other
@@ -132,10 +142,14 @@ class TensorProxy(Proxy):
         self.name = name
 
         if tensor is not None:
+            # Pulls metadata from the tensor, but explicit kwargs take precedence
             assert isinstance(tensor, TensorProxy)
-            self.shape = tensor.shape
-            self.dtype = tensor.dtype
+            self.shape = (
+                tensor.shape if shape is None else self._make_shape(name, shape)
+            )
+            self.dtype = tensor.dtype if dtype is None else dtype
         else:
+            # Requires all metadata be specified explicitly
             assert shape is not None
             assert dtype is not None
 
@@ -172,6 +186,3 @@ def proxy(x):
         return FloatProxy(value=x)
 
     raise AssertionError(f"Can't proxy unknown type {type(x)}")
-
-
-NumberLike = (NumberProxy, Number)

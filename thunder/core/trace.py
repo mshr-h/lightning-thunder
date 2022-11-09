@@ -132,6 +132,7 @@ class Trace(object):
 
     def __init__(self):
         self.inputs = deque()
+        self.kwargs = deque()
         self.constants = deque()
         self.outputs = deque()
         self.symbols = deque()
@@ -148,10 +149,11 @@ class Trace(object):
             str(constraint) for constraint in self.constraints
         )
         input_string = "\n".join(str(inp) for inp in self.inputs)
+        kwarg_input_string = "\n".join(f"{k}={v}" for k, v in self.kwargs)
         constant_string = "\n".join(str(constant) for constant in self.constants)
         symbol_string = "\n".join(str(sym) for sym in self.symbols)
         output_string = "\n".join(str(out) for out in self.outputs)
-        return f"[Trace, \nConstraints:\n{constraint_string}\nInputs:\n{input_string}\nConstants:\n{constant_string}\nSymbols:\n{symbol_string}\nOutputs:\n{output_string}]"
+        return f"[Trace, \nConstraints:\n{constraint_string}\nInputs:\n{input_string}\nKwarg Inputs:\n{kwarg_input_string}\nConstants:\n{constant_string}\nSymbols:\n{symbol_string}\nOutputs:\n{output_string}]"
 
     # TODO: Consider using a different name generation technique that reuses the original names
     @staticmethod
@@ -182,6 +184,10 @@ class Trace(object):
     def add_input(self, inp):
         self.inputs.append(inp)
         return inp
+
+    def add_kwarg_input(self, k, v):
+        self.kwargs.append((k, v))
+        return k, v
 
     # TODO: review constants, particularly Python lists
     def add_constant(self, constant):
