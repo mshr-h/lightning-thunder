@@ -128,32 +128,67 @@ def test_sub():
     torch.testing.assert_close(thunder_result, torch_result)
 
 
-def test_integer_isinstance_mimicry():
+def test_true_divide():
     def foo(a, b):
+        return tlang.true_divide(a, b)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    b = torch.testing.make_tensor((2, 2), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b)
+    torch_result = a / b
+
+    torch.testing.assert_close(thunder_result, torch_result)
+
+
+def test_integer_isinstance_mimicry():
+    # isinstance() works as expected
+    def foo(a, b, c):
         if isinstance(a, int):
             return tlang.add(a, b)
 
-        return b
+        return tlang.add(b, c)
 
     traced_foo = thunder.make_traced(foo)
 
     a = make_tensor((2, 1), device="cuda", dtype=torch.float32)
     b = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    c = make_tensor((1, 2), device="cuda", dtype=torch.float32)
 
-    # FIXME: this case will throw
-    #   RuntimeError: entry_it != disjointSetMap().end() INTERNAL ASSERT FAILED at "../torch/csrc/jit/codegen/cuda/disjoint_set.h":259, please report a bug to PyTorch. Strict mapping failed on element: T1_g[ iS2{i4}, iS3{i5} ] either an error occured, or non strict mapping should have been used.
-    #   Possibly because the trace is just inputs and an output?
+    thunder_result = traced_foo(a, b, c)
+    torch_result = b + c
+    assert_close(thunder_result, torch_result)
+
+    thunder_result = traced_foo(2, b, c)
+    torch_result = 2 + b
+    assert_close(thunder_result, torch_result)
+
+    # type() doesn't work (it returns the actual type)
+    def bar(a, b, c):
+        if type(a) is int:
+            return tlang.add(a, b)
+
+        return tlang.add(b, c)
+
+    traced_bar = thunder.make_traced(bar)
+
     try:
-        thunder_result = traced_foo(a, b)
-        torch_result = b
+        thunder_result = traced_bar(a, b, c)
+        torch_result = b + c
         assert_close(thunder_result, torch_result)
         pytest.fail()
     except:
         pass
 
-    thunder_result = traced_foo(2, b)
-    torch_result = 2 + b
-    assert_close(thunder_result, torch_result)
+    try:
+        thunder_result = traced_bar(2, b, c)
+        torch_result = 2 + b
+        assert_close(thunder_result, torch_result)
+        pytest.fail()
+    except:
+        pass
 
 
 # FIXME NVIDIA: this test will cause a segmentation fault!
@@ -259,4 +294,54 @@ def test_torch_var():
 
     thunder_result = traced_foo(a)
     torch_result = torch.var(a, [0, 1], keepdim=True, correction=2)
+    assert_close(thunder_result, torch_result)
+
+
+def test_torch_mean():
+    def foo(a, dim=None, keepdim=False, *, dtype=None):
+        return ttorch.mean(a, dim, keepdim, dtype=dtype)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+
+    # Full reduction
+    thunder_result = traced_foo(a, [0, 1])
+    torch_result = torch.mean(a, [0, 1])
+    assert_close(thunder_result, torch_result)
+
+    # Reduce along dim 1
+    thunder_result = traced_foo(a, [1])
+    torch_result = torch.mean(a, [1])
+    assert_close(thunder_result, torch_result)
+
+
+def test_var_mean():
+    def foo(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
+        return ttorch.var_mean(a, dim, unbiased, keepdim=keepdim, correction=correction)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+
+    # Full reduction
+    thunder_result = traced_foo(a, [0, 1])
+    torch_result = torch.var_mean(a, [0, 1])
+    assert_close(thunder_result, torch_result)
+
+    # Reduce along dim 1
+    thunder_result = traced_foo(a, [1])
+    torch_result = torch.var_mean(a, [1])
+    assert_close(thunder_result, torch_result)
+
+    # Tests passing arguments as constants
+    def foo(a):
+        return ttorch.var_mean(a, [0, 1], keepdim=True, correction=2)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a)
+    torch_result = torch.var_mean(a, [0, 1], keepdim=True, correction=2)
     assert_close(thunder_result, torch_result)

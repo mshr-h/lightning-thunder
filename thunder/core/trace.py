@@ -62,6 +62,7 @@ def reset_trace(token):
 
 
 # Holds the current language context
+# TODO: unused
 # NOTE: this file does not depend on the definition of the language context,
 #   so it's an opaque object from the perspective of this file
 _language_ctx = ContextVar("language_ctx")
@@ -98,6 +99,45 @@ def reset_language_context(token):
     """
 
     _language_ctx.set(token)
+
+
+# Holds the current execution context
+# NOTE: this file does not depend on the definition of the execution context,
+#   so it's an opaque object from the perspective of this file
+_executor_ctx = ContextVar("executor_ctx")
+
+
+def set_executor_context(ctx):
+    """
+    Sets the current trace.
+    """
+
+    return _executor_ctx.set(ctx)
+
+
+# TODO: add ability to get a temporary "anonymous" trace
+# TODO: possibly add a kwarg to control this behavior
+def get_executor_context():
+    """
+    Gets the current trace, returning None
+    if there is no current trace.
+    """
+
+    try:
+        ctx = _executor_ctx.get()
+        return ctx
+    except LookupError:
+        pass
+
+    return ctx
+
+
+def reset_executor_context(token):
+    """
+    Resets the tracing state.
+    """
+
+    _executor_ctx.set(token)
 
 
 class Constraint(object):
