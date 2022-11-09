@@ -1,8 +1,12 @@
 from typing import Sequence
 from collections import deque
+from enum import Enum, auto
 
 from thunder.core import prims
+from thunder.core import utils
 from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
+
+import thunder.langs.torch as ttorch
 
 import torch
 
@@ -16,6 +20,11 @@ __all__ = [
     "nvfuser",
 ]
 
+
+class nvOps(Enum):
+    VAR_MEAN = auto()
+
+
 # Maps the Thunder primitives to their corresponding nvfuser operation names
 # TODO: map directly to the nvfuser operations, not their names
 ops_to_nvfuser_ops_map = {
@@ -23,12 +32,56 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.ABS: "abs",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
+    prims.Ops.DIV: "div",
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     # Reduction prims
+    prims.Ops.SUM: "sum",
     prims.Ops.VAR: "var",
+    nvOps.VAR_MEAN: "var_mean",
 }
+
+
+def _var_mean_prim_meta(a, dim, *, correction, **kwargs):
+    output_dtype = a.dtype
+    if utils.is_complex_dtype(a.dtype):
+        output_dtype = utils.corresponding_real_dtype(a.dtype)
+
+    var = prims.reduction_meta(a, dim, output_dtype=output_dtype)
+    mean = prims.reduction_meta(a, dim, output_dtype=a.dtype)
+
+    return (var, mean)
+
+
+var_mean_prim = prims.make_prim(nvOps.VAR_MEAN, _var_mean_prim_meta, "var_mean")
+
+
+def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
+    correction = ttorch._set_correction(unbiased, correction)
+
+    # reduces over all dimensions if dim=() is passed
+    if dim == () or dim == []:
+        dim = None
+    dim = ttorch._reduction_dims(a.shape, dim)
+
+    # For complex tensors eager computes the variance as the sum of variances of
+    # the real and imaginary parts
+    # TODO: Creating a complex tensor from real and imaginary parts is not supported
+    utils.check(
+        not utils.is_complex_dtype(a.dtype),
+        lambda: f"Complex tensors are not supported!",
+    )
+
+    v, m = var_mean_prim(a, dim, correction=correction)
+
+    if keepdim:
+        output_shape = [a.shape[i] if i not in dim else 1 for i in range(a.ndim)]
+        broadcast_dims = [i for i in range(a.ndim) if i not in dim]
+        v = prims.broadcast_in_dim(v, output_shape, broadcast_dims)
+        m = prims.broadcast_in_dim(m, output_shape, broadcast_dims)
+
+    return v, m
 
 
 def _get_nvfuser_op(fd, op):
@@ -51,6 +104,20 @@ _torch_dtype_to_nvfuser_dtype_map = {
     int: DataType.Int,
     bool: DataType.Bool,
 }
+
+
+class nvFuserCtx(object):
+    def __init__(self):
+        pass
+
+    def intercept(self, op):
+        """ """
+
+        # TODO: update match to not be on strings
+        if op == "torch.var_mean":
+            return var_mean
+
+        return None
 
 
 def _convert(fd, m, v, p):
@@ -131,13 +198,23 @@ def execute(t, *args, **kwargs):
             nv_args = tuple(map(_proxy_to_nv, sym.args))
             nv_kwargs = {k: _proxy_to_nv(v) for k, v in sym.kwargs.items()}
 
-            # TODO: support multiple returns from a call
             nv_result = nv_op(*nv_args, **nv_kwargs)
-            proxy_to_nv_map[sym.result.name] = nv_result
+
+            # TODO handle more output datastructures
+            if isinstance(nv_result, Sequence):
+                for nvr, p in zip(nv_result, sym.result):
+                    proxy_to_nv_map[p.name] = nvr
+            else:
+                proxy_to_nv_map[sym.result.name] = nv_result
 
         # TODO: test support for multiple return arguments
         for out in t.outputs:
-            fd.add_output(proxy_to_nv_map[out.name])
+            # TODO: handle more datastructures (probably want to tree map here)
+            if isinstance(out, Sequence):
+                for o in out:
+                    fd.add_output(proxy_to_nv_map[o.name])
+            else:
+                fd.add_output(proxy_to_nv_map[out.name])
 
     # Filters sequences in args, which are currently treated as constants
     # TODO: revisit this modeling
@@ -156,5 +233,5 @@ def execute(t, *args, **kwargs):
 
     args_and_kwargs = filtered_args + tuple(flattened_kwargs)
 
-    nvf_out = fs.execute(args_and_kwargs)[0]
+    nvf_out = fs.execute(args_and_kwargs)
     return nvf_out, fs

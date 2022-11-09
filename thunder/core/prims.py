@@ -24,23 +24,33 @@ from .utils import (
 # This file depends on trace.py, proxies.py, and utils.py.
 
 __all__ = [
+    # Methods and datastructures for constructing primitive operations
+    "make_prim",
     # Elementwise unary prims
     "abs",
     # Elementwise binary prims
     "add",
+    "div",
     "sub",
     # Shape prims
+    "broadcast_in_dim_meta",
     "broadcast_in_dim",
     # Reduction prims
+    "reduction_meta",
+    "sum_meta",
+    "sum",
     "var",
+    "var_meta",
 ]
 
 
 class Ops(Enum):
     ABS = auto()
     ADD = auto()
+    DIV = auto()
     SUB = auto()
     BROADCAST_IN_DIM = auto()
+    SUM = auto()
     VAR = auto()
 
 
@@ -55,7 +65,7 @@ ops_to_pretty_name_map = {}
 #       The meta function maps proxy inputs to a proxy output that has the same metadata
 #       as the result of calling the operation with inputs that have the same metadata as the proxies.
 #       Meta functions are called within a tracing context. TODO: relax this.
-#   - call _make_prim
+#   - call make_prim
 
 # TODO: add error context
 
@@ -82,7 +92,7 @@ class Prim(object):
         return f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
 
 
-def _make_prim(id, meta, name, *, number_handler=None):
+def make_prim(id, meta, name, *, number_handler=None):
     ops_to_meta_functions_map[id] = meta
     ops_to_pretty_name_map[id] = name
 
@@ -137,7 +147,7 @@ def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
     return proxy(value)
 
 
-abs = _make_prim(Ops.ABS, _elementwise_unary_meta, "abs", number_handler=builtins.abs)
+abs = make_prim(Ops.ABS, _elementwise_unary_meta, "abs", number_handler=builtins.abs)
 
 #
 # Elementwise binary prims
@@ -190,9 +200,22 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
     return TensorProxy(tensor=tensor)
 
 
-add = _make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
+add = make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
 
-sub = _make_prim(Ops.SUB, _elementwise_binary_meta, "sub", number_handler=operator.sub)
+
+def _div_number_handler(a, b):
+    if isinstance(a, (float, complex)):
+        return a / b
+
+    # int (and bool) case, performs floor division
+    return a // b
+
+
+div = make_prim(
+    Ops.DIV, _elementwise_binary_meta, "div", number_handler=_div_number_handler
+)
+
+sub = make_prim(Ops.SUB, _elementwise_binary_meta, "sub", number_handler=operator.sub)
 
 #
 # Shape prims
@@ -203,7 +226,7 @@ def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
     return TensorProxy(shape=shape, dtype=a.dtype)
 
 
-broadcast_in_dim = _make_prim(
+broadcast_in_dim = make_prim(
     Ops.BROADCAST_IN_DIM, broadcast_in_dim_meta, "broadcast_in_dim"
 )
 
@@ -226,7 +249,7 @@ def _compute_reduction_output_shape(shape, dims):
     return tuple(new_shape)
 
 
-def _reduction_meta(a, dims, *, output_dtype=None):
+def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     """
     Meta function for single output reduction operations
     """
@@ -242,12 +265,16 @@ def _reduction_meta(a, dims, *, output_dtype=None):
     )
 
 
+sum_meta = reduction_meta
+sum = make_prim(Ops.SUM, sum_meta, "sum")
+
+
 def var_meta(a, dims, *, correction, **kwargs):
     if utils.is_complex_dtype(a.dtype):
         output_dtype = utils.corresponding_real_dtype(a.dtype)
     else:
         output_dtype = a.dtype
-    return _reduction_meta(a, dims, output_dtype=output_dtype)
+    return reduction_meta(a, dims, output_dtype=output_dtype)
 
 
-var = _make_prim(Ops.VAR, var_meta, "var")
+var = make_prim(Ops.VAR, var_meta, "var")

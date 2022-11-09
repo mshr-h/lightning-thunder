@@ -20,6 +20,8 @@ __all__ = [
     "abs",
     # Elementwise binary operations
     "add",
+    "sub",
+    "true_divide",
     # Data movement and transformation operations
     "maybe_convert_to_dtype",
 ]
@@ -135,6 +137,29 @@ def sub(a, b):
 
     return prims.sub(a, b)
 
+
+def true_divide(a, b):
+    a, b = _maybe_broadcast(a, b)
+
+    # TODO: support type promotion instead of this
+    a_dtype = utils.type_to_dtype(type(a)) if isinstance(a, Number) else a.dtype
+    b_dtype = utils.type_to_dtype(type(b)) if isinstance(b, Number) else b.dtype
+
+    utils.check(
+        utils.is_float_dtype(a_dtype),
+        lambda: f"true_divide only supports floating-point tensors and numbers currently!",
+    )
+    utils.check(
+        utils.is_float_dtype(b_dtype),
+        lambda: f"true_divide only supports floating-point tensors and numbers currently!",
+    )
+
+    return prims.div(a, b)
+
+
+#
+# Data movement and transformation operations
+#
 
 # TODO: implement ref.cast with an option to enforce safe casting
 def maybe_convert_to_dtype(a, dtype):

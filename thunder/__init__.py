@@ -4,9 +4,16 @@ from collections import deque
 
 from .core import lang
 from .core import trace
-from .core.trace import get_trace, new_trace, reset_trace
+from .core.trace import (
+    get_trace,
+    new_trace,
+    reset_trace,
+    set_executor_context,
+    get_executor_context,
+    reset_executor_context,
+)
 from .core.proxies import proxy
-from .executors.nvfuser import execute as nvfuser
+from .executors.nvfuser import execute as nvfuser, nvFuserCtx
 
 # TODO make this dependency optional
 import torch
@@ -39,6 +46,7 @@ def make_traced(fn: Callable) -> Callable:
     def _fn(*args, **kwargs):
         # Acquires a new tracing context
         trace_token = new_trace()
+        executor_token = set_executor_context(nvFuserCtx())
         t = get_trace()
 
         # Constructs proxies
@@ -64,11 +72,17 @@ def make_traced(fn: Callable) -> Callable:
         proxy_result = fn(*proxy_args, **proxy_kwargs)
         t.add_output(proxy_result)
 
-        print(t)
-
         nv_result, fusion = nvfuser(t, *args, **kwargs)
 
         reset_trace(trace_token)
+        reset_executor_context(executor_token)
+
+        # TODO: if the output is a datastructure it will be flattened before being handed to nvFuser
+        #   this needs to re-wrap the nvFuser outputs into the datstructure
+        if len(nv_result) == 1:
+            # Hack to unwrap singleton results
+            return nv_result[0]
+
         return nv_result
 
     return _fn

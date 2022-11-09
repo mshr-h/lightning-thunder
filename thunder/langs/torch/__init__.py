@@ -1,7 +1,9 @@
 from enum import Enum
 from typing import Callable, Optional, Union, Sequence, Tuple
-from functools import partial
+from functools import partial, reduce
+import operator
 
+import thunder.core.trace as trace
 import thunder.core.utils as utils
 from thunder.core.proxies import TensorProxy
 import thunder.core.lang as tlang
@@ -11,6 +13,10 @@ import torch
 
 __all__ = [
     # Reduction Ops
+    "_set_correction",
+    "_reduction_dims",
+    "mean",
+    "var",
     "var_mean",
 ]
 
@@ -160,6 +166,38 @@ def _dim_var_dispatch(dim=None, unbiased=None):
     return dim, unbiased
 
 
+def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
+
+    # reduces over all dimensions if dim=() is passed
+    if dim == () or dim == []:
+        dim = None
+    if isinstance(dim, int):
+        dim = (dim,)
+
+    dtype = dtype if dtype is not None else a.dtype
+    utils.check(
+        not utils.is_integer_dtype(dtype) and not utils.is_boolean_dtype(dtype),
+        lambda: f"Dtype should be floating point or complex",
+    )
+
+    result = _reduction(
+        a,
+        prims.sum,
+        dims=dim,
+        keepdims=keepdim,
+        dtype=dtype,
+        output_dtype_kind=REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE,
+    )
+
+    dims = _reduction_dims(a.shape, dim)  # type: ignore[arg-type]
+    nelem = 1 if a.ndim == 0 else reduce(operator.mul, (a.shape[i] for i in dims), 1)
+    # TODO: the conversion of nelem to float won't be needed once type promotion is supported
+    result = tlang.true_divide(result, float(nelem))
+    result_dtype = a.dtype if dtype is None else dtype
+    result = tlang.maybe_convert_to_dtype(result, result_dtype)
+    return result
+
+
 def var(
     a,
     dim=None,
@@ -195,8 +233,13 @@ def var_mean(
     *,
     correction: Optional[int] = None,
 ):
+    # TODO: programmatically add this redirection to all operations
+    # TODO: avoid string construction
+    intercepted = trace.get_executor_context().intercept("torch.var_mean")
+    if intercepted is not None:
+        return intercepted(a, dim, unbiased, keepdim, correction=correction)
+
     dim, unbiased = _dim_var_dispatch(dim, unbiased)
-    # v = var(a, dim, unbiased, keepdim, correction=correction)
-    # m = mean(a, dim, keepdim)
-    # return v, m
-    return None, None
+    v = var(a, dim, unbiased, keepdim, correction=correction)
+    m = mean(a, dim, keepdim)
+    return v, m
