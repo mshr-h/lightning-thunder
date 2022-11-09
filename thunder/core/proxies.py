@@ -1,8 +1,9 @@
 import operator
 from collections import deque
 from numbers import Number
+from enum import Enum, auto
 
-from .trace import Constraint, get_trace
+from .trace import Constraint, get_trace, get_language_context
 
 # TODO: don't unconditionally import torch
 import torch
@@ -113,6 +114,10 @@ class FloatProxy(NumberProxy, float):
         return f"[FloatProxy name={self.name} value={self.value}]"
 
 
+class TensorMethods(Enum):
+    ADD = auto()
+
+
 # TODO: want this to pass isinstance(p, torch.Tensor) and isinstance(p, np.array) depending on
 #   language context
 # TODO: add method resolution through language context
@@ -162,6 +167,17 @@ class TensorProxy(Proxy):
 
     def __repr__(self):
         return f"[TensorProxy, name={self.name}, shape={self.shape}]"
+
+    def __add__(self, other):
+        ctx = get_language_context()
+        return ctx.add(self, other)
+
+    def __sub__(self, other):
+        ctx = get_language_context()
+        return ctx.sub(self, other)
+
+    def __getattr__(self, name):
+        raise LookupError(f"No {name} property!")
 
 
 # TODO: differentiate tensor and other types of names
