@@ -8,6 +8,9 @@ from .core.trace import (
     get_trace,
     new_trace,
     reset_trace,
+    set_language_context,
+    get_language_context,
+    reset_language_context,
     set_executor_context,
     get_executor_context,
     reset_executor_context,
@@ -22,8 +25,7 @@ __all__ = [
     "make_traced",
 ]
 
-# TODO: currently assumes all inputs are proxyable and
-#     a single (proxy) tensor is returned from the operation
+
 def make_traced(fn: Callable) -> Callable:
     """
     Converts a callable in a callable that will be traced and then executed.
@@ -47,6 +49,7 @@ def make_traced(fn: Callable) -> Callable:
         # Acquires a new tracing context
         trace_token = new_trace()
         executor_token = set_executor_context(nvFuserCtx())
+        lang_token = set_language_context(lang.CoreLangCtx())
         t = get_trace()
 
         # Constructs proxies
@@ -75,6 +78,7 @@ def make_traced(fn: Callable) -> Callable:
         nv_result, fusion = nvfuser(t, *args, **kwargs)
 
         reset_trace(trace_token)
+        reset_language_context(lang_token)
         reset_executor_context(executor_token)
 
         # TODO: if the output is a datastructure it will be flattened before being handed to nvFuser

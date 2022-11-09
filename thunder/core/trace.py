@@ -18,6 +18,12 @@ __all__ = [
     "new_trace",
     "get_trace",
     "reset_trace",
+    "set_language_context",
+    "get_language_context",
+    "reset_language_context",
+    "set_executor_context",
+    "get_executor_context",
+    "reset_executor_context",
 ]
 
 #

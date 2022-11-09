@@ -14,6 +14,8 @@ from .proxies import TensorProxy
 # This file depends on prims.py.
 
 __all__ = [
+    # Language context
+    "CoreLangCtx",
     # Shape operations
     "expand",
     # Elemenwise unary operations
@@ -182,3 +184,17 @@ def maybe_convert_to_dtype(a, dtype):
         return None
 
     raise ValueError(f"Received type {type(a)} that is neither a tensor or a number!")
+
+
+class CoreLangCtx(object):
+    def __init__(self):
+        pass
+
+    def add(self, a, b):
+        return add(a, b)
+
+    def sub(self, a, b):
+        return sub(a, b)
+
+    def intercept(self, op, *args, **kwargs):
+        return None

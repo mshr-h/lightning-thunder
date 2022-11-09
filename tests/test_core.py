@@ -345,3 +345,19 @@ def test_var_mean():
     thunder_result = traced_foo(a)
     torch_result = torch.var_mean(a, [0, 1], keepdim=True, correction=2)
     assert_close(thunder_result, torch_result)
+
+
+def test_core_tensor_methods():
+    def foo(a, b, c, d):
+        return a + b - c + (d - a)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = torch.testing.make_tensor((4, 4), device="cuda", dtype=torch.float32)
+    b = torch.testing.make_tensor((2, 1, 4), device="cuda", dtype=torch.float32)
+    c = torch.testing.make_tensor((4, 1), device="cuda", dtype=torch.float32)
+    d = torch.testing.make_tensor((1, 1, 4), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b, c, d)
+    torch_result = a + b - c + (d - a)
+    assert_close(thunder_result, torch_result)
