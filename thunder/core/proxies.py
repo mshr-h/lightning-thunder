@@ -142,7 +142,9 @@ class TensorProxy(Proxy):
         my_shape = tuple(_helper(idx, x) for idx, x in enumerate(shape))
         return my_shape
 
-    def __init__(self, *, name=None, tensor=None, shape=None, dtype=None):
+    # TDOO: today dtype is a torch.dtype, but it should be made generic and the language
+    #   ctx should control what kind of object is returned for the datatype
+    def __init__(self, *, name=None, tensor=None, shape=None, dtype=None, weak_dtype=None):
         name = name if name is not None else get_trace().tensor_name()
         self.name = name
 
@@ -153,6 +155,7 @@ class TensorProxy(Proxy):
                 tensor.shape if shape is None else self._make_shape(name, shape)
             )
             self.dtype = tensor.dtype if dtype is None else dtype
+            self.weak_dtype = tensor.weak_dtype if weak_dtype is None else weak_dtype
         else:
             # Requires all metadata be specified explicitly
             assert shape is not None
@@ -161,6 +164,7 @@ class TensorProxy(Proxy):
             # Shape is a tuple of integer proxies
             self.shape = self._make_shape(name, shape)
             self.dtype = dtype
+            self.weak_dtype = False if weak_dtype is None else weak_dtype
 
         # TODO: should ndim be an integer proxy, too?
         self.ndim = len(self.shape)

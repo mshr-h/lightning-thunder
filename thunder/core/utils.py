@@ -1,5 +1,6 @@
 from typing import Callable, List, Type, Tuple, Union, Sequence
 from numbers import Number
+from enum import Enum
 
 from .proxies import TensorProxy, NumberProxy
 
@@ -27,6 +28,8 @@ __all__ = [
     "check_same_dtype",
     "get_numberlike_type",
     "get_numberlike_value",
+    "ELEMENTWISE_TYPE_PROMOTION_KIND",
+    "elementwise_type_promotion",
     # Shape-related functions
     "same_shape",
     "canonicalize_dim",
@@ -190,6 +193,29 @@ def get_numberlike_value(x):
     check(True, lambda: f"Unexpected type {type(x)}!")
 
 
+def get_higher_type(a: type, b: type) -> type:
+    """
+    Returns the higher of the two given Number types.
+    The types are ordered bool -> int -> float -> complex.
+    """
+    # Type checking
+    assert a in _ordered_types
+    assert b in _ordered_types
+
+    if a is b:
+        return a
+
+    for typ in _ordered_types:
+        if a is typ:
+            return b
+        if b is typ:
+            return a
+
+    raise ValueError("Unknown Python scalar type!")
+
+
+
+
 # TODO: maybe support numbers, too?
 def check_same_dtype(*args):
     """
@@ -219,6 +245,93 @@ def check_same_dtype(*args):
             dtype == expected_dtype,
             lambda: f"Found distinct dtype {dtype}, expected {expected_dtype}!",
         )
+
+# TODO: working here
+# map types/dtypes to numbers that represent table position
+# lookup in table
+def _elementwise_type_promotion(a, b):
+    b1 = torch.bool
+    u1, i1, i2, i4, i8 = _integer_dtypes
+    f2, bf, f4, f8 = _float_dtypes
+    c4, c8, c16 = _complex_dtypes
+    i_, f_, c_ = int, float, complex
+
+    _elementwise_promotion_table = [
+            #b1	 u1	 i1	 i2	 i4	 i8	 bf	 f2	 f4	 f8	 c4  c8	 c16  i_  f_  c_
+            [b1, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_]  # b1
+            [u1, u1, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, u1, f_, c_]  #u1
+    ]
+
+class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
+    DEFAULT = (0,)
+    PRESERVE = (1,)
+    INT_TO_FLOAT = (2,)
+    ALWAYS_BOOL = (3,)
+    COMPLEX_TO_FLOAT = (4,)
+    BOOL_TO_LONG = (5,)
+
+# TODO: document type promotion kinds
+def elementwise_type_promotion(a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND):
+    """
+    Computes the computation and result dtypes for elementwise type promotion
+    on the given arguments and with the given elementwise type promotion kind.
+
+    Type promotion in Thunder conceptually corresponds with JAX's type promotion. 
+    See https://jax.readthedocs.io/en/latest/type_promotion.html. 
+
+    Reviewing the inputs determines a "promotion dtype", but this function returns a 
+    "computation dtype" and a "result dtype." The "type_promotion"kind" argument 
+    determines how the promotion dtype is mapped to a computation and result dtype.
+
+    DEFAULT type promotion selects a computation dtype by mapping low precision promotion dtypes to their
+    higher precision counterparts:
+
+      float16   -> float32
+      bfloat16  -> float32
+      complex32 -> complex64
+
+    The result dtype is the same as the promotion dtype.
+    
+    PRESERVE preserves the promotion dtype as the computation and result dtype. It's appropriate
+    for kernels that perform no mathematical operations on their tensors.
+
+    INT_TO_FLOAT maps integer (and boolean) promotion dtypes to float32 for their computation and result dtypes.
+
+    COMPLEX_TO_FLOAT maps complex promotion dtypes to their corresponding float dtype for the return dtype:
+
+        complex32  -> float16
+        complex64  -> float32
+        complex128 -> float64
+
+    It determines the computation dtype like DEFAULT.
+
+    BOOL_TO_LONG maps boolean promotion dtypes to int64 for their computation and result dtypes.
+
+    ALWAYS_BOOL maps all promotion dtypes to bool for their result dtype. 
+    It determines the computation dtype like PRESERVE_PRECISION.
+
+    Example operators for each type promotion option:
+
+      DEFAULT                 : add
+      PRESERVE                : where, nextafter, cat
+      INT_TO_FLOAT            : sin
+      COMPLEX_TO_FLOAT        : abs
+      BOOL_TO_LONG            : pow
+      ALWAYS_BOOL             : eq
+    """
+
+    assert isinstance(a, (TensorProxy, Number))
+    assert isinstance(b, (TensorProxy, Number))
+
+    # TODO: update to handle wealky typed tensors
+    def _extract_type_or_dtype(x):
+        if isinstance(x, Number):
+            return get_numberlike_type(x)
+        
+        # x is a TensorProxy
+        return x.dtype
+    
+    a_dtype, b_dtype = _extract_type_or_dtype(a), _extract_type_or_dtype(b)
 
 
 #
