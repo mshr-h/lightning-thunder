@@ -1,6 +1,7 @@
 from typing import Sequence
 from collections import deque
 from enum import Enum, auto
+from functools import partial
 
 from thunder.core import prims
 from thunder.core import utils
@@ -16,6 +17,8 @@ from torch._C._nvfuser import (
     FusionDefinition,
 )
 
+nvTensor = torch._C._nvfuser.Tensor
+
 __all__ = [
     "nvfuser",
 ]
@@ -25,9 +28,52 @@ class nvOps(Enum):
     VAR_MEAN = auto()
 
 
+_torch_dtype_to_nvfuser_dtype_map = {
+    torch.cdouble: DataType.ComplexDouble,
+    torch.cfloat: DataType.ComplexFloat,
+    torch.double: DataType.Double,
+    torch.float: DataType.Float,
+    torch.half: DataType.Half,
+    torch.bfloat16: DataType.BFloat16,
+    torch.long: DataType.Int,
+    torch.int: DataType.Int32,
+    torch.bool: DataType.Bool,
+    # Python scalars
+    complex: DataType.ComplexDouble,
+    float: DataType.Double,
+    int: DataType.Int,
+    bool: DataType.Bool,
+}
+
+# Wrapper for prims.convert_element_type, necessary to convert dtype to nvfuser_dtype
+def _convert_element_type_translation(fd):
+    def _fn(a, dtype):
+        # Handles Thunder's use of Python types as "weak" tensor dtypes
+        # TODO: refactor into a helper
+        if isinstance(a, nvTensor) and dtype in (bool, int, float, complex):
+            tensor_dtype = torch.bool
+
+            if dtype is int:
+                tensor_dtype = torch.int64
+            if dtype is float:
+                tensor_dtype = torch.float32
+            if dtype is complex:
+                tensor_dtype = torch.complex64
+
+            nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[tensor_dtype]
+            return fd.ops.cast(a, nvfuser_dtype)
+
+        nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[dtype]
+        return fd.ops.cast(a, nvfuser_dtype)
+
+    return _fn
+
+
 # Maps the Thunder primitives to their corresponding nvfuser operation names
 # TODO: map directly to the nvfuser operations, not their names
 ops_to_nvfuser_ops_map = {
+    # Data movement and transformation prims
+    prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     # Elementwise binary prims
@@ -54,7 +100,7 @@ def _var_mean_prim_meta(a, dim, *, correction, **kwargs):
     return (var, mean)
 
 
-var_mean_prim = prims.make_prim(nvOps.VAR_MEAN, _var_mean_prim_meta, "var_mean")
+var_mean_prim = prims.make_prim(nvOps.VAR_MEAN, "var_mean", _var_mean_prim_meta)
 
 
 def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
@@ -85,25 +131,14 @@ def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
 
 
 def _get_nvfuser_op(fd, op):
-    return getattr(fd.ops, ops_to_nvfuser_ops_map[op])
+    nv_op = ops_to_nvfuser_ops_map[op]
 
+    # TODO: always directly look up the appropriate callable
+    if isinstance(nv_op, str):
+        return getattr(fd.ops, ops_to_nvfuser_ops_map[op])
 
-_torch_dtype_to_nvfuser_dtype_map = {
-    torch.cdouble: DataType.ComplexDouble,
-    torch.cfloat: DataType.ComplexFloat,
-    torch.double: DataType.Double,
-    torch.float: DataType.Float,
-    torch.half: DataType.Half,
-    torch.bfloat16: DataType.BFloat16,
-    torch.long: DataType.Int,
-    torch.int: DataType.Int32,
-    torch.bool: DataType.Bool,
-    # Python scalars
-    complex: DataType.ComplexDouble,
-    float: DataType.Double,
-    int: DataType.Int,
-    bool: DataType.Bool,
-}
+    # nv_op is a callable
+    return nv_op(fd)
 
 
 class nvFuserCtx(object):

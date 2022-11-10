@@ -3,10 +3,13 @@ import pytest
 import torch
 import thunder
 import thunder.core.lang as tlang
-import thunder.core.proxies as proxies
+import thunder.core.utils as utils
+
 import thunder.langs.torch as ttorch
 
 from torch.testing import make_tensor, assert_close
+
+from itertools import product
 
 
 # TODO: add device/dtype instantiation
@@ -361,3 +364,84 @@ def test_core_tensor_methods():
     thunder_result = traced_foo(a, b, c, d)
     torch_result = a + b - c + (d - a)
     assert_close(thunder_result, torch_result)
+
+
+# TODO: this test just spot-checks type promotion -- it could probably be better
+def test_type_promotion():
+    def foo(a, b):
+        return a + b
+
+    traced_foo = thunder.make_traced(foo)
+
+    b1 = make_tensor((2, 2), device="cuda", dtype=torch.bool)
+    i64 = make_tensor((2, 2), device="cuda", dtype=torch.int64)
+    bf16 = make_tensor((2, 2), device="cuda", dtype=torch.bfloat16)
+    f16 = make_tensor((2, 2), device="cuda", dtype=torch.float16)
+    f32 = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+
+    # float16 x float16 type promotion -- float16 result dtype
+    result = traced_foo(f16, f16)
+    assert result.dtype is torch.float16
+
+    # float16 x float32 type promotion -- float32 result dtype
+    result = traced_foo(f16, f32)
+    assert result.dtype is torch.float32
+
+    # float16 x bfloat16 type promotion -- float32 result dtype
+    result = traced_foo(f16, bf16)
+    assert result.dtype is torch.float32
+
+    # int64 x float16 type promotion -- float16 result dtype
+    result = traced_foo(f16, i64)
+    assert result.dtype is torch.float16
+
+    # bool x int64 type promotion -- int64 result dtype
+    result = traced_foo(b1, i64)
+    assert result.dtype is torch.int64
+
+    # f x int64 type promotion -- float result dtype
+    result = traced_foo(2.0, i64)
+    assert result.dtype is torch.float32
+
+    # b1 x int64 type promotion -- int64 result dypte
+    result = traced_foo(b1, i64)
+    assert result.dtype is torch.int64
+
+    def bar(a, b, c):
+        return a - b + c
+
+    traced_bar = thunder.make_traced(bar)
+
+    # float x int64 x float16 type promotion -- float16 result dtype
+    result = traced_bar(2.0, i64, f16)
+    assert result.dtype is torch.float16
+
+    # float x int x int64 -- float32 result dtype
+    result = traced_bar(2.1, -1, i64)
+    assert result.dtype is torch.float32
+
+
+def test_int_to_float_type_promotion():
+    def foo(a, b):
+        return a / b
+
+    traced_foo = thunder.make_traced(foo)
+
+    i64 = make_tensor((2, 2), device="cuda", dtype=torch.int64)
+    f16 = make_tensor((2, 2), device="cuda", dtype=torch.float16)
+
+    # int64 x int64 -- float32 result dtype
+    result = traced_foo(i64, i64)
+    assert result.dtype is torch.float32
+
+    # int x int64 -- float32 result dtype
+    result = traced_foo(2, i64)
+    assert result.dtype is torch.float32
+
+    # int64 x bool -- float32 result dtype
+    result = traced_foo(i64, True)
+    assert result.dtype is torch.float32
+
+    # int64 x float16 -- float16 result dtype
+    result = traced_foo(i64, f16)
+    assert result.dtype is torch.float16
