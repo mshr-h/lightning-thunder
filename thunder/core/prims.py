@@ -2,6 +2,7 @@ from enum import Enum, auto
 import operator
 from numbers import Number
 import builtins
+from functools import partial
 
 from .trace import get_trace
 from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy
@@ -26,6 +27,8 @@ from .utils import (
 __all__ = [
     # Methods and datastructures for constructing primitive operations
     "make_prim",
+    # Data movement and transformation prims
+    "convert_element_type",
     # Elementwise unary prims
     "abs",
     # Elementwise binary prims
@@ -45,6 +48,7 @@ __all__ = [
 
 
 class Ops(Enum):
+    CONVERT_ELEMENT_TYPE = auto()
     ABS = auto()
     ADD = auto()
     DIV = auto()
@@ -92,7 +96,7 @@ class Prim(object):
         return f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
 
 
-def make_prim(id, meta, name, *, number_handler=None):
+def make_prim(id, name, meta):
     ops_to_meta_functions_map[id] = meta
     ops_to_pretty_name_map[id] = name
 
@@ -112,12 +116,31 @@ def make_prim(id, meta, name, *, number_handler=None):
 
         args = tuple(map(_extract_constant, _args))
 
-        result = meta(*args, **kwargs, name=name, number_handler=number_handler)
+        result = meta(*args, **kwargs)
         sym = Prim(id, name, result, *args, **kwargs)
         t.add_symbol(sym)
         return result
 
     return _fn
+
+
+#
+# Data movement and transformation prims
+#
+
+
+def _convert_element_type_meta(a, dtype):
+    if isinstance(a, Number):
+        typ = utils.dtype_to_type(dtype)
+        return proxy(typ(utils.get_numberlike_value(a)))
+
+    # a is a Tensor
+    return TensorProxy(tensor=a, dtype=dtype)
+
+
+convert_element_type = make_prim(
+    Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta
+)
 
 
 #
@@ -147,7 +170,11 @@ def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
     return proxy(value)
 
 
-abs = make_prim(Ops.ABS, _elementwise_unary_meta, "abs", number_handler=builtins.abs)
+abs = make_prim(
+    Ops.ABS,
+    "abs",
+    partial(_elementwise_unary_meta, name="abs", number_handler=builtins.abs),
+)
 
 #
 # Elementwise binary prims
@@ -200,7 +227,11 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
     return TensorProxy(tensor=tensor)
 
 
-add = make_prim(Ops.ADD, _elementwise_binary_meta, "add", number_handler=operator.add)
+add = make_prim(
+    Ops.ADD,
+    "add",
+    partial(_elementwise_binary_meta, name="add", number_handler=operator.add),
+)
 
 
 def _div_number_handler(a, b):
@@ -212,10 +243,16 @@ def _div_number_handler(a, b):
 
 
 div = make_prim(
-    Ops.DIV, _elementwise_binary_meta, "div", number_handler=_div_number_handler
+    Ops.DIV,
+    "div",
+    partial(_elementwise_binary_meta, name="div", number_handler=_div_number_handler),
 )
 
-sub = make_prim(Ops.SUB, _elementwise_binary_meta, "sub", number_handler=operator.sub)
+sub = make_prim(
+    Ops.SUB,
+    "sub",
+    partial(_elementwise_binary_meta, name="sub", number_handler=operator.sub),
+)
 
 #
 # Shape prims
@@ -227,7 +264,9 @@ def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
 
 
 broadcast_in_dim = make_prim(
-    Ops.BROADCAST_IN_DIM, broadcast_in_dim_meta, "broadcast_in_dim"
+    Ops.BROADCAST_IN_DIM,
+    "broadcast_in_dim",
+    broadcast_in_dim_meta,
 )
 
 #
@@ -266,7 +305,7 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
 
 
 sum_meta = reduction_meta
-sum = make_prim(Ops.SUM, sum_meta, "sum")
+sum = make_prim(Ops.SUM, "sum", sum_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
@@ -277,4 +316,4 @@ def var_meta(a, dims, *, correction, **kwargs):
     return reduction_meta(a, dims, output_dtype=output_dtype)
 
 
-var = make_prim(Ops.VAR, var_meta, "var")
+var = make_prim(Ops.VAR, "var", var_meta)

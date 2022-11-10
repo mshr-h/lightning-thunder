@@ -24,7 +24,6 @@ __all__ = [
     "corresponding_complex_dtype",
     "dtype_to_type",
     "type_to_dtype",
-    "dtype_to_type_ctor",
     "check_same_dtype",
     "get_numberlike_type",
     "get_numberlike_value",
@@ -42,6 +41,8 @@ __all__ = [
 # Common types
 # TODO: extend types if libraries like torch are available
 ShapeType = Union[List[int], Tuple[int, ...]]
+
+# TODO: Creates type.py and let thunder.Tensor stand for any tensor object
 
 
 #
@@ -66,35 +67,37 @@ def check(
 #
 
 # TODO: make this non-Torch-specific
-_integer_dtypes = (torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64)
+_integer_dtypes = (
+    torch.bool,
+    torch.uint8,
+    torch.int8,
+    torch.int16,
+    torch.int32,
+    torch.int64,
+)
 _low_precision_dtypes = (torch.float16, torch.bfloat16, torch.complex32)
 _float_dtypes = (torch.float16, torch.bfloat16, torch.float32, torch.float64)
 _complex_dtypes = (torch.complex32, torch.complex64, torch.complex128)
 
 
 def is_boolean_dtype(dtype: torch.dtype) -> bool:
-    assert isinstance(dtype, torch.dtype)
-    return dtype is torch.bool
+    return dtype is torch.bool or dtype is bool
 
 
-def is_integer_dtype(dtype: torch.dtype) -> bool:
-    assert isinstance(dtype, torch.dtype)
-    return dtype in _integer_dtypes
+def is_integer_dtype(dtype) -> bool:
+    return dtype in _integer_dtypes or dtype in (bool, int)
 
 
 def is_low_precision_dtype(dtype: torch.dtype) -> bool:
-    assert isinstance(dtype, torch.dtype)
     return dtype in _low_precision_dtypes
 
 
 def is_float_dtype(dtype: torch.dtype) -> bool:
-    assert isinstance(dtype, torch.dtype)
-    return dtype in _float_dtypes
+    return dtype in _float_dtypes or dtype is float
 
 
 def is_complex_dtype(dtype: torch.dtype) -> bool:
-    assert isinstance(dtype, torch.dtype)
-    return dtype in _complex_dtypes
+    return dtype in _complex_dtypes or dtype is complex
 
 
 _complex_to_real_dtype_map = {
@@ -124,18 +127,19 @@ def dtype_to_type(dtype: torch.dtype) -> type:
     Computes the corresponding Python type (AKA "type kind") for the
     given dtype.
     """
-    assert isinstance(dtype, torch.dtype)
-
-    if dtype is torch.bool:
+    if is_boolean_dtype(dtype):
         return bool
-    if dtype in _integer_dtypes:
+    if is_integer_dtype(dtype):
         return int
-    if dtype in _float_dtypes:
+    if is_float_dtype(dtype):
         return float
-    if dtype in _complex_dtypes:
+    if is_complex_dtype(dtype):
         return complex
 
+    check(False, lambda: f"Unknown dtype {dtype}!")
 
+
+# TODO: probably want to remove this by treating the python number types as dtypes
 def type_to_dtype(typ: type) -> torch.dtype:
     """
     Computes the corresponding dtype for a Number type.
@@ -153,24 +157,6 @@ def type_to_dtype(typ: type) -> torch.dtype:
         return corresponding_complex_dtype(torch.get_default_dtype())
 
     raise ValueError("Invalid type {typ}!")
-
-
-def dtype_to_type_ctor(dtype: torch.dtype):
-    """
-    Computes the corresponding Python type constructor for the
-    given dtype.
-    """
-
-    if dtype is torch.bool:
-        return bool
-    if dtype in _integer_dtypes:
-        return int
-    if dtype in _float_dtypes:
-        return float
-    if dtype in _complex_dtypes:
-        return complex
-
-    raise ValueError("Invalid dtype!")
 
 
 def get_numberlike_type(x):
@@ -191,29 +177,6 @@ def get_numberlike_value(x):
         return x
 
     check(True, lambda: f"Unexpected type {type(x)}!")
-
-
-def get_higher_type(a: type, b: type) -> type:
-    """
-    Returns the higher of the two given Number types.
-    The types are ordered bool -> int -> float -> complex.
-    """
-    # Type checking
-    assert a in _ordered_types
-    assert b in _ordered_types
-
-    if a is b:
-        return a
-
-    for typ in _ordered_types:
-        if a is typ:
-            return b
-        if b is typ:
-            return a
-
-    raise ValueError("Unknown Python scalar type!")
-
-
 
 
 # TODO: maybe support numbers, too?
@@ -246,21 +209,93 @@ def check_same_dtype(*args):
             lambda: f"Found distinct dtype {dtype}, expected {expected_dtype}!",
         )
 
+
+# TODO: construct Thunder types that include i_, f_, and c_
+# TODO: consider more efficient datastructures
+b1, u1, i1, i2, i4, i8 = _integer_dtypes
+f2, bf, f4, f8 = _float_dtypes
+c4, c8, c16 = _complex_dtypes
+b_, i_, f_, c_ = bool, int, float, complex
+
+_dtype_to_number_map = {
+    # Note: b_ and b1 are currently synonymous
+    # TODO: canonicalize to just bool to properly support bool x bool operations
+    b_: 0,
+    b1: 0,
+    u1: 1,
+    i1: 2,
+    i2: 3,
+    i4: 4,
+    i8: 5,
+    bf: 6,
+    f2: 7,
+    f4: 8,
+    f8: 9,
+    c4: 10,
+    c8: 11,
+    c16: 12,
+    i_: 13,
+    f_: 14,
+    c_: 15,
+}
+
+_elementwise_promotion_table = [
+    # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
+    [b1, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_],  # b1
+    [u1, u1, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, u1, f_, c_],  # u1
+    [i1, i2, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i1, f_, c_],  # i1
+    [i2, i2, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i2, f_, c_],  # i2
+    [i4, i4, i4, i4, i4, i8, bf, f2, f4, f8, c4, c8, c16, i4, f_, c_],  # i4
+    [i8, i8, i8, i8, i8, i8, bf, f2, f4, f8, c4, c8, c16, i8, f_, c_],  # i8
+    [bf, bf, bf, bf, bf, bf, bf, f4, f4, f8, c8, c8, c16, bf, bf, c8],  # bf
+    [f2, f2, f2, f2, f2, f2, f4, f2, f4, f8, c4, c8, c16, i2, f2, c4],  # f2
+    [f4, f4, f4, f4, f4, f4, f4, f4, f4, f8, c8, c8, c16, f4, f4, c8],  # f4
+    [f8, f8, f8, f8, f8, f8, f8, f8, f8, f8, c16, c16, c16, f8, f8, c16],  # f8
+    [c4, c4, c4, c4, c4, c4, c8, c4, c8, c16, c4, c8, c16, c4, c4, c4],  # c4
+    [c8, c8, c8, c8, c8, c8, c8, c8, c8, c16, c8, c8, c16, c8, c8, c8],  # c8
+    [
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+        c16,
+    ],  # c16
+    [i_, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_],  # i_
+    [f_, f_, f_, f_, f_, f_, bf, f2, f4, f8, c4, c8, c16, f_, f_, c_],  # f_
+    [c_, c_, c_, c_, c_, c_, c8, c4, c8, c16, c4, c8, c16, c_, c_, c_],  # c_
+    # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
+]
+
 # TODO: working here
 # map types/dtypes to numbers that represent table position
 # lookup in table
 def _elementwise_type_promotion(a, b):
-    b1 = torch.bool
-    u1, i1, i2, i4, i8 = _integer_dtypes
-    f2, bf, f4, f8 = _float_dtypes
-    c4, c8, c16 = _complex_dtypes
-    i_, f_, c_ = int, float, complex
+    a, b = _dtype_to_number_map[a], _dtype_to_number_map[b]
+    return _elementwise_promotion_table[a][b]
 
-    _elementwise_promotion_table = [
-            #b1	 u1	 i1	 i2	 i4	 i8	 bf	 f2	 f4	 f8	 c4  c8	 c16  i_  f_  c_
-            [b1, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_]  # b1
-            [u1, u1, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, u1, f_, c_]  #u1
-    ]
+
+# Maps datatypes to their computation types for elementwise operations
+_computation_dtype_map = {
+    torch.bfloat16: torch.float32,
+    torch.float16: torch.float32,
+    torch.complex32: torch.complex64,
+}
+
+
+def _computation_dtype(dtype):
+    return _computation_dtype_map.get(dtype, dtype)
+
 
 class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
     DEFAULT = (0,)
@@ -270,18 +305,24 @@ class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
     COMPLEX_TO_FLOAT = (4,)
     BOOL_TO_LONG = (5,)
 
-# TODO: document type promotion kinds
-def elementwise_type_promotion(a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND):
+
+# TODO: generalize to varargs, allow numbers, dtypes, and tensors
+def elementwise_type_promotion(
+    a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
+):
     """
     Computes the computation and result dtypes for elementwise type promotion
     on the given arguments and with the given elementwise type promotion kind.
 
-    Type promotion in Thunder conceptually corresponds with JAX's type promotion. 
-    See https://jax.readthedocs.io/en/latest/type_promotion.html. 
+    Type promotion in Thunder conceptually corresponds with JAX's type promotion.
+    See https://jax.readthedocs.io/en/latest/type_promotion.html.
 
-    Reviewing the inputs determines a "promotion dtype", but this function returns a 
-    "computation dtype" and a "result dtype." The "type_promotion"kind" argument 
+    Reviewing the inputs determines a "promotion dtype", but this function returns a
+    "computation dtype" and a "result dtype." The "type_promotion"kind" argument
     determines how the promotion dtype is mapped to a computation and result dtype.
+
+    PRESERVE preserves the promotion dtype as the computation and result dtype.
+    It's appropriate for kernels that perform no mathematical operations on their tensors.
 
     DEFAULT type promotion selects a computation dtype by mapping low precision promotion dtypes to their
     higher precision counterparts:
@@ -291,24 +332,21 @@ def elementwise_type_promotion(a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMO
       complex32 -> complex64
 
     The result dtype is the same as the promotion dtype.
-    
-    PRESERVE preserves the promotion dtype as the computation and result dtype. It's appropriate
-    for kernels that perform no mathematical operations on their tensors.
 
-    INT_TO_FLOAT maps integer (and boolean) promotion dtypes to float32 for their computation and result dtypes.
+    INT_TO_FLOAT is like DEFAULT, except integer promotion dtypes map to float for their
+    computation and result dtypes.
 
-    COMPLEX_TO_FLOAT maps complex promotion dtypes to their corresponding float dtype for the return dtype:
+    COMPLEX_TO_FLOAT is like DEFAULT, except complex promotion dtypes have their corresponding
+    float dtypes as a return dtype:
 
         complex32  -> float16
         complex64  -> float32
         complex128 -> float64
 
-    It determines the computation dtype like DEFAULT.
+    BOOL_TO_LONG is like DEFAULT, except boolean promotion types use int64 for their computation
+    and result dtypes.
 
-    BOOL_TO_LONG maps boolean promotion dtypes to int64 for their computation and result dtypes.
-
-    ALWAYS_BOOL maps all promotion dtypes to bool for their result dtype. 
-    It determines the computation dtype like PRESERVE_PRECISION.
+    ALWAYS_BOOL is like PRESERVE, except the result dtype is always bool.
 
     Example operators for each type promotion option:
 
@@ -327,11 +365,41 @@ def elementwise_type_promotion(a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMO
     def _extract_type_or_dtype(x):
         if isinstance(x, Number):
             return get_numberlike_type(x)
-        
+
         # x is a TensorProxy
         return x.dtype
-    
+
     a_dtype, b_dtype = _extract_type_or_dtype(a), _extract_type_or_dtype(b)
+    promotion_dtype = _elementwise_type_promotion(a_dtype, b_dtype)
+
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE:
+        return promotion_dtype, promotion_dtype
+
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
+        return promotion_dtype, torch.bool
+
+    if (
+        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT
+        and is_integer_dtype(promotion_dtype)
+    ):
+        return float, float
+
+    if (
+        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT
+        and is_complex_dtype(promotion_dtype)
+    ):
+        return _computation_dtype(promotion_dtype), corresponding_real_dtype(
+            promotion_dtype
+        )
+
+    if (
+        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG
+        and is_boolean_dtype(promotion_dtype)
+    ):
+        return torch.long, torch.long
+
+    # Falls through to DEFAULT
+    return _computation_dtype(promotion_dtype), promotion_dtype
 
 
 #

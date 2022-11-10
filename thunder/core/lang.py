@@ -4,7 +4,7 @@ from numbers import Number
 
 from . import prims
 from . import utils
-from .proxies import TensorProxy
+from .proxies import TensorProxy, NumberProxy
 
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
@@ -14,8 +14,8 @@ from .proxies import TensorProxy
 # This file depends on prims.py.
 
 __all__ = [
-    # Language context
-    "CoreLangCtx",
+    # Data movement and transformation operations
+    "maybe_convert_to_dtype",
     # Shape operations
     "expand",
     # Elemenwise unary operations
@@ -24,9 +24,43 @@ __all__ = [
     "add",
     "sub",
     "true_divide",
-    # Data movement and transformation operations
-    "maybe_convert_to_dtype",
+    # Language context
+    "CoreLangCtx",
 ]
+
+#
+# Data movement and transformation operations
+#
+
+# TODO: implement ref.cast with an option to enforce safe casting
+def maybe_convert_to_dtype(a, dtype):
+    """
+    Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified.
+    """
+
+    if isinstance(a, TensorProxy):
+        if a.dtype != dtype:
+            return prims.convert_element_type(a, dtype)
+        return a
+    if isinstance(a, NumberProxy):
+        typ = utils.dtype_to_type(dtype)
+        if utils.get_numberlike_type(a) != typ:
+            return prims.convert_element_type(a, dtype)
+        return a
+    if isinstance(a, Number):
+        return utils.dtype_to_type(dtype)(a)
+    if isinstance(a, Sequence):
+        return tuple(maybe_convert_to_dtype(x, dtype) for x in a)
+
+    # Passthrough None because some functions wrapped with type promotion
+    # wrapper might have optional args
+    if a is None:
+        return None
+
+    raise ValueError(
+        f"Received type {type(a)} that is neither a tensor, number, or sequence!"
+    )
+
 
 #
 # Shape operations
@@ -127,63 +161,41 @@ def abs(a):
 # Elementwise binary operations
 #
 
-# TODO: add type promotion
-def add(a, b):
+# Helper function that implements broadcasting and type promotion for elementwise binary operations
+# TODO: consider making type promotion kind an annotation on operations so it can be queried
+#   programmatically
+def _elementwise_binary_helper(prim, type_promotion_kind, a, b):
     a, b = _maybe_broadcast(a, b)
+    computation_dtype, result_dtype = utils.elementwise_type_promotion(
+        a, b, type_promotion_kind=type_promotion_kind
+    )
 
-    return prims.add(a, b)
+    a, b = maybe_convert_to_dtype(a, computation_dtype), maybe_convert_to_dtype(
+        b, computation_dtype
+    )
+
+    result = prim(a, b)
+    result = maybe_convert_to_dtype(result, result_dtype)
+
+    return result
+
+
+def add(a, b):
+    return _elementwise_binary_helper(
+        prims.add, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
+    )
 
 
 def sub(a, b):
-    a, b = _maybe_broadcast(a, b)
-
-    return prims.sub(a, b)
+    return _elementwise_binary_helper(
+        prims.sub, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
+    )
 
 
 def true_divide(a, b):
-    a, b = _maybe_broadcast(a, b)
-
-    # TODO: support type promotion instead of this
-    a_dtype = utils.type_to_dtype(type(a)) if isinstance(a, Number) else a.dtype
-    b_dtype = utils.type_to_dtype(type(b)) if isinstance(b, Number) else b.dtype
-
-    utils.check(
-        utils.is_float_dtype(a_dtype),
-        lambda: f"true_divide only supports floating-point tensors and numbers currently!",
+    return _elementwise_binary_helper(
+        prims.div, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b
     )
-    utils.check(
-        utils.is_float_dtype(b_dtype),
-        lambda: f"true_divide only supports floating-point tensors and numbers currently!",
-    )
-
-    return prims.div(a, b)
-
-
-#
-# Data movement and transformation operations
-#
-
-# TODO: implement ref.cast with an option to enforce safe casting
-def maybe_convert_to_dtype(a, dtype):
-    """
-    Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified.
-    """
-
-    if isinstance(a, TensorProxy):
-        if a.dtype != dtype:
-            return prims.convert_element_type(a, dtype)
-        return a
-    if isinstance(a, Number):
-        return utils.dtype_to_type_ctor(dtype)(a)
-    if isinstance(a, Sequence):
-        return tuple(maybe_convert_to_dtype(x, dtype) for x in a)
-
-    # Passthrough None because some functions wrapped with type promotion
-    # wrapper might have optional args
-    if a is None:
-        return None
-
-    raise ValueError(f"Received type {type(a)} that is neither a tensor or a number!")
 
 
 class CoreLangCtx(object):
@@ -195,6 +207,9 @@ class CoreLangCtx(object):
 
     def sub(self, a, b):
         return sub(a, b)
+
+    def true_divide(self, a, b):
+        return true_divide(a, b)
 
     def intercept(self, op, *args, **kwargs):
         return None
