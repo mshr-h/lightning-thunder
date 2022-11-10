@@ -75,7 +75,7 @@ def make_traced(fn: Callable) -> Callable:
         proxy_result = fn(*proxy_args, **proxy_kwargs)
         t.add_output(proxy_result)
 
-        print(t)
+        # print(t)
 
         nv_result, fusion = nvfuser(t, *args, **kwargs)
 
