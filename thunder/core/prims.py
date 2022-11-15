@@ -147,6 +147,85 @@ convert_element_type = make_prim(
 # Elementwise unary prims
 #
 
+# Elementwise unary prims
+
+# Elementwise unary prims to implement:
+# "acos",
+# "acosh",
+# "asin",
+# "asinh",
+# "atan",
+# "atanh",
+# "cos",
+# "cosh",
+# "bitwise_not",
+# "cbrt",
+# "ceil",
+# "digamma",
+# "erf",
+# "erf_inv",
+# "erfc",
+# "erfcx",
+# "exp",
+# "expm1",
+# "exp2",
+# "fill",
+# "floor",
+# "imag",
+# "isfinite",
+# "lgamma",
+# "log",
+# "log1p",
+# "log2",
+# "log10",
+# "ndtri",
+# "neg",
+# "real",
+# "reciprocal",
+# "round",
+# "sign",
+# "signbit",
+# "sin",
+# "sinh",
+# "sqrt",
+# "tan",
+# "tanh",
+# "trunc",
+
+# nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
+# "acos",
+# "asin",
+# "atan",
+# "atanh",
+# "cos",
+# "cosh",
+# "bitwise_not",
+# "ceil",
+# "erf",
+# "erfc",
+# "exp",
+# "expm1",
+# "floor",
+# "imag",
+# "isfinite",
+# "lgamma",
+# "log",
+# "log1p",
+# "log2",
+# "log10",
+# "reciprocal",
+# "neg",
+# "real",
+# "round",
+# "rsqrt",
+# "sign",
+# "sin",
+# "sinh",
+# "sqrt",
+# "tan",
+# "tanh",
+# "trunc",
+
 
 def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
     # Tensor case
@@ -179,6 +258,51 @@ abs = make_prim(
 #
 # Elementwise binary prims
 #
+# "atan2",
+# "bitwise_and",
+# "bitwise_or",
+# "bitwise_xor",
+# # 'complex',  # needs custom meta
+# "eq",
+# "fmax",
+# "fmin",
+# "fmod",
+# "gcd",
+# "ge",
+# "gt",
+# "hypot",
+# "igamma",
+# "igammac",
+# "le",
+# "lt",
+# "maximum",
+# "minimum",
+# "mul",
+# "ne",
+# "nextafter",
+# "pow",
+# "remainder",
+# "rsqrt",
+# "shift_left",
+# "shift_right_arithmetic",
+# "shift_right_logical",  # not implemented
+# "zeta",
+
+# nvFuser binary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
+# "atan2",
+# "bitwise_and",
+# "bitwise_or",
+# "bitwise_xor",
+# "eq",
+# "fmod",
+# "ge",
+# "gt",
+# "le",
+# "lt",
+# "mul",
+# "ne",
+# "pow",
+# "remainder",
 
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
@@ -190,15 +314,14 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
     if not isinstance(b, (TensorProxy, Number)):
         raise ValueError(f"Unexpected type {type(b)}!")
 
+    # Inputs must have the same dtype
+    utils.check_same_dtype(a, b)
+
     # tensor x tensor case
     if isinstance(a, TensorProxy) and isinstance(b, TensorProxy):
         check(
             same_shape(a.shape, b.shape),
             lambda: f"Elementwise binary primitives require the shapes of the inputs tensors to be the same! But got shapes {a.shape} and {b.shape}!",
-        )
-        check(
-            a.dtype == b.dtype,
-            lambda: f"Elementwise binary primitives require the dtypes of the inputs tensors to be the same! But got dtypes {a.dtype} and {b.dtype}!",
         )
         return TensorProxy(tensor=a)
 
@@ -207,13 +330,6 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
         check(
             number_handler is not None,
             lambda: f"The elementwise binary primitive {name} doesn't support number x number inputs!",
-        )
-
-        a_typ = get_numberlike_type(a)
-        b_typ = get_numberlike_type(b)
-        check(
-            a_typ is b_typ,
-            lambda: f"Elementwise binary primitives require the types of numbers to be the same! But got types {a.typ} and {b.typ}!",
         )
 
         va, vb = get_numberlike_value(a), get_numberlike_value(b)
