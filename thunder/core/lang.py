@@ -22,6 +22,7 @@ __all__ = [
     "abs",
     # Elementwise binary operations
     "add",
+    "atan2",
     "sub",
     "true_divide",
     # Language context
@@ -122,7 +123,7 @@ def _compute_broadcast_shape(*_shapes):
 
             utils.check(
                 (shape[idx] == 1) or (common_shape[idx] == shape[idx]),
-                f"Attempting to broadcast a dimension of length {shape[idx]}!",
+                lambda: f"Attempting to broadcast a dimension of length {shape[idx]}!",
             )
 
     return tuple(common_shape)
@@ -183,6 +184,12 @@ def _elementwise_binary_helper(prim, type_promotion_kind, a, b):
 def add(a, b):
     return _elementwise_binary_helper(
         prims.add, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
+    )
+
+
+def atan2(a, b):
+    return _elementwise_binary_helper(
+        prims.atan2, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b
     )
 
 
