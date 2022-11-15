@@ -48,12 +48,17 @@ __all__ = [
 
 
 class Ops(Enum):
+    # Data movement and transformation prims
     CONVERT_ELEMENT_TYPE = auto()
     ABS = auto()
+    # Elementwise binary prims
     ADD = auto()
+    ATAN2 = auto()
     DIV = auto()
     SUB = auto()
+    # Shape prims
     BROADCAST_IN_DIM = auto()
+    # Reduction prims
     SUM = auto()
     VAR = auto()
 
@@ -348,6 +353,8 @@ add = make_prim(
     "add",
     partial(_elementwise_binary_meta, name="add", number_handler=operator.add),
 )
+
+atan2 = make_prim(Ops.ATAN2, "atan2", partial(_elementwise_binary_meta, name="atan2"))
 
 
 def _div_number_handler(a, b):
