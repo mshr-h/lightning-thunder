@@ -16,6 +16,9 @@ from .utils import (
     get_numberlike_value,
 )
 
+# TODO: get rid of requiring torch
+import torch
+
 # This file defines Thunder's "primitive" operations. These are the
 #   "building blocks" for all of Thunder's operators.
 
@@ -33,6 +36,8 @@ __all__ = [
     "abs",
     # Elementwise binary prims
     "add",
+    "atan2",
+    "bitwise_and",
     "div",
     "sub",
     # Shape prims
@@ -54,6 +59,7 @@ class Ops(Enum):
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
+    BITWISE_AND = auto()
     DIV = auto()
     SUB = auto()
     # Shape prims
@@ -146,6 +152,43 @@ def _convert_element_type_meta(a, dtype):
 convert_element_type = make_prim(
     Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta
 )
+
+# Describes how an elementwise primitive type promotes.
+# NOTE: this is distinct from ELEMENTWISE_TYPE_PROMOTION_KIND in utils.py,
+#   which describes how user-facing elementwise operations type promote.
+# This type promotion just maps an input type to a result type.
+# DEFAULT means the result type is the same as the input type.
+# ALWAYS_BOOL means the result type is always bool.
+# COMPLEX_TO_FLOAT means the result type is determined like for DEFAULT, unless
+#   the input type is complex, in which case the result type is the corresponding
+#   float type.
+# Examples uses:
+#  - DEFAULT: add
+#  - ALWAYS_BOOL: isfinite
+#  - COMPLEX_TO_FLOAT: abs
+
+
+class ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND(Enum):
+    DEFAULT = auto()
+    ALWAYS_BOOL = auto()
+    COMPLEX_TO_FLOAT = auto()
+
+
+def _prim_type_promotion(typ, type_promotion_kind):
+    if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT:
+        return typ
+
+    if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.BOOL:
+        if utils.is_number_type(type):
+            return bool
+        return torch.bool
+
+    if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
+        if typ is complex:
+            return float
+        return utils.corresponding_real_dtype(typ)
+
+    raise AssertionError("Unknown prim type promotion kind {type_promotion_kind}!")
 
 
 #
@@ -294,8 +337,6 @@ abs = make_prim(
 # "zeta",
 
 # nvFuser binary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
-# "atan2",
-# "bitwise_and",
 # "bitwise_or",
 # "bitwise_xor",
 # "eq",
@@ -311,7 +352,9 @@ abs = make_prim(
 
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
-def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
+def _elementwise_binary_meta(
+    a, b, *, name, type_promotion_kind, number_handler=None, **kwargs
+):
 
     # Tensors or Number inputs only
     if not isinstance(a, (TensorProxy, Number)):
@@ -320,7 +363,12 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
         raise ValueError(f"Unexpected type {type(b)}!")
 
     # Inputs must have the same dtype
-    utils.check_same_dtype(a, b)
+    number_type, tensor_dtype = utils.check_same_dtype(a, b)
+    input_type = tensor_dtype if tensor_dtype is not None else number_type
+
+    result_type = _prim_type_promotion(
+        input_type, type_promotion_kind=type_promotion_kind
+    )
 
     # tensor x tensor case
     if isinstance(a, TensorProxy) and isinstance(b, TensorProxy):
@@ -328,7 +376,7 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
             same_shape(a.shape, b.shape),
             lambda: f"Elementwise binary primitives require the shapes of the inputs tensors to be the same! But got shapes {a.shape} and {b.shape}!",
         )
-        return TensorProxy(tensor=a)
+        return TensorProxy(tensor=a, dtype=result_type)
 
     # scalar x scalar case
     if isinstance(a, Number) and isinstance(b, Number):
@@ -339,22 +387,45 @@ def _elementwise_binary_meta(a, b, *, name, number_handler=None, **kwargs):
 
         va, vb = get_numberlike_value(a), get_numberlike_value(b)
         value = number_handler(va, vb)
-        return proxy(value)
+        return proxy(result_type(value))
 
     # tensor x scalar case
     tensor = a if isinstance(a, TensorProxy) else b
     number = b if tensor is a else a
 
-    return TensorProxy(tensor=tensor)
+    return TensorProxy(tensor=tensor, dtype=result_type)
 
 
 add = make_prim(
     Ops.ADD,
     "add",
-    partial(_elementwise_binary_meta, name="add", number_handler=operator.add),
+    partial(
+        _elementwise_binary_meta,
+        name="add",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.add,
+    ),
 )
 
-atan2 = make_prim(Ops.ATAN2, "atan2", partial(_elementwise_binary_meta, name="atan2"))
+atan2 = make_prim(
+    Ops.ATAN2,
+    "atan2",
+    partial(
+        _elementwise_binary_meta,
+        name="atan2",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+    ),
+)
+
+bitwise_and = make_prim(
+    Ops.BITWISE_AND,
+    "bitwise_and",
+    partial(
+        _elementwise_binary_meta,
+        name="bitwise_and",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+    ),
+)
 
 
 def _div_number_handler(a, b):
@@ -368,13 +439,23 @@ def _div_number_handler(a, b):
 div = make_prim(
     Ops.DIV,
     "div",
-    partial(_elementwise_binary_meta, name="div", number_handler=_div_number_handler),
+    partial(
+        _elementwise_binary_meta,
+        name="div",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=_div_number_handler,
+    ),
 )
 
 sub = make_prim(
     Ops.SUB,
     "sub",
-    partial(_elementwise_binary_meta, name="sub", number_handler=operator.sub),
+    partial(
+        _elementwise_binary_meta,
+        name="sub",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.sub,
+    ),
 )
 
 #

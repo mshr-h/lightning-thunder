@@ -20,6 +20,7 @@ __all__ = [
     "is_low_precision_dtype",
     "is_float_dtype",
     "is_complex_dtype",
+    "is_number_type",
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
     "dtype_to_type",
@@ -98,6 +99,10 @@ def is_float_dtype(dtype: torch.dtype) -> bool:
 
 def is_complex_dtype(dtype: torch.dtype) -> bool:
     return dtype in _complex_dtypes or dtype is complex
+
+
+def is_number_type(typ):
+    return typ in (bool, int, float, complex)
 
 
 _complex_to_real_dtype_map = {
@@ -182,14 +187,16 @@ def get_numberlike_value(x):
 # TODO: maybe support numbers, too?
 def check_same_dtype(*args):
     """
-    Accepts multiple torch.dtypes, objects with a 'dtype' property.
+    Accepts multiple torch.dtypes, objects with a 'dtype' property, and numbers.
 
-    Checks that all given torch.dtypes or obj.dtype properties are equivalent.
+    Checks that all given torch.dtypes or obj.dtype properties are equivalent,
+    and that all numbers have the corresponding Python type.
+
     Raises a RuntimeError otherwise.
     """
 
     if len(args) == 0:
-        return
+        return None, None
 
     def _extract_dtype(x):
         if isinstance(x, torch.dtype):
@@ -198,16 +205,34 @@ def check_same_dtype(*args):
         if hasattr(x, "dtype"):
             return x.dtype
 
-        raise AssertionError(f"Trying to extract dtype from unknown type {x.dtype}!")
+        raise AssertionError(f"Trying to extract dtype from unknown type {x}!")
 
-    dtypes = tuple(map(_extract_dtype, args))
+    number_type = None
+    tensor_dtype = None
+    for a in args:
+        if isinstance(a, Number):
+            typ = get_numberlike_type(a)
+            check(
+                number_type is None or number_type is typ,
+                lambda: f"Expected type {number_type} but found {typ}!",
+            )
+            number_type = typ
+        else:
+            dtype = _extract_dtype(a)
+            check(
+                tensor_dtype is None or tensor_dtype is dtype,
+                lambda: f"Expected dtype {tensor_dtype} but found {dtype}!",
+            )
+            tensor_dtype = dtype
 
-    expected_dtype = dtypes[0]
-    for dtype in dtypes[1:]:
+    if number_type is not None and tensor_dtype is not None:
+        expected = dtype_to_type(tensor_dtype)
         check(
-            dtype == expected_dtype,
-            lambda: f"Found distinct dtype {dtype}, expected {expected_dtype}!",
+            number_type is expected,
+            lambda: f"Expected the type {expected}, corresponding to the dtype {tensor_dtype}, but found {number_type}!",
         )
+
+    return number_type, tensor_dtype
 
 
 # TODO: construct Thunder types that include i_, f_, and c_
@@ -239,6 +264,8 @@ _dtype_to_number_map = {
     c_: 15,
 }
 
+# TODO: manually reformat this table
+# fmt: off
 _elementwise_promotion_table = [
     # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
     [b1, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_],  # b1
@@ -276,6 +303,7 @@ _elementwise_promotion_table = [
     [c_, c_, c_, c_, c_, c_, c8, c4, c8, c16, c4, c8, c16, c_, c_, c_],  # c_
     # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
 ]
+# fmt: on
 
 # TODO: working here
 # map types/dtypes to numbers that represent table position

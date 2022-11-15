@@ -78,11 +78,13 @@ elementwise_binary_ops = []
 # TODO: extend this generator
 def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
     a = make_tensor((4, 4), device=device, dtype=dtype)
+    b = make_tensor((4, 4), device=device, dtype=dtype)
 
-    yield SampleInput(a, a)
+    yield SampleInput(a, b)
 
-    b = make_tensor((4, 1), device=device, dtype=dtype)
-    yield SampleInput(b, a)
+    # Tests broadcasting
+    c = make_tensor((4, 1), device=device, dtype=dtype)
+    yield SampleInput(a, c)
 
 
 # TODO: update dtypes with Thunder dtypes (when they exist)
@@ -94,6 +96,16 @@ add_opinfo = OpInfo(
     torch_reference=torch.add,
 )
 elementwise_binary_ops.append(add_opinfo)
+
+# NOTE: nvFuser does not currently support uint8, int8, or int16
+bitwise_and_opinfo = OpInfo(
+    tlang.bitwise_and,
+    device_types=("cuda",),
+    dtypes=(torch.bool, torch.int32, torch.int64),
+    sample_input_generator=elementwise_binary_generator,
+    torch_reference=torch.bitwise_and,
+)
+elementwise_binary_ops.append(bitwise_and_opinfo)
 
 sub_opinfo = OpInfo(
     tlang.sub,

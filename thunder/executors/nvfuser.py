@@ -79,6 +79,7 @@ ops_to_nvfuser_ops_map = {
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
+    prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
     prims.Ops.SUB: "sub",
     # Shape prims
