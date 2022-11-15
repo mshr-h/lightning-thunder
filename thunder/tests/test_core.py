@@ -445,3 +445,17 @@ def test_int_to_float_type_promotion():
     # int64 x float16 -- float16 result dtype
     result = traced_foo(i64, f16)
     assert result.dtype is torch.float16
+
+
+def test_atan2():
+    def foo(a, b):
+        return tlang.atan2(a, b)
+
+    traced_foo = thunder.make_traced(foo)
+
+    a = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    b = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+
+    thunder_result = traced_foo(a, b)
+    torch_result = torch.atan2(a, b)
+    assert_close(thunder_result, torch_result)
