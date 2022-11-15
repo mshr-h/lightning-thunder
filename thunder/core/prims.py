@@ -306,8 +306,6 @@ abs = make_prim(
 #
 # Elementwise binary prims
 #
-# "atan2",
-# "bitwise_and",
 # "bitwise_or",
 # "bitwise_xor",
 # # 'complex',  # needs custom meta
