@@ -6,6 +6,9 @@ from . import prims
 from . import utils
 from .proxies import TensorProxy, NumberProxy
 
+# TODO: remove this import
+import torch
+
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
 # from. These operators are build using primitives, and are intended to make it easier to write
@@ -23,6 +26,7 @@ __all__ = [
     # Elementwise binary operations
     "add",
     "atan2",
+    "bitwise_and",
     "sub",
     "true_divide",
     # Language context
@@ -165,11 +169,19 @@ def abs(a):
 # Helper function that implements broadcasting and type promotion for elementwise binary operations
 # TODO: consider making type promotion kind an annotation on operations so it can be queried
 #   programmatically
-def _elementwise_binary_helper(prim, type_promotion_kind, a, b):
+def _elementwise_binary_helper(
+    prim, type_promotion_kind, a, b, *, supported_dtypes=None
+):
     a, b = _maybe_broadcast(a, b)
     computation_dtype, result_dtype = utils.elementwise_type_promotion(
         a, b, type_promotion_kind=type_promotion_kind
     )
+
+    if supported_dtypes is not None:
+        utils.check(
+            computation_dtype in supported_dtypes,
+            lambda: f"Unsupported dtype {computation_dtype}!",
+        )
 
     a, b = maybe_convert_to_dtype(a, computation_dtype), maybe_convert_to_dtype(
         b, computation_dtype
@@ -190,6 +202,23 @@ def add(a, b):
 def atan2(a, b):
     return _elementwise_binary_helper(
         prims.atan2, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b
+    )
+
+
+def bitwise_and(a, b):
+    return _elementwise_binary_helper(
+        prims.bitwise_and,
+        utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+        a,
+        b,
+        supported_dtypes=(
+            torch.bool,
+            torch.uint8,
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+        ),
     )
 
 

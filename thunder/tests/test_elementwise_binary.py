@@ -48,3 +48,6 @@ def test_pytorch_consistency(op, device, dtype):
         )
         if result is not None:
             return result
+
+
+# TODO: test that the operator variant works properly
