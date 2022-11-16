@@ -71,7 +71,7 @@ class OpInfo(object):
 # Elementwise Unary OpInfos
 #
 
-# TODO: create elementwise binary OpInfo subclass and maybe auto add to list
+# TODO: create elementwise unary OpInfo subclass and maybe auto add to list
 elementwise_unary_ops = []
 
 # TODO: extend this generator
