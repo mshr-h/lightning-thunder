@@ -184,8 +184,29 @@ def _maybe_broadcast(*args):
 #
 # Elementwise unary operations
 #
+def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=None):
+    computation_dtype, result_dtype = utils.elementwise_type_promotion(
+        a, type_promotion_kind=type_promotion_kind
+    )
+
+    if supported_dtypes is not None:
+        utils.check(
+            computation_dtype in supported_dtypes,
+            lambda: f"Unsupported dtype {computation_dtype}!",
+        )
+
+    a = maybe_convert_to_dtype(a, computation_dtype)
+
+    result = prim(a)
+    result = maybe_convert_to_dtype(result, result_dtype)
+
+    return result
+
+
 def abs(a):
-    return prims.abs(a)
+    return _elementwise_unary_helper(
+        prims.abs, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a
+    )
 
 
 #
