@@ -67,6 +67,7 @@ class OpInfo(object):
 
         return set(self._dtypes)
 
+
 #
 # Elementwise Unary OpInfos
 #

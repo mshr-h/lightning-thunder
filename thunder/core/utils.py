@@ -308,9 +308,21 @@ _elementwise_promotion_table = [
 # TODO: working here
 # map types/dtypes to numbers that represent table position
 # lookup in table
-def _elementwise_type_promotion(a, b):
-    a, b = _dtype_to_number_map[a], _dtype_to_number_map[b]
-    return _elementwise_promotion_table[a][b]
+def _elementwise_type_promotion(*a):
+    arity = len(a)
+
+    if arity == 1:
+        return a[0]
+
+    elif arity == 2:
+        a0, a1 = a
+        a0, a1 = _dtype_to_number_map[a0], _dtype_to_number_map[a1]
+        return _elementwise_promotion_table[a0][a1]
+
+    check(
+        True,
+        lambda: f"Elementwise type promotion only supports unary or binary operations!",
+    )
 
 
 # Maps datatypes to their computation types for elementwise operations
@@ -336,7 +348,7 @@ class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
 
 # TODO: generalize to varargs, allow numbers, dtypes, and tensors
 def elementwise_type_promotion(
-    a, b, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
+    *a, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
 ):
     """
     Computes the computation and result dtypes for elementwise type promotion
@@ -386,8 +398,7 @@ def elementwise_type_promotion(
       ALWAYS_BOOL             : eq
     """
 
-    assert isinstance(a, (TensorProxy, Number))
-    assert isinstance(b, (TensorProxy, Number))
+    assert all(isinstance(el, (TensorProxy, Number)) for el in a)
 
     # TODO: update to handle wealky typed tensors
     def _extract_type_or_dtype(x):
@@ -397,8 +408,8 @@ def elementwise_type_promotion(
         # x is a TensorProxy
         return x.dtype
 
-    a_dtype, b_dtype = _extract_type_or_dtype(a), _extract_type_or_dtype(b)
-    promotion_dtype = _elementwise_type_promotion(a_dtype, b_dtype)
+    a_dtype = [_extract_type_or_dtype(el) for el in a]
+    promotion_dtype = _elementwise_type_promotion(*a_dtype)
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE:
         return promotion_dtype, promotion_dtype

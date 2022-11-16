@@ -178,7 +178,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT:
         return typ
 
-    if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.BOOL:
+    if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         if utils.is_number_type(type):
             return bool
         return torch.bool
@@ -186,7 +186,11 @@ def _prim_type_promotion(typ, type_promotion_kind):
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
         if typ is complex:
             return float
-        return utils.corresponding_real_dtype(typ)
+
+        if utils.is_complex_dtype(typ):
+            return utils.corresponding_real_dtype(typ)
+
+        return typ
 
     raise AssertionError("Unknown prim type promotion kind {type_promotion_kind}!")
 
@@ -314,7 +318,7 @@ abs = make_prim(
         _elementwise_unary_meta,
         name="abs",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT,
-        number_handler=builtins.abs
+        number_handler=builtins.abs,
     ),
 )
 

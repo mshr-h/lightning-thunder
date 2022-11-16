@@ -158,9 +158,7 @@ def _maybe_broadcast(*args):
 #
 # Elementwise unary operations
 #
-def _elementwise_unary_helper(
-    prim, type_promotion_kind, a, *, supported_dtypes=None
-):
+def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=None):
     computation_dtype, result_dtype = utils.elementwise_type_promotion(
         a, type_promotion_kind=type_promotion_kind
     )
