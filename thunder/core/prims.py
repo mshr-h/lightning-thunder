@@ -32,6 +32,11 @@ __all__ = [
     "make_prim",
     # Data movement and transformation prims
     "convert_element_type",
+    # Tensor creation prims
+    "full",
+    # Shape prims
+    "broadcast_in_dim_meta",
+    "broadcast_in_dim",
     # Elementwise unary prims
     "abs",
     # Elementwise binary prims
@@ -40,9 +45,6 @@ __all__ = [
     "bitwise_and",
     "div",
     "sub",
-    # Shape prims
-    "broadcast_in_dim_meta",
-    "broadcast_in_dim",
     # Reduction prims
     "reduction_meta",
     "sum_meta",
@@ -55,6 +57,9 @@ __all__ = [
 class Ops(Enum):
     # Data movement and transformation prims
     CONVERT_ELEMENT_TYPE = auto()
+    # Tensor creation prims
+    FULL = auto()
+    # Elementwise unary prims
     ABS = auto()
     # Elementwise binary prims
     ADD = auto()
@@ -108,6 +113,9 @@ class Prim(object):
 
 
 def make_prim(id, name, meta):
+    # TODO: probably want to consolidate these maps by having one map
+    #   to a prim data object with these attributes
+    #   (or possibly to a Prim class and rename the class that is inserted into traces)
     ops_to_meta_functions_map[id] = meta
     ops_to_pretty_name_map[id] = name
 
@@ -153,6 +161,22 @@ convert_element_type = make_prim(
     Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta
 )
 
+#
+# Tensor creation prims
+#
+
+# TODO: add some architecture for constructing tensor creation prims
+# TODO: add device support to tensor proxies
+def _full_meta(shape, fill_value, *, dtype, device):
+    return TensorProxy(shape=shape, dtype=dtype)
+
+
+full = make_prim(Ops.FULL, "full", _full_meta)
+
+#
+# Elementwise prims
+#
+
 # Describes how an elementwise primitive type promotes.
 # NOTE: this is distinct from ELEMENTWISE_TYPE_PROMOTION_KIND in utils.py,
 #   which describes how user-facing elementwise operations type promote.
@@ -194,8 +218,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 #
 # Elementwise unary prims
 #
-
-# Elementwise unary prims
 
 # Elementwise unary prims to implement:
 # "acos",

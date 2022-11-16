@@ -19,6 +19,8 @@ import torch
 __all__ = [
     # Data movement and transformation operations
     "maybe_convert_to_dtype",
+    # Tensor creation operations
+    "full",
     # Shape operations
     "expand",
     # Elemenwise unary operations
@@ -65,6 +67,30 @@ def maybe_convert_to_dtype(a, dtype):
     raise ValueError(
         f"Received type {type(a)} that is neither a tensor, number, or sequence!"
     )
+
+
+#
+# Tensor creation operations
+#
+
+# TODO: add check that dtype is a valid dtype? -- write error checking rules
+#   for ops and prims
+def full(shape, fill_value, *, device, dtype=None):
+    typ = utils.type_to_dtype(utils.get_numberlike_type(fill_value))
+    dtype = dtype if dtype is not None else typ
+
+    # TODO: fixme
+    if device != "cuda":
+        raise NotImplementedError
+
+    # Ensures the requested fill_value can be safely cast to the dtype
+    # NOTE: this is always true if the dtype is inferred
+    utils.check(
+        utils.can_safe_cast_to(cast_to=dtype, cast_from=typ),
+        lambda: f"Can't safely cast fill_value of {fill_value} to datatype {dtype}!",
+    )
+
+    return prims.full(shape, fill_value, device=device, dtype=dtype)
 
 
 #

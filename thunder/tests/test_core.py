@@ -459,3 +459,16 @@ def test_atan2():
     thunder_result = traced_foo(a, b)
     torch_result = torch.atan2(a, b)
     assert_close(thunder_result, torch_result)
+
+
+def test_full():
+    traced_full = thunder.make_traced(tlang.full)
+
+    try:
+        thunder_result = traced_full((1, 2, 3), 1.0, device="cuda", dtype=torch.float32)
+    except Exception:
+        pytest.skip("Expected to fail until connected to nvFuser full")
+
+    torch_result = torch.full((1, 2, 3), 1.0, device="cuda", dtype=torch.float32)
+
+    assert_close(thunder_result, torch_result)
