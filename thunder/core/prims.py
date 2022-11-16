@@ -275,10 +275,20 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "trunc",
 
 
-def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
+def _elementwise_unary_meta(
+    a, *, name, type_promotion_kind, number_handler=None, **kwargs
+):
+    # TODO: break fn into two?
+    number_type, tensor_dtype = utils.check_same_dtype(a)
+    input_type = tensor_dtype if tensor_dtype is not None else number_type
+
+    result_type = _prim_type_promotion(
+        input_type, type_promotion_kind=type_promotion_kind
+    )
+
     # Tensor case
     if isinstance(a, TensorProxy):
-        return TensorProxy(tensor=a)
+        return TensorProxy(tensor=a, dtype=result_type)
 
     # Number case
     check(
@@ -294,13 +304,18 @@ def _elementwise_unary_meta(a, *, name, number_handler=None, **kwargs):
     a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
     value = number_handler(va)
-    return proxy(value)
+    return proxy(result_type(value))
 
 
 abs = make_prim(
     Ops.ABS,
     "abs",
-    partial(_elementwise_unary_meta, name="abs", number_handler=builtins.abs),
+    partial(
+        _elementwise_unary_meta,
+        name="abs",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=builtins.abs
+    ),
 )
 
 #

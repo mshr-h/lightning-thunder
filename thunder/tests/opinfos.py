@@ -67,6 +67,35 @@ class OpInfo(object):
 
         return set(self._dtypes)
 
+#
+# Elementwise Unary OpInfos
+#
+
+# TODO: create elementwise binary OpInfo subclass and maybe auto add to list
+elementwise_unary_ops = []
+
+# TODO: extend this generator
+def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
+    a = make_tensor((4, 4), device=device, dtype=dtype)
+
+    yield SampleInput(a)
+
+
+# TODO: update dtypes with Thunder dtypes (when they exist)
+abs_opinfo = OpInfo(
+    tlang.abs,
+    device_types=("cuda",),
+    # TODO check types we support
+    dtypes=(torch.float16, torch.float32, torch.float64),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.abs,
+)
+elementwise_unary_ops.append(abs_opinfo)
+
+
+# Puts all opinfos into the "opinfos" list
+opinfos.extend(elementwise_unary_ops)
+
 
 #
 # Elementwise Binary OpInfos
