@@ -67,6 +67,12 @@ def make_traced(fn: Callable) -> Callable:
 
         proxy_kwargs = {}
         for k, v in kwargs.items():
+            # NOTE: an ugly exception to what we proxy -- kwarg strings and dtypes are passed through
+            # TODO: consider more carefully what we proxy vs. don't
+            if isinstance(v, str) or isinstance(v, torch.dtype):
+                proxy_kwargs[k] = v
+                continue
+
             p = proxy(v)
             inp = t.add_kwarg_input(k, p)
             proxy_kwargs[k] = p

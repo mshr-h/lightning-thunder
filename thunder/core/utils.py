@@ -21,6 +21,7 @@ __all__ = [
     "is_float_dtype",
     "is_complex_dtype",
     "is_number_type",
+    "can_safe_cast_to",
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
     "dtype_to_type",
@@ -103,6 +104,16 @@ def is_complex_dtype(dtype: torch.dtype) -> bool:
 
 def is_number_type(typ):
     return typ in (bool, int, float, complex)
+
+
+def can_safe_cast_to(*, cast_to: torch.dtype, cast_from: torch.dtype) -> bool:
+    for fn in (is_complex_dtype, is_float_dtype, is_integer_dtype, is_boolean_dtype):
+        if fn(cast_to):
+            return True
+        if fn(cast_from):
+            return False
+
+    check(True, lambda: f"Received unknown dtypes {cast_to}, {cast_from}!")
 
 
 _complex_to_real_dtype_map = {
