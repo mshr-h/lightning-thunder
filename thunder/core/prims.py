@@ -278,7 +278,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
 def _elementwise_unary_meta(
     a, *, name, type_promotion_kind, number_handler=None, **kwargs
 ):
-    # TODO: break fn into two?
+    # TODO: break fn into two, one for returning types, one for checking for equality?
     number_type, tensor_dtype = utils.check_same_dtype(a)
     input_type = tensor_dtype if tensor_dtype is not None else number_type
 
