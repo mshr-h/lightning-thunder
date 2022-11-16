@@ -313,7 +313,7 @@ abs = make_prim(
     partial(
         _elementwise_unary_meta,
         name="abs",
-        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT,
         number_handler=builtins.abs
     ),
 )
