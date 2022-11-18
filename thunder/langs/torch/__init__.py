@@ -5,7 +5,8 @@ import operator
 
 import thunder.core.trace as trace
 import thunder.core.utils as utils
-from thunder.core.proxies import TensorProxy
+import thunder.core.proxies as proxies
+from thunder.core.proxies import TensorProxy, dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
 
@@ -18,13 +19,30 @@ __all__ = [
     "mean",
     "var",
     "var_mean",
+    # Language context
+    "TorchLangCtx",
 ]
 
 # The Torch language
 
-# TODO: probably switch to just TensorProxy
-TensorLike = (TensorProxy, torch.Tensor)
-TensorLikeType = Union[TensorProxy, torch.Tensor]
+# TODO: language contexts like Torch could be
+#   expanded to allow datatypes that the original language didn't support
+_thunder_to_torch_dtype_map = {
+    dtypes.uint8: torch.uint8,
+    dtypes.int8: torch.int8,
+    dtypes.int16: torch.int16,
+    dtypes.int32: torch.int32,
+    dtypes.int64: torch.int64,
+    dtypes.bfloat16: torch.bfloat16,
+    dtypes.float16: torch.bfloat16,
+    dtypes.float32: torch.float32,
+    dtypes.float64: torch.float64,
+    dtypes.complex32: torch.complex32,
+    dtypes.complex64: torch.complex64,
+    dtypes.complex128: torch.complex128,
+}
+
+_torch_to_thunder_dtype_map = {v: k for k, v in _thunder_to_torch_dtype_map.items()}
 
 #
 # Reduction Ops
@@ -90,7 +108,7 @@ def _reduction_dims(shape, dims: Optional[Sequence]) -> Tuple[int, ...]:
 
 # TODO: restore out support?
 def _reduction(
-    a: TensorLikeType,
+    a,
     prim: Callable,
     *,
     has_identity: bool = True,
@@ -243,3 +261,41 @@ def var_mean(
     v = var(a, dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
+
+
+# TODO: make this a singleton?
+class TorchLangCtx(object):
+    def __init__(self):
+        pass
+
+    def proxy(self, x):
+        # TODO: maybe make this pre-emption mandatory by always calling it
+        #  before calling the language context's proxy method?
+        try:
+            return proxies.proxy(x)
+        except ValueError:
+            pass
+
+        if isinstance(x, torch.Tensor):
+            name = trace.get_trace().tensor_name()
+            dtype = self.thunder_dtype(x.dtype)
+
+            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
+
+        raise ValueError(f"Torch doesn't know how to proxy {x}!")
+
+    def is_dtype(self, x):
+        return isinstance(x, torch.dtype)
+
+    def dtype(self, thunder_dtype):
+        return _thunder_to_torch_dtype_map[thunder_dtype]
+
+    def thunder_dtype(self, torch_dtype):
+        return _torch_to_thunder_dtype_map[torch_dtype]
+
+    def intercept(self, op, *args, **kwargs):
+        return None
+
+
+def ctx():
+    return TorchLangCtx()

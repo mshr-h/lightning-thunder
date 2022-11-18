@@ -4,7 +4,7 @@ from numbers import Number
 
 from . import prims
 from . import utils
-from .proxies import TensorProxy, NumberProxy
+from .proxies import TensorProxy, NumberProxy, dtypes
 
 # TODO: remove this import
 import torch
@@ -46,7 +46,7 @@ def maybe_convert_to_dtype(a, dtype):
     """
 
     if isinstance(a, TensorProxy):
-        if a.dtype != dtype:
+        if a.thunder_dtype() != dtype:
             return prims.convert_element_type(a, dtype)
         return a
     if isinstance(a, NumberProxy):
@@ -76,8 +76,7 @@ def maybe_convert_to_dtype(a, dtype):
 # TODO: add check that dtype is a valid dtype? -- write error checking rules
 #   for ops and prims
 def full(shape, fill_value, *, device, dtype=None):
-    typ = utils.type_to_dtype(utils.get_numberlike_type(fill_value))
-    dtype = dtype if dtype is not None else typ
+    dtype = dtype if dtype is not None else type(fill_value)
 
     # TODO: fixme
     if device != "cuda":
@@ -284,6 +283,10 @@ def true_divide(a, b):
 class CoreLangCtx(object):
     def __init__(self):
         pass
+
+    # Passthrough
+    def dtype(self, thunder_dtype):
+        return thunder_dtype
 
     def add(self, a, b):
         return add(a, b)

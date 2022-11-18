@@ -5,7 +5,7 @@ from functools import partial
 
 from thunder.core import prims
 from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
+from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy, dtypes
 
 import thunder.langs.torch as ttorch
 
@@ -45,6 +45,22 @@ _torch_dtype_to_nvfuser_dtype_map = {
     bool: DataType.Bool,
 }
 
+_thunder_dtype_to_nvfuser_dtype_map = {
+    dtypes.complex128: DataType.ComplexDouble,
+    dtypes.complex64: DataType.ComplexFloat,
+    dtypes.float64: DataType.Double,
+    dtypes.float32: DataType.Float,
+    dtypes.float16: DataType.Half,
+    dtypes.bfloat16: DataType.BFloat16,
+    dtypes.int64: DataType.Int,
+    dtypes.int32: DataType.Int32,
+    # Python scalars
+    complex: DataType.ComplexDouble,
+    float: DataType.Double,
+    int: DataType.Int,
+    bool: DataType.Bool,
+}
+
 # Wrapper for prims.convert_element_type, necessary to convert dtype to nvfuser_dtype
 def _convert_element_type_translation(fd):
     def _fn(a, dtype):
@@ -60,10 +76,10 @@ def _convert_element_type_translation(fd):
             if dtype is complex:
                 tensor_dtype = torch.complex64
 
-            nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[tensor_dtype]
+            nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[tensor_dtype]
             return fd.ops.cast(a, nvfuser_dtype)
 
-        nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[dtype]
+        nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[dtype]
         return fd.ops.cast(a, nvfuser_dtype)
 
     return _fn
@@ -164,11 +180,11 @@ def _convert(fd, m, v, p):
         m[p.name] = nv
     elif isinstance(v, int):
         # NOTE: this handles both booleans and integers, since Python accepts bools as ints
-        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[type(v)]
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[type(v)]
         nv = fd.define_scalar(nv_dtype)
         m[p.name] = nv
     elif isinstance(v, float):
-        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[float]
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[float]
         nv = fd.define_scalar(nv_dtype)
         m[p.name] = nv
     else:
