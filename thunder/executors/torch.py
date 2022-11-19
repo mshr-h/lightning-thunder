@@ -5,7 +5,7 @@ from functools import partial
 
 from thunder.core import prims
 from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
+from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy, dtypes
 
 import thunder.langs.torch as ttorch
 
@@ -18,7 +18,23 @@ __all__ = [
 
 def _convert_element_type_translation():
     def _fn(a, dtype):
-        return a.to(dtype)
+        # Handles Thunder's use of Python types as "weak" tensor dtypes
+        # TODO: refactor into a helper
+        if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
+            tensor_dtype = torch.bool
+
+            if dtype is int:
+                tensor_dtype = dtypes.int64
+            if dtype is float:
+                tensor_dtype = dtypes.float32
+            if dtype is complex:
+                tensor_dtype = dtypes.complex64
+
+            torch_dtype = ttorch._thunder_to_torch_dtype_map[tensor_dtype]
+            return a.to(torch_dtype)
+
+        torch_dtype = ttorch._thunder_to_torch_dtype_map[dtype]
+        return a.to(torch_dtype)
 
     return _fn
 
@@ -80,13 +96,10 @@ class torchCtx(object):
 
 def _convert(m, v, p):
     if isinstance(v, torch.Tensor):
-        t = torch.empty(*v.shape, dtype=v.dtype).as_strided(
-            size=v.shape, stride=v.stride()
-        )
-        m[p.name] = t
+        m[p.name] = v
     elif isinstance(v, int) or isinstance(v, float):
         # NOTE: this handles both booleans and integers, since Python accepts bools as ints
-        m[p.name] = v
+        m[p.name] = torch.tensor(v)
     else:
         # NOTE: we may extend this but we want to break when nvFuser breaks
         raise AssertionError(f"execute(): Received unknown input type: {v}")
@@ -151,9 +164,9 @@ def execute(t, *args, **kwargs):
         # TODO: handle more datastructures (probably want to tree map here)
         if isinstance(out, Sequence):
             for o in out:
-                torch.out.append(proxy_to_torch_map[o.name])
+                torch_out.append(proxy_to_torch_map[o.name])
         else:
-            torch.out.append(proxy_to_torch_map[out.name])
+            torch_out.append(proxy_to_torch_map[out.name])
 
     # Filters sequences in args, which are currently treated as constants
     # TODO: revisit this modeling

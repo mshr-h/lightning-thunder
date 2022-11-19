@@ -85,7 +85,7 @@ def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
 # TODO: update dtypes with Thunder dtypes (when they exist)
 abs_opinfo = OpInfo(
     tlang.abs,
-    device_types=("cuda",),
+    device_types=("cpu", "cuda"),
     # TODO check types we support
     dtypes=(torch.float16, torch.float32, torch.float64),
     sample_input_generator=elementwise_unary_generator,
@@ -120,7 +120,7 @@ def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
 # TODO: update dtypes with Thunder dtypes (when they exist)
 add_opinfo = OpInfo(
     tlang.add,
-    device_types=("cuda",),
+    device_types=("cpu", "cuda"),
     dtypes=(torch.float16, torch.float32, torch.float64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.add,
@@ -130,7 +130,7 @@ elementwise_binary_ops.append(add_opinfo)
 # NOTE: nvFuser does not currently support uint8, int8, or int16
 bitwise_and_opinfo = OpInfo(
     tlang.bitwise_and,
-    device_types=("cuda",),
+    device_types=("cpu", "cuda"),
     dtypes=(torch.bool, torch.int32, torch.int64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.bitwise_and,
@@ -139,7 +139,7 @@ elementwise_binary_ops.append(bitwise_and_opinfo)
 
 sub_opinfo = OpInfo(
     tlang.sub,
-    device_types=("cuda",),
+    device_types=("cpu", "cuda"),
     dtypes=(torch.float16, torch.float32, torch.float64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.sub,

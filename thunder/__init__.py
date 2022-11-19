@@ -17,12 +17,10 @@ from .core.trace import (
 )
 from .core.proxies import proxy
 
-NVFUSER_AVAILABLE = True
+from .executors import NVFUSER_AVAILABLE
 
-try:
+if NVFUSER_AVAILABLE:
     from .executors.nvfuser import execute as nvfuser, nvFuserCtx
-except ModuleNotFoundError:
-    NVFUSER_AVAILABLE = False
 
 from .executors.torch import execute as torch_execute, torchCtx
 

@@ -10,7 +10,12 @@ __all__ = [
 
 
 # TODO: Add device type functionality to an object in this list
-_all_device_types = ["cuda"]
+_all_device_types = ["cpu", "cuda"]
+
+# _device_types_executor_support_map = {
+#     "torch": ("cpu", "cuda"),
+#     "nvfuser": ("cuda", )
+# }
 
 # TODO: add decorator support, support for test directives -- how would this control assert_close behavior?
 def _instantiate_test_template(template, scope, *, opinfo, device, dtype):
