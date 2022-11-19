@@ -215,10 +215,10 @@ def abs(a):
 def _elementwise_binary_helper(
     prim, type_promotion_kind, a, b, *, supported_dtypes=None
 ):
-    a, b = _maybe_broadcast(a, b)
     computation_dtype, result_dtype = utils.elementwise_type_promotion(
         a, b, type_promotion_kind=type_promotion_kind
     )
+    a, b = _maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
         utils.check(
