@@ -5,7 +5,7 @@ from functools import partial
 
 from thunder.core import prims
 from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
+from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy, dtypes
 
 import thunder.langs.torch as ttorch
 
@@ -45,6 +45,30 @@ _torch_dtype_to_nvfuser_dtype_map = {
     bool: DataType.Bool,
 }
 
+_thunder_dtype_to_nvfuser_dtype_map = {
+    dtypes.complex128_: DataType.ComplexDouble,
+    dtypes.complex128: DataType.ComplexDouble,
+    dtypes.complex64_: DataType.ComplexFloat,
+    dtypes.complex64: DataType.ComplexFloat,
+    dtypes.float64_: DataType.Double,
+    dtypes.float64: DataType.Double,
+    dtypes.float32_: DataType.Float,
+    dtypes.float32: DataType.Float,
+    dtypes.float16_: DataType.Half,
+    dtypes.float16: DataType.Half,
+    dtypes.bfloat16_: DataType.BFloat16,
+    dtypes.bfloat16: DataType.BFloat16,
+    dtypes.int64_: DataType.Int,
+    dtypes.int64: DataType.Int,
+    dtypes.int32_: DataType.Int32,
+    dtypes.int32: DataType.Int32,
+    # Python scalars
+    complex: DataType.ComplexDouble,
+    float: DataType.Double,
+    int: DataType.Int,
+    bool: DataType.Bool,
+}
+
 # Wrapper for prims.convert_element_type, necessary to convert dtype to nvfuser_dtype
 def _convert_element_type_translation(fd):
     def _fn(a, dtype):
@@ -54,16 +78,16 @@ def _convert_element_type_translation(fd):
             tensor_dtype = torch.bool
 
             if dtype is int:
-                tensor_dtype = torch.int64
+                tensor_dtype = dtypes.int64
             if dtype is float:
-                tensor_dtype = torch.float32
+                tensor_dtype = dtypes.float32
             if dtype is complex:
-                tensor_dtype = torch.complex64
+                tensor_dtype = dtypes.complex64
 
-            nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[tensor_dtype]
+            nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[tensor_dtype]
             return fd.ops.cast(a, nvfuser_dtype)
 
-        nvfuser_dtype = _torch_dtype_to_nvfuser_dtype_map[dtype]
+        nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[dtype]
         return fd.ops.cast(a, nvfuser_dtype)
 
     return _fn
@@ -92,12 +116,12 @@ ops_to_nvfuser_ops_map = {
 
 
 def _var_mean_prim_meta(a, dim, *, correction, **kwargs):
-    output_dtype = a.dtype
-    if utils.is_complex_dtype(a.dtype):
-        output_dtype = utils.corresponding_real_dtype(a.dtype)
+    output_dtype = a.thunder_dtype()
+    if utils.is_complex_dtype(output_dtype):
+        output_dtype = utils.corresponding_real_dtype(output_dtype)
 
     var = prims.reduction_meta(a, dim, output_dtype=output_dtype)
-    mean = prims.reduction_meta(a, dim, output_dtype=a.dtype)
+    mean = prims.reduction_meta(a, dim, output_dtype=a.thunder_dtype())
 
     return (var, mean)
 
@@ -117,7 +141,7 @@ def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
     # the real and imaginary parts
     # TODO: Creating a complex tensor from real and imaginary parts is not supported
     utils.check(
-        not utils.is_complex_dtype(a.dtype),
+        not utils.is_complex_dtype(a.thunder_dtype()),
         lambda: f"Complex tensors are not supported!",
     )
 
@@ -164,11 +188,11 @@ def _convert(fd, m, v, p):
         m[p.name] = nv
     elif isinstance(v, int):
         # NOTE: this handles both booleans and integers, since Python accepts bools as ints
-        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[type(v)]
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[type(v)]
         nv = fd.define_scalar(nv_dtype)
         m[p.name] = nv
     elif isinstance(v, float):
-        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[float]
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[float]
         nv = fd.define_scalar(nv_dtype)
         m[p.name] = nv
     else:

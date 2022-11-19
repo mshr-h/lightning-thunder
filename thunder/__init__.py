@@ -18,8 +18,7 @@ from .core.trace import (
 from .core.proxies import proxy
 from .executors.nvfuser import execute as nvfuser, nvFuserCtx
 
-# TODO make this dependency optional
-import torch
+import thunder.langs as langs
 
 __all__ = [
     "make_traced",
@@ -45,11 +44,13 @@ def make_traced(fn: Callable) -> Callable:
     """
 
     @wraps(fn)
-    def _fn(*args, **kwargs):
+    def _fn(*args, lang=langs.torch, **kwargs):
         # Acquires a new tracing context
         trace_token = new_trace()
         executor_token = set_executor_context(nvFuserCtx())
-        lang_token = set_language_context(lang.CoreLangCtx())
+
+        lang_ctx = lang.ctx()
+        lang_token = set_language_context(lang_ctx)
         t = get_trace()
 
         # Constructs proxies
@@ -61,21 +62,22 @@ def make_traced(fn: Callable) -> Callable:
                 proxy_args.append(arg)
                 continue
 
-            p = proxy(arg)
+            p = lang_ctx.proxy(arg)
             inp = t.add_input(p)
             proxy_args.append(p)
 
         proxy_kwargs = {}
         for k, v in kwargs.items():
-            # NOTE: an ugly exception to what we proxy -- kwarg strings and dtypes are passed through
+            # NOTE: two ugly exceptions to what we proxy -- kwarg strings and dtypes are passed through
             # TODO: consider more carefully what we proxy vs. don't
-            if isinstance(v, str) or isinstance(v, torch.dtype):
+            if isinstance(v, str):
                 proxy_kwargs[k] = v
-                continue
-
-            p = proxy(v)
-            inp = t.add_kwarg_input(k, p)
-            proxy_kwargs[k] = p
+            elif lang_ctx.is_dtype(v):
+                proxy_kwargs[k] = lang_ctx.thunder_dtype(v)
+            else:
+                p = lang_ctx.proxy(v)
+                inp = t.add_kwarg_input(k, p)
+                proxy_kwargs[k] = p
 
         # TODO: support multiple return values
         proxy_result = fn(*proxy_args, **proxy_kwargs)
@@ -89,6 +91,7 @@ def make_traced(fn: Callable) -> Callable:
         reset_language_context(lang_token)
         reset_executor_context(executor_token)
 
+        # TODO: convert nvFuser output to appropriate object based on language ctx
         # TODO: if the output is a datastructure it will be flattened before being handed to nvFuser
         #   this needs to re-wrap the nvFuser outputs into the datstructure
         if len(nv_result) == 1:

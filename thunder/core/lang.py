@@ -4,10 +4,7 @@ from numbers import Number
 
 from . import prims
 from . import utils
-from .proxies import TensorProxy, NumberProxy
-
-# TODO: remove this import
-import torch
+from .proxies import TensorProxy, NumberProxy, dtypes
 
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
@@ -46,7 +43,7 @@ def maybe_convert_to_dtype(a, dtype):
     """
 
     if isinstance(a, TensorProxy):
-        if a.dtype != dtype:
+        if a.thunder_dtype() != dtype:
             return prims.convert_element_type(a, dtype)
         return a
     if isinstance(a, NumberProxy):
@@ -76,8 +73,7 @@ def maybe_convert_to_dtype(a, dtype):
 # TODO: add check that dtype is a valid dtype? -- write error checking rules
 #   for ops and prims
 def full(shape, fill_value, *, device, dtype=None):
-    typ = utils.type_to_dtype(utils.get_numberlike_type(fill_value))
-    dtype = dtype if dtype is not None else typ
+    dtype = dtype if dtype is not None else type(fill_value)
 
     # TODO: fixme
     if device != "cuda":
@@ -219,10 +215,10 @@ def abs(a):
 def _elementwise_binary_helper(
     prim, type_promotion_kind, a, b, *, supported_dtypes=None
 ):
-    a, b = _maybe_broadcast(a, b)
     computation_dtype, result_dtype = utils.elementwise_type_promotion(
         a, b, type_promotion_kind=type_promotion_kind
     )
+    a, b = _maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
         utils.check(
@@ -259,12 +255,12 @@ def bitwise_and(a, b):
         a,
         b,
         supported_dtypes=(
-            torch.bool,
-            torch.uint8,
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.int64,
+            bool,
+            dtypes.uint8,
+            dtypes.int8,
+            dtypes.int16,
+            dtypes.int32,
+            dtypes.int64,
         ),
     )
 
@@ -284,6 +280,10 @@ def true_divide(a, b):
 class CoreLangCtx(object):
     def __init__(self):
         pass
+
+    # Passthrough
+    def dtype(self, thunder_dtype):
+        return thunder_dtype
 
     def add(self, a, b):
         return add(a, b)

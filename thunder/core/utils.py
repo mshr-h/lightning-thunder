@@ -1,11 +1,9 @@
 from typing import Callable, List, Type, Tuple, Union, Sequence
 from numbers import Number
 from enum import Enum
+from itertools import product
 
-from .proxies import TensorProxy, NumberProxy
-
-# TODO: remove unconditional torch import
-import torch
+from .proxies import TensorProxy, NumberProxy, dtypes
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -20,18 +18,23 @@ __all__ = [
     "is_low_precision_dtype",
     "is_float_dtype",
     "is_complex_dtype",
+    "is_exact_dtype",
+    "is_inexact_dtype",
     "is_number_type",
+    "is_weak_dtype",
+    "higher_type",
     "can_safe_cast_to",
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
+    "corresponding_weak_dtype",
     "dtype_to_type",
-    "type_to_dtype",
     "check_same_dtype",
     "get_numberlike_type",
     "get_numberlike_value",
     "ELEMENTWISE_TYPE_PROMOTION_KIND",
     "elementwise_type_promotion",
     # Shape-related functions
+    "is_number_tensor",
     "same_shape",
     "canonicalize_dim",
     "check_valid_length",
@@ -39,13 +42,6 @@ __all__ = [
     "check_valid_index",
     "check_no_duplicates",
 ]
-
-# Common types
-# TODO: extend types if libraries like torch are available
-ShapeType = Union[List[int], Tuple[int, ...]]
-
-# TODO: Creates type.py and let thunder.Tensor stand for any tensor object
-
 
 #
 # Error checking helpers
@@ -68,77 +64,185 @@ def check(
 # Datatype-related functions
 #
 
-# TODO: make this non-Torch-specific
+# TODO: review these sequences after refactoring Thunder dtypes
+#   ... probably want to add metadata to singleton dtype objects
 _integer_dtypes = (
-    torch.bool,
-    torch.uint8,
-    torch.int8,
-    torch.int16,
-    torch.int32,
-    torch.int64,
+    dtypes.uint8_,
+    dtypes.uint8,
+    dtypes.int8_,
+    dtypes.int8,
+    dtypes.int16_,
+    dtypes.int16,
+    dtypes.int32_,
+    dtypes.int32,
+    dtypes.int64_,
+    dtypes.int64,
 )
-_low_precision_dtypes = (torch.float16, torch.bfloat16, torch.complex32)
-_float_dtypes = (torch.float16, torch.bfloat16, torch.float32, torch.float64)
-_complex_dtypes = (torch.complex32, torch.complex64, torch.complex128)
+
+_low_precision_dtypes = (
+    dtypes.float16_,
+    dtypes.float16,
+    dtypes.bfloat16_,
+    dtypes.bfloat16,
+    dtypes.complex32_,
+    dtypes.complex32,
+)
+
+_float_dtypes = (
+    dtypes.float16_,
+    dtypes.float16,
+    dtypes.bfloat16_,
+    dtypes.bfloat16,
+    dtypes.float32_,
+    dtypes.float32,
+    dtypes.float64_,
+    dtypes.float64,
+)
+
+_complex_dtypes = (
+    dtypes.complex32_,
+    dtypes.complex32,
+    dtypes.complex64_,
+    dtypes.complex64,
+    dtypes.complex128_,
+    dtypes.complex128,
+)
 
 
-def is_boolean_dtype(dtype: torch.dtype) -> bool:
-    return dtype is torch.bool or dtype is bool
+def is_boolean_dtype(dtype) -> bool:
+    return dtype is bool
+
+
+def is_unsigned_dtype(dtype):
+    return dtype in (bool, dtypes.uint8_, dtypes.uint8)
+
+
+def is_signed_integer_dtype(dtype):
+    return is_integer_dtype(dtype) and not is_unsigned_dtype(dtype)
 
 
 def is_integer_dtype(dtype) -> bool:
     return dtype in _integer_dtypes or dtype in (bool, int)
 
 
-def is_low_precision_dtype(dtype: torch.dtype) -> bool:
+is_exact_dtype = is_integer_dtype
+
+
+def is_low_precision_dtype(dtype) -> bool:
     return dtype in _low_precision_dtypes
 
 
-def is_float_dtype(dtype: torch.dtype) -> bool:
+def is_float_dtype(dtype) -> bool:
     return dtype in _float_dtypes or dtype is float
 
 
-def is_complex_dtype(dtype: torch.dtype) -> bool:
+def is_complex_dtype(dtype) -> bool:
     return dtype in _complex_dtypes or dtype is complex
+
+
+def is_inexact_dtype(dtype):
+    return is_float_dtype(dtype) or is_complex_dtype(dtype)
 
 
 def is_number_type(typ):
     return typ in (bool, int, float, complex)
 
 
-def can_safe_cast_to(*, cast_to: torch.dtype, cast_from: torch.dtype) -> bool:
-    for fn in (is_complex_dtype, is_float_dtype, is_integer_dtype, is_boolean_dtype):
-        if fn(cast_to):
-            return True
-        if fn(cast_from):
-            return False
+def is_weak_dtype(dtype):
+    return dtype in (
+        bool,
+        int,
+        float,
+        complex,
+        dtypes.uint8_,
+        dtypes.int8_,
+        dtypes.int16_,
+        dtypes.int32_,
+        dtypes.int64_,
+        dtypes.bfloat16_,
+        dtypes.float16_,
+        dtypes.float32_,
+        dtypes.float64_,
+        dtypes.complex32_,
+        dtypes.complex64_,
+        dtypes.complex128_,
+    )
 
-    check(True, lambda: f"Received unknown dtypes {cast_to}, {cast_from}!")
+
+def higher_dtype(a, b):
+    for fn in (
+        is_complex_dtype,
+        is_float_dtype,
+        is_signed_integer_dtype,
+        is_unsigned_dtype,
+        is_boolean_dtype,
+    ):
+        if fn(a):
+            return a
+        if fn(b):
+            return b
+
+    raise ValueError(f"Unknown inputs {a} and {b}!")
+
+
+def can_safe_cast_to(*, cast_to, cast_from) -> bool:
+    return higher_dtype(cast_to, cast_from) == cast_to
 
 
 _complex_to_real_dtype_map = {
-    torch.complex128: torch.float64,
-    torch.complex64: torch.float32,
-    torch.complex32: torch.float16,
+    dtypes.complex128_: dtypes.float64_,
+    dtypes.complex128: dtypes.float64,
+    dtypes.complex64_: dtypes.float32_,
+    dtypes.complex64: dtypes.float32,
+    dtypes.complex32_: dtypes.float16_,
+    dtypes.complex32: dtypes.float16,
+    complex: float,
 }
 
 _real_to_complex_dtype_map = {
-    torch.float16: torch.complex32,
-    torch.bfloat16: torch.complex64,
-    torch.float32: torch.complex64,
-    torch.float64: torch.complex128,
+    dtypes.bfloat16_: dtypes.complex64_,
+    dtypes.bfloat16: dtypes.complex64,
+    dtypes.float16_: dtypes.complex32_,
+    dtypes.float16: dtypes.complex32,
+    dtypes.float32_: dtypes.complex64_,
+    dtypes.float32: dtypes.complex64,
+    dtypes.float64_: dtypes.complex128_,
+    dtypes.float64: dtypes.complex128,
+    float: complex,
 }
 
 
-def corresponding_real_dtype(dtype: torch.dtype) -> torch.dtype:
+def corresponding_real_dtype(dtype):
     return _complex_to_real_dtype_map[dtype]
 
 
-def corresponding_complex_dtype(dtype: torch.dtype) -> torch.dtype:
+def corresponding_complex_dtype(dtype):
     return _real_to_complex_dtype_map[dtype]
 
 
-def dtype_to_type(dtype: torch.dtype) -> type:
+_dtype_to_weak_dtype_map = {
+    dtypes.uint8: dtypes.uint8_,
+    dtypes.int8: dtypes.int8_,
+    dtypes.int16: dtypes.int16_,
+    dtypes.int32: dtypes.int32_,
+    dtypes.int64: dtypes.int64_,
+    dtypes.bfloat16: dtypes.bfloat16_,
+    dtypes.float16: dtypes.float16_,
+    dtypes.float32: dtypes.float32_,
+    dtypes.float64: dtypes.float64_,
+    dtypes.complex32: dtypes.complex32_,
+    dtypes.complex64: dtypes.complex64_,
+    dtypes.complex128: dtypes.complex128_,
+}
+
+
+def corresponding_weak_dtype(dtype):
+    if is_weak_dtype(dtype):
+        return dtype
+    return _dtype_to_weak_dtype_map[dtype]
+
+
+def dtype_to_type(dtype):
     """
     Computes the corresponding Python type (AKA "type kind") for the
     given dtype.
@@ -153,26 +257,6 @@ def dtype_to_type(dtype: torch.dtype) -> type:
         return complex
 
     check(False, lambda: f"Unknown dtype {dtype}!")
-
-
-# TODO: probably want to remove this by treating the python number types as dtypes
-def type_to_dtype(typ: type) -> torch.dtype:
-    """
-    Computes the corresponding dtype for a Number type.
-    """
-
-    assert isinstance(typ, type)
-
-    if typ is bool:
-        return torch.bool
-    if typ is int:
-        return torch.long
-    if typ is float:
-        return torch.get_default_dtype()
-    if typ is complex:
-        return corresponding_complex_dtype(torch.get_default_dtype())
-
-    raise ValueError("Invalid type {typ}!")
 
 
 def get_numberlike_type(x):
@@ -198,9 +282,9 @@ def get_numberlike_value(x):
 # TODO: maybe support numbers, too?
 def check_same_dtype(*args):
     """
-    Accepts multiple torch.dtypes, objects with a 'dtype' property, and numbers.
+    Accepts multiple dtypes, TensorProxies, and numbers.
 
-    Checks that all given torch.dtypes or obj.dtype properties are equivalent,
+    Checks that all given dtypes and dtypes of TensorProxies are equivalent,
     and that all numbers have the corresponding Python type.
 
     Raises a RuntimeError otherwise.
@@ -210,11 +294,11 @@ def check_same_dtype(*args):
         return None, None
 
     def _extract_dtype(x):
-        if isinstance(x, torch.dtype):
+        if isinstance(x, dtypes):
             return x
 
-        if hasattr(x, "dtype"):
-            return x.dtype
+        if isinstance(x, TensorProxy):
+            return x.thunder_dtype()
 
         raise AssertionError(f"Trying to extract dtype from unknown type {x}!")
 
@@ -246,106 +330,147 @@ def check_same_dtype(*args):
     return number_type, tensor_dtype
 
 
-# TODO: construct Thunder types that include i_, f_, and c_
-# TODO: consider more efficient datastructures
-b1, u1, i1, i2, i4, i8 = _integer_dtypes
-f2, bf, f4, f8 = _float_dtypes
-c4, c8, c16 = _complex_dtypes
-b_, i_, f_, c_ = bool, int, float, complex
+u8_, u8 = dtypes.uint8_, dtypes.uint8
+i8_, i8 = dtypes.int8_, dtypes.int8
+i16_, i16 = dtypes.int16_, dtypes.int16
+i32_, i32 = dtypes.int32_, dtypes.int32
+i64_, i64 = dtypes.int64_, dtypes.int64
 
-_dtype_to_number_map = {
-    # Note: b_ and b1 are currently synonymous
-    # TODO: canonicalize to just bool to properly support bool x bool operations
-    b_: 0,
-    b1: 0,
-    u1: 1,
-    i1: 2,
-    i2: 3,
-    i4: 4,
-    i8: 5,
-    bf: 6,
-    f2: 7,
-    f4: 8,
-    f8: 9,
-    c4: 10,
-    c8: 11,
-    c16: 12,
-    i_: 13,
-    f_: 14,
-    c_: 15,
+_exact_dtype_to_number_map = {
+    bool: 0,
+    int: 1,
+    u8_: 2,
+    u8: 3,
+    i8_: 4,
+    i16_: 5,
+    i32_: 6,
+    i64_: 7,
+    i8: 8,
+    i16: 9,
+    i32: 10,
+    i64: 11,
 }
 
-# TODO: manually reformat this table
 # fmt: off
-_elementwise_promotion_table = [
-    # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
-    [b1, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_],  # b1
-    [u1, u1, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, u1, f_, c_],  # u1
-    [i1, i2, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i1, f_, c_],  # i1
-    [i2, i2, i2, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i2, f_, c_],  # i2
-    [i4, i4, i4, i4, i4, i8, bf, f2, f4, f8, c4, c8, c16, i4, f_, c_],  # i4
-    [i8, i8, i8, i8, i8, i8, bf, f2, f4, f8, c4, c8, c16, i8, f_, c_],  # i8
-    [bf, bf, bf, bf, bf, bf, bf, f4, f4, f8, c8, c8, c16, bf, bf, c8],  # bf
-    [f2, f2, f2, f2, f2, f2, f4, f2, f4, f8, c4, c8, c16, i2, f2, c4],  # f2
-    [f4, f4, f4, f4, f4, f4, f4, f4, f4, f8, c8, c8, c16, f4, f4, c8],  # f4
-    [f8, f8, f8, f8, f8, f8, f8, f8, f8, f8, c16, c16, c16, f8, f8, c16],  # f8
-    [c4, c4, c4, c4, c4, c4, c8, c4, c8, c16, c4, c8, c16, c4, c4, c4],  # c4
-    [c8, c8, c8, c8, c8, c8, c8, c8, c8, c16, c8, c8, c16, c8, c8, c8],  # c8
-    [
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-        c16,
-    ],  # c16
-    [i_, u1, i1, i2, i4, i8, bf, f2, f4, f8, c4, c8, c16, i_, f_, c_],  # i_
-    [f_, f_, f_, f_, f_, f_, bf, f2, f4, f8, c4, c8, c16, f_, f_, c_],  # f_
-    [c_, c_, c_, c_, c_, c_, c8, c4, c8, c16, c4, c8, c16, c_, c_, c_],  # c_
-    # b1   u1   i1	 i2	  i4   i8   bf	 f2	  f4   f8   c4   c8  c16   i_   f_   c_
+# Exact x Exact type promotion table
+    # b -> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
+    #       `-> u8_ -> u8 ----------------------------^
+# TODO REVIEW: it's a little odd that u8_ + i64_ -> i16
+_elementwise_exact_promotion_table = [
+    #    b      i   u8_     u8    i8_   i16_   i32_  i64_  i8  i16  i32  i64
+    [ bool,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # b
+    [  int,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i 
+    [  u8_,   u8_,  u8_,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8_
+    [   u8,    u8,   u8,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8
+    [  i8_,   i8_,  i16,   i16,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i8_
+    [ i16_,  i16_,  i16,   i16,  i16_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i16_
+    [ i32_,  i32_,  i16,   i16,  i32_,  i32_,  i32_, i64_,  i8, i16, i32, i64], # i32_
+    [ i64_,  i64_,  i16,   i16,  i64_,  i64_,  i64_, i64_,  i8, i16, i32, i64], # i64_
+    [   i8,    i8,  i16,   i16,    i8,   i8,     i8,   i8,  i8, i16, i32, i64], # i8
+    [  i16,   i16,  i16,   i16,   i16,  i16,    i16,  i16, i16, i16, i32, i64], # i16
+    [  i32,   i32,  i32,   i32,   i32,  i32,    i32,  i32, i32, i32, i32, i64], # i32
+    [  i64,   i64,  i64,   i64,   i64,  i64,    i64,  i64, i64, i64, i64, i64], # i64
+    
+]
+
+
+
+bf_,     bf =  dtypes.bfloat16_,   dtypes.bfloat16
+f16_,   f16 =  dtypes.float16_,    dtypes.float16
+f32_,   f32 =  dtypes.float32_,    dtypes.float32
+f64_,   f64 =  dtypes.float64_,    dtypes.float64
+c32_,   c32 =  dtypes.complex32_,  dtypes.complex32
+c64_,   c64 =  dtypes.complex64_,  dtypes.complex64
+c128_, c128 =  dtypes.complex128_, dtypes.complex128
+
+_inexact_dtype_to_number_map = {
+    float   : 0,
+    bf_     : 1,
+    f16_    : 2,
+    f32_    : 3,
+    f64_    : 4,
+    bf      : 5,
+    f16     : 6,
+    f32     : 7,
+    f64     : 8,
+    complex : 9,
+    c32_    : 10,
+    c64_    : 11,
+    c128_   : 12,
+    c32     : 13,
+    c64     : 14,
+    c128    : 15,
+}
+
+#    c* -> c32* -> c64* -> c128* -> c32 ----> c64 ----> c128
+#   /    /        /       /       /          /        /
+#  /    /        /       /   ,-> float16 -> fp32 -> fp64
+# f -> fp16* -> fp32* -> fp64* -> bfloat16 --^
+#  `-> bfloat16* -^
+_elementwise_inexact_promotion_table = [
+    #       f    bf_   f16_   f32_    f64_   bf   f16   f32   f64  complex   c32_   c64_  c128_   c32   c64  c128
+    [   float,   bf_,  f16_,  f32_,  f64_,   bf,  f16,  f32,  f64, complex,  c32_,  c64_, c128_,  c32,  c64, c128], # f
+    [     bf_,   bf_,  f32_,  f32_,  f64_,   bf,  f16,  f32,  f64,    c64_,  c32_,  c64_, c128_,  c32,  c64, c128], # bf_
+    [    f16_,  f32_,  f16_,  f32_,  f64_,   bf,  f16,  f32,  f64,    c32_,  c32_,  c64_, c128_,  c32,  c64, c128], # f16_
+    [    f32_,  f32_,  f32_,  f32_,  f64_,   bf,  f16,  f32,  f64,    c64_,  c32_,  c64_, c128_,  c32,  c64, c128], # f32_
+    [    f64_,  f64_,  f64_,  f64_,  f64_,   bf,  f16,  f32,  f64,   c128_,  c32_,  c64_, c128_,  c32,  c64, c128], # f64_
+    [      bf,    bf,    bf,    bf,    bf,   bf,  f32,  f32,  f64,     c64,   c64,   c64,   c64,  c64,  c64, c128], # bf
+    [     f16,   f16,   f16,   f16,   f16,  f32,  f16,  f32,  f64,     c32,   c32,   c32,   c32,  c32,  c64, c128], # f16
+    [     f32,   f32,   f32,   f32,   f32,  f32,  f32,  f32,  f64,     c64,   c64,   c64,   c64,  c64,  c64, c128], # f32
+    [     f64,   f64,   f64,   f64,   f64,  f64,  f64,  f64,  f64,    c128,  c128,  c128,  c128, c128, c128, c128], # f64
+    [ complex,  c64_,  c32_,  c64_, c128_,  c64,  c32,  c64, c128, complex,  c32_,  c64_, c128_,  c32,  c64, c128], # complex
+    [    c32_,  c64_,  c32_,  c64_, c128_,  c64,  c32,  c64, c128,    c32_,  c32_,  c64_, c128_,  c32,  c64, c128], # c32_
+    [    c64_,  c64_,  c64_,  c64_, c128_,  c64,  c32,  c64, c128,    c64_,  c64_,  c64_, c128_,  c32,  c64, c128], # c64_
+    [   c128_, c128_, c128_, c128_, c128_,  c64,  c32,  c64, c128,   c128_, c128_, c128_, c128_,  c32,  c64, c128], # c128_
+    [     c32,   c32,   c32,   c32,   c32,  c64,  c32,  c64, c128,     c32,   c32,   c32,   c32,  c32,  c64, c128], # c32
+    [     c64,   c64,   c64,   c64,   c64,  c64,  c64,  c64, c128,     c64,   c64,   c64,   c64,  c64,  c64, c128], # c64
+    [    c128,  c128,  c128,  c128,  c128, c128, c128, c128, c128,    c128,  c128,  c128,  c128, c128, c128, c128], # c128
 ]
 # fmt: on
 
-# TODO: working here
-# map types/dtypes to numbers that represent table position
-# lookup in table
-def _elementwise_type_promotion(*a):
-    arity = len(a)
 
-    if arity == 1:
-        return a[0]
+def _elementwise_type_promotion(a, b):
+    # Inexact x exact and exact x inexact cases
+    # Inexact dtypes take preference over exact dtypes
+    if is_inexact_dtype(a) and is_exact_dtype(b):
+        return a
+    if is_exact_dtype(a) and is_inexact_dtype(b):
+        return b
 
-    elif arity == 2:
-        a0, a1 = a
-        a0, a1 = _dtype_to_number_map[a0], _dtype_to_number_map[a1]
-        return _elementwise_promotion_table[a0][a1]
+    # Exact x Exact case
+    # b -> i -> i8* -> i16* -> i32* -> i64* -> i8 -> i16 -> i32 -> i64
+    #       `-> u8* -> u8 ----------------------------^
+    if is_exact_dtype(a):
+        a_idx, b_idx = _exact_dtype_to_number_map[a], _exact_dtype_to_number_map[b]
+        return _elementwise_exact_promotion_table[a_idx][b_idx]
 
-    check(
-        True,
-        lambda: f"Elementwise type promotion only supports unary or binary operations!",
-    )
+    # Inexact x Inexact case
+    # c* -> c32* -> c64* -> c128* -> c32 ----> c64 ----> c128
+    #       /        /       /       /          /        /
+    #      /        /       /   ,-> float16 -> fp32 -> fp64
+    # fp16* ---> fp32* -> fp64* -> bfloat16 --^
+    # bfloat16* -^
+    a_idx, b_idx = _inexact_dtype_to_number_map[a], _inexact_dtype_to_number_map[b]
+    return _elementwise_inexact_promotion_table[a_idx][b_idx]
 
 
 # Maps datatypes to their computation types for elementwise operations
 _computation_dtype_map = {
-    torch.bfloat16: torch.float32,
-    torch.float16: torch.float32,
-    torch.complex32: torch.complex64,
+    dtypes.float16_: dtypes.float32_,
+    dtypes.float16: dtypes.float32,
+    dtypes.bfloat16_: dtypes.float32_,
+    dtypes.bfloat16: dtypes.float32,
+    dtypes.complex32_: dtypes.complex64_,
+    dtypes.complex32: dtypes.complex64,
 }
 
 
 def _computation_dtype(dtype):
     return _computation_dtype_map.get(dtype, dtype)
+
+
+def _has_weak_dtype(x):
+    return x.weak_dtype or is_number_tensor(x)
 
 
 class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
@@ -359,7 +484,7 @@ class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
 
 # TODO: generalize to varargs, allow numbers, dtypes, and tensors
 def elementwise_type_promotion(
-    *a, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
+    *args, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
 ):
     """
     Computes the computation and result dtypes for elementwise type promotion
@@ -409,44 +534,57 @@ def elementwise_type_promotion(
       ALWAYS_BOOL             : eq
     """
 
-    assert all(isinstance(el, (TensorProxy, Number)) for el in a)
+    # Type checks inputs
+    assert all(isinstance(a, (TensorProxy, Number)) for a in args)
+    assert len(args) > 0
 
-    # TODO: update to handle wealky typed tensors
-    def _extract_type_or_dtype(x):
+    has_tensor_input = False
+
+    def _extract_dtype(x):
         if isinstance(x, Number):
             return get_numberlike_type(x)
 
         # x is a TensorProxy
-        return x.dtype
+        has_tensor_input = True
+        if is_number_tensor(x):
+            return corresponding_weak_dtype(x.thunder_dtype())
+        return x.thunder_dtype()
 
-    a_dtype = [_extract_type_or_dtype(el) for el in a]
-    promotion_dtype = _elementwise_type_promotion(*a_dtype)
+    extracted = tuple(_extract_dtype(a) for a in args)
+    promotion_dtype = extracted[0]
+    for dtype in extracted[1:]:
+        promotion_dtype = _elementwise_type_promotion(promotion_dtype, dtype)
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE:
         return promotion_dtype, promotion_dtype
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
-        return promotion_dtype, torch.bool
+        return promotion_dtype, bool
 
     if (
         type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT
         and is_integer_dtype(promotion_dtype)
     ):
+        if not has_tensor_input:
+            return dtypes.float32_, dtypes.float32_
         return float, float
 
     if (
         type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT
         and is_complex_dtype(promotion_dtype)
     ):
-        return _computation_dtype(promotion_dtype), corresponding_real_dtype(
-            promotion_dtype
+        return (
+            _computation_dtype(promotion_dtype),
+            corresponding_real_dtype(promotion_dtype),
         )
 
     if (
         type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG
         and is_boolean_dtype(promotion_dtype)
     ):
-        return torch.long, torch.long
+        if has_tensor_input:
+            return dtypes.int64_, dtypes.int64_
+        return int, int
 
     # Falls through to DEFAULT
     return _computation_dtype(promotion_dtype), promotion_dtype
@@ -456,9 +594,21 @@ def elementwise_type_promotion(
 # Shape-related functions
 #
 
+
+def is_number_tensor(t):
+    """
+    True if the input is a "number tensor" -- a single element tensor with
+    an empty shape. False otherwise.
+    """
+    if len(t.shape) == 0:
+        return True
+
+    return False
+
+
 # TODO: maybe generalize to *args like check_same_dtype
 # TODO: change to check_same_shape or add check_same_shape variant and make check_same_dtype use the same pattern
-def same_shape(a: ShapeType, b: ShapeType) -> bool:
+def same_shape(a, b):
     if len(a) != len(b):
         return False
 
@@ -509,7 +659,7 @@ def check_valid_length(length: int):
     check(length >= 0, lambda: f"Found invalid length {length}!")
 
 
-def check_valid_shape(shape: ShapeType):
+def check_valid_shape(shape):
     """
     Validates that a sequence represents a valid shape.
     """

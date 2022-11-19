@@ -503,7 +503,7 @@ sub = make_prim(
 
 
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
-    return TensorProxy(shape=shape, dtype=a.dtype)
+    return TensorProxy(shape=shape, dtype=a.thunder_dtype())
 
 
 broadcast_in_dim = make_prim(
@@ -537,7 +537,7 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     """
 
     if output_dtype is None:
-        output_dtype = a.dtype
+        output_dtype = a.thunder_dtype()
 
     output_shape = _compute_reduction_output_shape(a.shape, dims)
 
@@ -552,10 +552,10 @@ sum = make_prim(Ops.SUM, "sum", sum_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
-    if utils.is_complex_dtype(a.dtype):
-        output_dtype = utils.corresponding_real_dtype(a.dtype)
+    if utils.is_complex_dtype(a.thunder_dtype()):
+        output_dtype = utils.corresponding_real_dtype(a.thunder_dtype())
     else:
-        output_dtype = a.dtype
+        output_dtype = a.thunder_dtype()
     return reduction_meta(a, dims, output_dtype=output_dtype)
 
 

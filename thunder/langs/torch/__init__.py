@@ -5,7 +5,8 @@ import operator
 
 import thunder.core.trace as trace
 import thunder.core.utils as utils
-from thunder.core.proxies import TensorProxy
+import thunder.core.proxies as proxies
+from thunder.core.proxies import TensorProxy, dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
 
@@ -18,13 +19,61 @@ __all__ = [
     "mean",
     "var",
     "var_mean",
+    # Language context
+    "TorchLangCtx",
 ]
 
 # The Torch language
 
-# TODO: probably switch to just TensorProxy
-TensorLike = (TensorProxy, torch.Tensor)
-TensorLikeType = Union[TensorProxy, torch.Tensor]
+# TODO: language contexts like Torch could be
+#   expanded to allow datatypes that the original language didn't support
+_thunder_to_torch_dtype_map = {
+    bool: torch.bool,
+    int: torch.int32,
+    float: torch.float32,
+    complex: torch.complex64,
+    dtypes.uint8_: torch.uint8,
+    dtypes.uint8: torch.uint8,
+    dtypes.int8_: torch.int8,
+    dtypes.int8: torch.int8,
+    dtypes.int16_: torch.int16,
+    dtypes.int16: torch.int16,
+    dtypes.int32_: torch.int32,
+    dtypes.int32: torch.int32,
+    dtypes.int64_: torch.int64,
+    dtypes.int64: torch.int64,
+    dtypes.bfloat16_: torch.bfloat16,
+    dtypes.bfloat16: torch.bfloat16,
+    dtypes.float16_: torch.float16,
+    dtypes.float16: torch.float16,
+    dtypes.float32_: torch.float32,
+    dtypes.float32: torch.float32,
+    dtypes.float64_: torch.float64,
+    dtypes.float64: torch.float64,
+    dtypes.complex32_: torch.complex32,
+    dtypes.complex32: torch.complex32,
+    dtypes.complex64_: torch.complex64,
+    dtypes.complex64: torch.complex64,
+    dtypes.complex128_: torch.complex128,
+    dtypes.complex128: torch.complex128,
+}
+
+_torch_to_thunder_dtype_map = {
+    v: k for k, v in _thunder_to_torch_dtype_map.items() if not utils.is_weak_dtype(k)
+}
+
+# NOTE: bool must be added explicitly because it's a weak dtype in Thunder
+#   (and so is filtered in the above construction)
+_torch_to_thunder_dtype_map[torch.bool] = bool
+
+
+def thunder_dtype(torch_dtype):
+    return _torch_to_thunder_dtype_map[torch_dtype]
+
+
+def torch_dtype(thunder_dtype):
+    return _thunder_to_torch_dtype_map[thunder_dtype]
+
 
 #
 # Reduction Ops
@@ -68,9 +117,11 @@ def _reduction_dtypes(
         result_dtype = dtype if dtype else arg.dtype
         if (
             output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
-            and utils.is_complex_dtype(result_dtype)
+            and utils.is_complex_dtype(thunder_dtype(result_dtype))
         ):
-            result_dtype = utils.corresponding_real_dtype(result_dtype)
+            result_dtype = torch_dtype(
+                utils.corresponding_real_dtype(thunder_dtype(result_dtype))
+            )
     elif output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE:
         result_dtype = None
     else:  # ALWAYS_BOOL
@@ -90,7 +141,7 @@ def _reduction_dims(shape, dims: Optional[Sequence]) -> Tuple[int, ...]:
 
 # TODO: restore out support?
 def _reduction(
-    a: TensorLikeType,
+    a,
     prim: Callable,
     *,
     has_identity: bool = True,
@@ -124,7 +175,7 @@ def _reduction(
 
     computation_dtype, result_dtype = _reduction_dtypes(a, output_dtype_kind, dtype)
 
-    a = tlang.maybe_convert_to_dtype(a, computation_dtype)
+    a = tlang.maybe_convert_to_dtype(a, thunder_dtype(computation_dtype))
     result = prim(a, dims)
 
     if keepdims:
@@ -133,7 +184,7 @@ def _reduction(
         result = prims.broadcast_in_dim(result, output_shape, broadcast_dims)
 
     if result_dtype is not None:
-        tlang.maybe_convert_to_dtype(result, result_dtype)
+        tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
 
     return result
 
@@ -194,7 +245,7 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     # TODO: the conversion of nelem to float won't be needed once type promotion is supported
     result = tlang.true_divide(result, float(nelem))
     result_dtype = a.dtype if dtype is None else dtype
-    result = tlang.maybe_convert_to_dtype(result, result_dtype)
+    result = tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
     return result
 
 
@@ -243,3 +294,50 @@ def var_mean(
     v = var(a, dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
+
+
+# TODO: make this a singleton?
+class TorchLangCtx(object):
+    def __init__(self):
+        pass
+
+    def proxy(self, x):
+        # TODO: maybe make this pre-emption mandatory by always calling it
+        #  before calling the language context's proxy method?
+        try:
+            return proxies.proxy(x)
+        except ValueError:
+            pass
+
+        if isinstance(x, torch.Tensor):
+            name = trace.get_trace().tensor_name()
+            dtype = self.thunder_dtype(x.dtype)
+
+            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
+
+        raise ValueError(f"Torch doesn't know how to proxy {x}!")
+
+    def is_dtype(self, x):
+        return isinstance(x, torch.dtype)
+
+    def dtype(self, thunder_dtype):
+        return _thunder_to_torch_dtype_map[thunder_dtype]
+
+    def thunder_dtype(self, torch_dtype):
+        return _torch_to_thunder_dtype_map[torch_dtype]
+
+    def intercept(self, op, *args, **kwargs):
+        return None
+
+    def add(self, a, b):
+        return tlang.add(a, b)
+
+    def sub(self, a, b):
+        return tlang.sub(a, b)
+
+    def true_divide(self, a, b):
+        return tlang.true_divide(a, b)
+
+
+def ctx():
+    return TorchLangCtx()

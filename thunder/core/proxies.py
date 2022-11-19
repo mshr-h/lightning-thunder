@@ -5,23 +5,56 @@ from enum import Enum, auto
 
 from .trace import Constraint, get_trace, get_language_context
 
-# TODO: don't unconditionally import torch
-import torch
-
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
 
 # This file depends on trace.py.
 
 __all__ = [
+    "dtypes",
     # Number proxies
     "Proxy",
     "NumberProxy",
     "IntegerProxy",
+    # Tensor proxy
     "TensorProxy",
+    # Proxy helpers and types
     "proxy",
     "NumberLike",
 ]
+
+# TODO: make dtypes extensible (let systems add them easily and classify them)
+# TODO: probably refactor dtypes into their own file
+# TODO: allow adding dtype metadata, like the kind and whether the dtype is
+#   low precision or not
+# TODO: probably want to refactor dtypes to be singletons
+# NOTE: does not include the Python types bool, int, float, complex
+#   ... maybe it should?
+class dtypes(Enum):
+    uint8_ = auto()
+    uint8 = auto()
+    int8_ = auto()
+    int8 = auto()
+    int16_ = auto()
+    int16 = auto()
+    int32_ = auto()
+    int32 = auto()
+    int64_ = auto()
+    int64 = auto()
+    bfloat16_ = auto()
+    bfloat16 = auto()
+    float16_ = auto()
+    float16 = auto()
+    float32_ = auto()
+    float32 = auto()
+    float64_ = auto()
+    float64 = auto()
+    complex32_ = auto()
+    complex32 = auto()
+    complex64_ = auto()
+    complex64 = auto()
+    complex128_ = auto()
+    complex128 = auto()
 
 
 class Proxy(object):
@@ -194,13 +227,21 @@ class TensorProxy(Proxy):
         my_shape = tuple(_helper(idx, x) for idx, x in enumerate(shape))
         return my_shape
 
-    # TDOO: today dtype is a torch.dtype, but it should be made generic and the language
-    #   ctx should control what kind of object is returned for the datatype
     def __init__(
-        self, *, name=None, tensor=None, shape=None, dtype=None, weak_dtype=None
+        self,
+        *,
+        name=None,
+        tensor=None,
+        shape=None,
+        dtype=None,
     ):
         name = name if name is not None else get_trace().tensor_name()
         self.name = name
+
+        if dtype is not None:
+            assert dtype in (bool, int, float, complex) or isinstance(
+                dtype, dtypes
+            ), f"Unknown dtype={dtype}!"
 
         if tensor is not None:
             # Pulls metadata from the tensor, but explicit kwargs take precedence
@@ -208,8 +249,7 @@ class TensorProxy(Proxy):
             self.shape = (
                 tensor.shape if shape is None else self._make_shape(name, shape)
             )
-            self.dtype = tensor.dtype if dtype is None else dtype
-            self.weak_dtype = tensor.weak_dtype if weak_dtype is None else weak_dtype
+            self._dtype = tensor.thunder_dtype() if dtype is None else dtype
         else:
             # Requires all metadata be specified explicitly
             assert shape is not None
@@ -217,16 +257,23 @@ class TensorProxy(Proxy):
 
             # Shape is a tuple of integer proxies
             self.shape = self._make_shape(name, shape)
-            self.dtype = dtype
-            self.weak_dtype = False if weak_dtype is None else weak_dtype
+            self._dtype = dtype
 
         # TODO: should ndim be an integer proxy, too?
         self.ndim = len(self.shape)
 
     def __repr__(self):
-        return (
-            f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.dtype}]"
-        )
+        return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.thunder_dtype()}]"
+
+    @property
+    def dtype(self):
+        ctx = get_language_context()
+        return ctx.dtype(self._dtype)
+
+    # TODO: see if we can get rid of this by running code from different files
+    #   in their expected language context
+    def thunder_dtype(self):
+        return self._dtype
 
     def __add__(self, other):
         ctx = get_language_context()
@@ -250,11 +297,6 @@ def proxy(x):
     Creates a proxy object.
     """
 
-    # TODO: make this case conditional on PyTorch being available
-    # TODO: combine this case with the TensorProxy case below
-    if isinstance(x, torch.Tensor):
-        name = get_trace().tensor_name()
-        return TensorProxy(name=name, shape=x.shape, dtype=x.dtype)
     if isinstance(x, TensorProxy):
         name = get_trace().tensor_name()
         return TensorProxy(name=name, shape=x.shape, dtype=x.dtype)
@@ -265,4 +307,4 @@ def proxy(x):
     if isinstance(x, float):
         return FloatProxy(value=x)
 
-    raise AssertionError(f"Can't proxy unknown type {type(x)}")
+    raise ValueError(f"Can't proxy unknown type {type(x)}")
