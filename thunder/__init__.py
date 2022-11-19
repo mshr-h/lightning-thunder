@@ -16,7 +16,15 @@ from .core.trace import (
     reset_executor_context,
 )
 from .core.proxies import proxy
-from .executors.nvfuser import execute as nvfuser, nvFuserCtx
+
+NVFUSER_AVAILABLE = True
+
+try:
+    from .executors.nvfuser import execute as nvfuser, nvFuserCtx
+except ModuleNotFoundError:
+    NVFUSER_AVAILABLE = False
+
+from .executors.torch import execute as torch_execute, torchCtx
 
 import thunder.langs as langs
 
@@ -25,7 +33,7 @@ __all__ = [
 ]
 
 
-def make_traced(fn: Callable) -> Callable:
+def make_traced(fn: Callable, executor: str) -> Callable:
     """
     Converts a callable in a callable that will be traced and then executed.
 
@@ -43,14 +51,28 @@ def make_traced(fn: Callable) -> Callable:
 
     """
 
+    if executor == "nvfuser" and not NVFUSER_AVAILABLE:
+        raise RuntimeError("NVFuser not available")
+
     @wraps(fn)
     def _fn(*args, lang=langs.torch, **kwargs):
         # Acquires a new tracing context
         trace_token = new_trace()
-        executor_token = set_executor_context(nvFuserCtx())
 
+        ctx = None
+        executor_fn = None
+        if executor == "nvfuser":
+            ctx = nvFuserCtx()
+            executor_fn = nvfuser
+
+        if executor == "torch":
+            ctx = torchCtx()
+            executor_fn = torch_execute
+
+        executor_token = set_executor_context(ctx)
         lang_ctx = lang.ctx()
         lang_token = set_language_context(lang_ctx)
+
         t = get_trace()
 
         # Constructs proxies
@@ -85,19 +107,19 @@ def make_traced(fn: Callable) -> Callable:
 
         # print(t)
 
-        nv_result, fusion = nvfuser(t, *args, **kwargs)
+        result, fusion = executor_fn(t, *args, **kwargs)
 
         reset_trace(trace_token)
         reset_language_context(lang_token)
         reset_executor_context(executor_token)
 
         # TODO: convert nvFuser output to appropriate object based on language ctx
-        # TODO: if the output is a datastructure it will be flattened before being handed to nvFuser
-        #   this needs to re-wrap the nvFuser outputs into the datstructure
-        if len(nv_result) == 1:
+        # TODO: if the output is a datastructure it will be flattened before being handed to the executor
+        #   this needs to re-wrap the executor outputs into the datstructure
+        if len(result) == 1:
             # Hack to unwrap singleton results
-            return nv_result[0]
+            return result[0]
 
-        return nv_result
+        return result
 
     return _fn
