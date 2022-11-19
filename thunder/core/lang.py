@@ -6,9 +6,6 @@ from . import prims
 from . import utils
 from .proxies import TensorProxy, NumberProxy, dtypes
 
-# TODO: remove this import
-import torch
-
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
 # from. These operators are build using primitives, and are intended to make it easier to write
@@ -258,12 +255,12 @@ def bitwise_and(a, b):
         a,
         b,
         supported_dtypes=(
-            torch.bool,
-            torch.uint8,
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.int64,
+            bool,
+            dtypes.uint8,
+            dtypes.int8,
+            dtypes.int16,
+            dtypes.int32,
+            dtypes.int64,
         ),
     )
 

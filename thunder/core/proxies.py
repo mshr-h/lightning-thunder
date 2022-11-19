@@ -239,7 +239,9 @@ class TensorProxy(Proxy):
         self.name = name
 
         if dtype is not None:
-            assert isinstance(dtype, dtypes)
+            assert dtype in (bool, int, float, complex) or isinstance(
+                dtype, dtypes
+            ), f"Unknown dtype={dtype}!"
 
         if tensor is not None:
             # Pulls metadata from the tensor, but explicit kwargs take precedence
@@ -247,7 +249,7 @@ class TensorProxy(Proxy):
             self.shape = (
                 tensor.shape if shape is None else self._make_shape(name, shape)
             )
-            self._dtype = tensor.dtype if dtype is None else dtype
+            self._dtype = tensor.thunder_dtype() if dtype is None else dtype
         else:
             # Requires all metadata be specified explicitly
             assert shape is not None

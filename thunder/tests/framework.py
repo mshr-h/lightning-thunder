@@ -1,6 +1,7 @@
 import os
 from itertools import product
 import inspect
+import sys
 
 
 __all__ = [
@@ -98,11 +99,13 @@ def run_snippet(snippet, opinfo, device_type, dtype, *args, **kwargs):
     try:
         snippet(*args, **kwargs)
     except Exception as e:
+        exc_info = sys.exc_info()
+
         # Raises exceptions that occur with pytest, and returns debug information when
         # called otherwise
         # NOTE: PYTEST_CURRENT_TEST is set by pytest
         if "PYTEST_CURRENT_TEST" in os.environ:
             raise e
-        return e, snippet, opinfo, device_type, dtype, args, kwargs
+        return e, exc_info, snippet, opinfo, device_type, dtype, args, kwargs
 
     return None
