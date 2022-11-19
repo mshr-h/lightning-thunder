@@ -1,5 +1,6 @@
-import pytest
+from itertools import product
 import os
+import pytest
 
 import torch
 import thunder
@@ -11,15 +12,11 @@ import thunder.langs.torch as ttorch
 from .opinfos import elementwise_unary_ops, elementwise_binary_ops
 from .framework import ops, run_snippet
 
-
 from torch.testing import make_tensor, assert_close
 
-from itertools import product
+# TODO: sample across executor_types and devices
+from thunder.tests import executor_type, supported_device_types, device
 
-# parameterize tests
-device = "cuda" if torch.has_cuda else "cpu"
-supported_device_types = ("cpu", "cuda") if torch.has_cuda else ("cpu",)
-executor = "nvfuser" if torch.has_cuda else "torch"
 
 # Tests for elementwise binary operators
 
@@ -29,7 +26,7 @@ def snippet_pytorch_consistency(op, torch_op, sample):
     def foo(*args, **kwargs):
         return op(*args, **kwargs)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
     thunder_result = traced_foo(*sample.args, **sample.kwargs)
 
     torch_result = torch_op(*sample.args, **sample.kwargs)

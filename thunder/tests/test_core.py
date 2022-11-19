@@ -1,3 +1,4 @@
+from itertools import product
 import pytest
 
 import torch
@@ -9,13 +10,8 @@ import thunder.langs.torch as ttorch
 
 from torch.testing import make_tensor, assert_close
 
-from itertools import product
-
-
-# parameterize tests
-device = "cuda" if torch.has_cuda else "cpu"
-supported_device_types = ("cpu", "cuda") if torch.has_cuda else ("cpu",)
-executor = "nvfuser" if torch.has_cuda else "torch"
+# TODO: sample across executor_types and devices
+from thunder.tests import executor_type, device
 
 
 # TODO: add device/dtype instantiation
@@ -24,7 +20,7 @@ def test_add():
     def foo(a, b):
         return tlang.add(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
@@ -39,7 +35,7 @@ def test_add_broadcast():
     def foo(a, b):
         return tlang.add(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((2, 1), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((1, 2), device=device, dtype=torch.float32)
@@ -55,7 +51,7 @@ def test_add_integer_constant():
         c = tlang.add(a, 2)
         return tlang.add(c, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((2, 1), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((1, 2), device=device, dtype=torch.float32)
@@ -70,7 +66,7 @@ def test_add_integer_input():
     def foo(a, b):
         return tlang.add(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 1), device=device, dtype=torch.float32)
 
@@ -85,7 +81,7 @@ def test_add_integer_inputs():
         d = tlang.add(a, b)
         return tlang.add(c, d)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((3, 2), device=device, dtype=torch.float32)
 
@@ -99,7 +95,7 @@ def test_add_integer_constants():
         b = tlang.add(2, 3)
         return tlang.add(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 4), device=device, dtype=torch.float32)
 
@@ -113,7 +109,7 @@ def test_add_floats():
         c = tlang.add(2.0, a)
         return tlang.add(b, c)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 4), device=device, dtype=torch.float32)
 
@@ -126,7 +122,7 @@ def test_sub():
     def foo(a, b):
         return tlang.sub(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
@@ -141,7 +137,7 @@ def test_true_divide():
     def foo(a, b):
         return tlang.true_divide(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
@@ -160,7 +156,7 @@ def test_integer_isinstance_mimicry():
 
         return tlang.add(b, c)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 1), device=device, dtype=torch.float32)
     b = make_tensor((2, 2), device=device, dtype=torch.float32)
@@ -181,7 +177,7 @@ def test_integer_isinstance_mimicry():
 
         return tlang.add(b, c)
 
-    traced_bar = thunder.make_traced(bar, executor=executor)
+    traced_bar = thunder.make_traced(bar, executor=executor_type)
 
     try:
         thunder_result = traced_bar(a, b, c)
@@ -205,7 +201,7 @@ def test_integer_isinstance_mimicry():
 #     def foo(a, b):
 #         return tlang.add(a, b)
 
-#     traced_foo = thunder.make_traced(foo)
+#     traced_foo = thunder.make_traced(foo, executor=executor_type)
 
 #     thunder_result = traced_foo(3, 4)
 #     python_result = 3 + 4
@@ -216,7 +212,7 @@ def test_abs():
     def foo(a):
         return tlang.abs(a)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 8), device=device, dtype=torch.float32)
 
@@ -230,7 +226,7 @@ def test_abs_integer():
         a_abs = tlang.abs(a)
         return tlang.add(a_abs, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = -3
     b = make_tensor((1, 8), device=device, dtype=torch.float32)
@@ -245,7 +241,7 @@ def test_abs_float():
         a_abs = tlang.abs(a)
         return tlang.add(a_abs, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = -2.7
     b = make_tensor((1, 8), device=device, dtype=torch.float32)
@@ -268,7 +264,7 @@ def test_torch_var():
     def foo(a, dim, *, keepdim=False, correction=1):
         return ttorch.var(a, dim, keepdim=keepdim, correction=correction)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
 
@@ -297,7 +293,7 @@ def test_torch_var():
     def foo(a):
         return ttorch.var(a, [0, 1], keepdim=True, correction=2)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
 
@@ -310,7 +306,7 @@ def test_torch_mean():
     def foo(a, dim=None, keepdim=False, *, dtype=None):
         return ttorch.mean(a, dim, keepdim, dtype=dtype)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
 
@@ -329,7 +325,7 @@ def test_var_mean():
     def foo(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
         return ttorch.var_mean(a, dim, unbiased, keepdim=keepdim, correction=correction)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
 
@@ -347,7 +343,7 @@ def test_var_mean():
     def foo(a):
         return ttorch.var_mean(a, [0, 1], keepdim=True, correction=2)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
 
@@ -360,7 +356,7 @@ def test_core_tensor_methods():
     def foo(a, b, c, d):
         return a + b - c + (d - a)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = torch.testing.make_tensor((4, 4), device=device, dtype=torch.float32)
     b = torch.testing.make_tensor((2, 1, 4), device=device, dtype=torch.float32)
@@ -377,7 +373,7 @@ def test_type_promotion():
     def foo(a, b):
         return a + b
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     b1 = make_tensor((2, 2), device=device, dtype=torch.bool)
     i64 = make_tensor((2, 2), device=device, dtype=torch.int64)
@@ -416,7 +412,7 @@ def test_type_promotion():
     def bar(a, b, c):
         return a - b + c
 
-    traced_bar = thunder.make_traced(bar, executor=executor)
+    traced_bar = thunder.make_traced(bar, executor=executor_type)
 
     # float x int64 x float16 type promotion -- float16 result dtype
     result = traced_bar(2.0, i64, f16)
@@ -431,7 +427,7 @@ def test_int_to_float_type_promotion():
     def foo(a, b):
         return a / b
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     i64 = make_tensor((2, 2), device=device, dtype=torch.int64)
     f16 = make_tensor((2, 2), device=device, dtype=torch.float16)
@@ -457,7 +453,7 @@ def test_atan2():
     def foo(a, b):
         return tlang.atan2(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor)
+    traced_foo = thunder.make_traced(foo, executor=executor_type)
 
     a = make_tensor((2, 2), device=device, dtype=torch.float32)
     b = make_tensor((2, 2), device=device, dtype=torch.float32)
@@ -468,7 +464,7 @@ def test_atan2():
 
 
 def test_full():
-    traced_full = thunder.make_traced(tlang.full, executor=executor)
+    traced_full = thunder.make_traced(tlang.full, executor=executor_type)
 
     try:
         thunder_result = traced_full((1, 2, 3), 1.0, device=device, dtype=torch.float32)
