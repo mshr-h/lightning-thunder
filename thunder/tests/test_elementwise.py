@@ -21,7 +21,7 @@ from thunder.tests import executor_type, supported_device_types, device
 
 # Snippets run a single test using a single sample
 # TODO: should snippets be able to access the original opinfo? -- No
-def snippet_pytorch_consistency(op, torch_op, sample):
+def snippet_torch_consistency(op, torch_op, sample):
     def foo(*args, **kwargs):
         return op(*args, **kwargs)
 
@@ -39,10 +39,10 @@ def snippet_pytorch_consistency(op, torch_op, sample):
     elementwise_unary_ops + elementwise_binary_ops,
     supported_device_types=supported_device_types,
 )
-def test_pytorch_consistency(op, device, dtype):
+def test_torch_consistency(op, device, dtype):
     for sample in op.sample_inputs(device, dtype):
         result = run_snippet(
-            snippet_pytorch_consistency,
+            snippet_torch_consistency,
             op,
             device,
             dtype,
