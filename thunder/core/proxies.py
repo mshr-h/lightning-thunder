@@ -31,6 +31,8 @@ __all__ = [
 # NOTE: does not include the Python types bool, int, float, complex
 #   ... maybe it should?
 class dtypes(Enum):
+    bool_ = auto()
+    bool = auto()
     uint8_ = auto()
     uint8 = auto()
     int8_ = auto()

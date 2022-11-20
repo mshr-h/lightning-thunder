@@ -32,6 +32,8 @@ _thunder_to_torch_dtype_map = {
     int: torch.int32,
     float: torch.float32,
     complex: torch.complex64,
+    dtypes.bool_: torch.bool,
+    dtypes.bool: torch.bool,
     dtypes.uint8_: torch.uint8,
     dtypes.uint8: torch.uint8,
     dtypes.int8_: torch.int8,

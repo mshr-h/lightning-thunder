@@ -1,4 +1,7 @@
 import thunder.core.lang as tlang
+from thunder.core.proxies import dtypes
+
+from thunder.langs.torch import torch_dtype
 
 import torch
 from torch.testing import make_tensor
@@ -77,7 +80,7 @@ elementwise_unary_ops = []
 
 # TODO: extend this generator
 def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
-    a = make_tensor((4, 4), device=device, dtype=dtype)
+    a = make_tensor((4, 4), device=device, dtype=torch_dtype(dtype))
 
     yield SampleInput(a)
 
@@ -87,7 +90,8 @@ abs_opinfo = OpInfo(
     tlang.abs,
     device_types=("cpu", "cuda"),
     # TODO check types we support
-    dtypes=(torch.float16, torch.float32, torch.float64),
+    dtypes=(dtypes.float16, dtypes.float32, dtypes.float64),
+    # dtypes=(torch.float16, torch.float32, torch.float64),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.abs,
 )
@@ -107,13 +111,13 @@ elementwise_binary_ops = []
 
 # TODO: extend this generator
 def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
-    a = make_tensor((4, 4), device=device, dtype=dtype)
-    b = make_tensor((4, 4), device=device, dtype=dtype)
+    a = make_tensor((4, 4), device=device, dtype=torch_dtype(dtype))
+    b = make_tensor((4, 4), device=device, dtype=torch_dtype(dtype))
 
     yield SampleInput(a, b)
 
     # Tests broadcasting
-    c = make_tensor((4, 1), device=device, dtype=dtype)
+    c = make_tensor((4, 1), device=device, dtype=torch_dtype(dtype))
     yield SampleInput(a, c)
 
 
@@ -121,7 +125,7 @@ def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
 add_opinfo = OpInfo(
     tlang.add,
     device_types=("cpu", "cuda"),
-    dtypes=(torch.float16, torch.float32, torch.float64),
+    dtypes=(dtypes.float16, dtypes.float32, dtypes.float64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.add,
 )
@@ -131,7 +135,7 @@ elementwise_binary_ops.append(add_opinfo)
 bitwise_and_opinfo = OpInfo(
     tlang.bitwise_and,
     device_types=("cpu", "cuda"),
-    dtypes=(torch.bool, torch.int32, torch.int64),
+    dtypes=(dtypes.bool, dtypes.int32, dtypes.int64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.bitwise_and,
 )
@@ -140,7 +144,7 @@ elementwise_binary_ops.append(bitwise_and_opinfo)
 sub_opinfo = OpInfo(
     tlang.sub,
     device_types=("cpu", "cuda"),
-    dtypes=(torch.float16, torch.float32, torch.float64),
+    dtypes=(dtypes.float16, dtypes.float32, dtypes.float64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.sub,
 )
