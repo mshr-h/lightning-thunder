@@ -185,6 +185,4 @@ def execute(t, *args, **kwargs):
 
     args_and_kwargs = filtered_args + tuple(flattened_kwargs)
 
-    # we need to execute eagerly
-    # nvf_out = fs.execute(args_and_kwargs)
     return torch_out, None
