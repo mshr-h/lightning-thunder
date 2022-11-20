@@ -1,20 +1,26 @@
+import os
+
 from thunder.executors import TORCH_AVAILABLE, NVFUSER_AVAILABLE
 
-if NVFUSER_AVAILABLE:
-    executor_type = "nvfuser"
-elif TORCH_AVAILABLE:
-    executor_type = "torch"
+executor_env_var = os.environ.get("THUNDER_EXECUTOR")
+
+if executor_env_var:
+    executor_type = executor_env_var
 else:
-    RuntimeError("No executors can be selected. Either NVFuser or Torch must be available.")
+    executor_type = "nvfuser" if NVFUSER_AVAILABLE else "torch"
+
+if executor_type == "nvfuser" and not NVFUSER_AVAILABLE:
+    RuntimeError("NVFuser executor requested but NVFuser is not available")
+elif executor_type == "torch" and not TORCH_AVAILABLE:
+    RuntimeError("Torch executor requested but Torch is not available")
+else:
+    RuntimeError(f"Unsupported executor type {executor_type}")
 
 if executor_type == "nvfuser":
     supported_device_types = ("cuda",)
-    device = "cuda"
 elif executor_type == "torch":
     import torch
     if torch.has_cuda:
         supported_device_types = ("cpu", "cuda")
-        device = "cuda"
     else:
         supported_device_types = ("cpu",)
-        device = "cpu"

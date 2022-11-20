@@ -14,7 +14,7 @@ from .framework import ops, run_snippet
 from torch.testing import assert_close
 
 # TODO: sample across executor_types and devices
-from thunder.tests import executor_type, supported_device_types, device
+from thunder.tests import executor_type, supported_device_types
 
 
 # Tests for elementwise binary operators

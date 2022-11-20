@@ -10,9 +10,10 @@ import thunder.langs.torch as ttorch
 
 from torch.testing import make_tensor, assert_close
 
-# TODO: sample across executor_types and devices
-from thunder.tests import executor_type, device
+from thunder.tests import executor_type
 
+# TODO: sample across executor_types and devices
+device = "cuda" if torch.has_cuda else "cpu"
 
 # TODO: add device/dtype instantiation
 # TODO: use OpInfo samples
