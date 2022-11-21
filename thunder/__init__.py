@@ -17,14 +17,8 @@ from .core.trace import (
 )
 from .core.proxies import proxy
 
-from .executors import NVFUSER_AVAILABLE
-
-if NVFUSER_AVAILABLE:
-    from .executors.nvfuser import execute as nvfuser, nvFuserCtx
-
-from .executors.torch import execute as torch_execute, torchCtx
-
 import thunder.langs as langs
+
 
 __all__ = [
     "make_traced",
@@ -49,8 +43,23 @@ def make_traced(fn: Callable, executor: str) -> Callable:
 
     """
 
-    if executor == "nvfuser" and not NVFUSER_AVAILABLE:
-        raise RuntimeError("NVFuser not available")
+    if executor == "torch":
+        try:
+            from .executors.torch import execute as torch_execute, torchCtx
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "The 'torch' executor was requested, but the `torch` package "
+                "is not available. Please make sure the `torch` package is installed"
+                "in the environment."
+            )
+    elif executor == "nvfuser":
+        try:
+            from .executors.nvfuser import execute as nvfuser, nvFuserCtx
+        except ModuleNotFoundError:
+            raise RuntimeError(
+                "The 'nvfuser' executor was requested, but NVFuser is not available. "
+                "Please make sure the `torch` package is installed and CUDA is available."
+            )
 
     @wraps(fn)
     def _fn(*args, lang=langs.torch, **kwargs):
