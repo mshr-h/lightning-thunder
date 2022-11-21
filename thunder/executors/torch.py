@@ -18,21 +18,6 @@ __all__ = [
 
 def _convert_element_type_translation():
     def _fn(a, dtype):
-        # Handles Thunder's use of Python types as "weak" tensor dtypes
-        # TODO: refactor into a helper
-        if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
-            tensor_dtype = torch.bool
-
-            if dtype is int:
-                tensor_dtype = dtypes.int64
-            if dtype is float:
-                tensor_dtype = dtypes.float32
-            if dtype is complex:
-                tensor_dtype = dtypes.complex64
-
-            torch_dtype = ttorch._thunder_to_torch_dtype_map[tensor_dtype]
-            return a.to(torch_dtype)
-
         torch_dtype = ttorch._thunder_to_torch_dtype_map[dtype]
         return a.to(torch_dtype)
 

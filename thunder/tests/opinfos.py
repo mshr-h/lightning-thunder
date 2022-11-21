@@ -91,7 +91,6 @@ abs_opinfo = OpInfo(
     device_types=("cpu", "cuda"),
     # TODO check types we support
     dtypes=(dtypes.float16, dtypes.float32, dtypes.float64),
-    # dtypes=(torch.float16, torch.float32, torch.float64),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.abs,
 )
