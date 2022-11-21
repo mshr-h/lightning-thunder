@@ -5,7 +5,8 @@ from functools import partial
 
 from thunder.core import prims
 from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy, dtypes
+from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
+import thunder.core.dtypes as dtypes
 
 import thunder.langs.torch as ttorch
 

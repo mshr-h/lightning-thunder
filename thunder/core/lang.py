@@ -4,7 +4,8 @@ from numbers import Number
 
 from . import prims
 from . import utils
-from .proxies import TensorProxy, NumberProxy, dtypes
+from .proxies import TensorProxy, NumberProxy
+import thunder.core.dtypes as dtypes
 
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages

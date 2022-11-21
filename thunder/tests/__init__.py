@@ -40,6 +40,7 @@ if executor_type == "nvfuser":
     supported_device_types = ("cuda",)
 elif executor_type == "torch":
     import torch
+
     if torch.has_cuda:
         # Torch supports both CPU and CUDA on a GPU machine
         supported_device_types = ("cpu", "cuda")

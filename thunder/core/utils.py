@@ -3,7 +3,8 @@ from numbers import Number
 from enum import Enum
 from itertools import product
 
-from .proxies import TensorProxy, NumberProxy, dtypes
+from .proxies import TensorProxy, NumberProxy
+import thunder.core.dtypes as dtypes
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -294,7 +295,7 @@ def check_same_dtype(*args):
         return None, None
 
     def _extract_dtype(x):
-        if isinstance(x, dtypes):
+        if isinstance(x, dtypes.datatype):
             return x
 
         if isinstance(x, TensorProxy):
@@ -352,7 +353,7 @@ _exact_dtype_to_number_map = {
 }
 
 # fmt: off
-# Exact x Exact type promotion table
+# Exact type lattice
     # b -> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
     #       `-> u8_ -> u8 ----------------------------^
 # TODO REVIEW: it's a little odd that u8_ + i64_ -> i16
@@ -402,6 +403,7 @@ _inexact_dtype_to_number_map = {
     c128    : 15,
 }
 
+# Inexact type lattice
 #    c* -> c32* -> c64* -> c128* -> c32 ----> c64 ----> c128
 #   /    /        /       /       /          /        /
 #  /    /        /       /   ,-> float16 -> fp32 -> fp64

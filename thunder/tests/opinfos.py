@@ -134,7 +134,7 @@ elementwise_binary_ops.append(add_opinfo)
 bitwise_and_opinfo = OpInfo(
     tlang.bitwise_and,
     device_types=("cpu", "cuda"),
-    dtypes=(dtypes.bool, dtypes.int32, dtypes.int64),
+    dtypes=(dtypes.bool8, dtypes.int32, dtypes.int64),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.bitwise_and,
 )
