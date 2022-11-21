@@ -25,7 +25,7 @@ import torch
 # Transforms and analysis defined on the primitive operations should
 #   be inherited by the operation's they're composed of.
 
-# This file depends on trace.py, proxies.py, and utils.py.
+# This file depends on trace.py, dtypes.py, proxies.py, and utils.py.
 
 __all__ = [
     # Methods and datastructures for constructing primitive operations

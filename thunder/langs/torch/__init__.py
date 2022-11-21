@@ -6,7 +6,8 @@ import operator
 import thunder.core.trace as trace
 import thunder.core.utils as utils
 import thunder.core.proxies as proxies
-from thunder.core.proxies import TensorProxy, dtypes
+from thunder.core.proxies import TensorProxy
+import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
 
@@ -32,8 +33,8 @@ _thunder_to_torch_dtype_map = {
     int: torch.int32,
     float: torch.float32,
     complex: torch.complex64,
-    dtypes.bool_: torch.bool,
-    dtypes.bool: torch.bool,
+    dtypes.bool8_: torch.bool,
+    dtypes.bool8: torch.bool,
     dtypes.uint8_: torch.uint8,
     dtypes.uint8: torch.uint8,
     dtypes.int8_: torch.int8,

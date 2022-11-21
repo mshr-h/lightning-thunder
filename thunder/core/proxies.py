@@ -4,14 +4,14 @@ from numbers import Number
 from enum import Enum, auto
 
 from .trace import Constraint, get_trace, get_language_context
+import thunder.core.dtypes as dtypes
 
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
 
-# This file depends on trace.py.
+# This file depends on trace.py and dtypes.py.
 
 __all__ = [
-    "dtypes",
     # Number proxies
     "Proxy",
     "NumberProxy",
@@ -22,41 +22,6 @@ __all__ = [
     "proxy",
     "NumberLike",
 ]
-
-# TODO: make dtypes extensible (let systems add them easily and classify them)
-# TODO: probably refactor dtypes into their own file
-# TODO: allow adding dtype metadata, like the kind and whether the dtype is
-#   low precision or not
-# TODO: probably want to refactor dtypes to be singletons
-# NOTE: does not include the Python types bool, int, float, complex
-#   ... maybe it should?
-class dtypes(Enum):
-    bool_ = auto()
-    bool = auto()
-    uint8_ = auto()
-    uint8 = auto()
-    int8_ = auto()
-    int8 = auto()
-    int16_ = auto()
-    int16 = auto()
-    int32_ = auto()
-    int32 = auto()
-    int64_ = auto()
-    int64 = auto()
-    bfloat16_ = auto()
-    bfloat16 = auto()
-    float16_ = auto()
-    float16 = auto()
-    float32_ = auto()
-    float32 = auto()
-    float64_ = auto()
-    float64 = auto()
-    complex32_ = auto()
-    complex32 = auto()
-    complex64_ = auto()
-    complex64 = auto()
-    complex128_ = auto()
-    complex128 = auto()
 
 
 class Proxy(object):
@@ -242,7 +207,7 @@ class TensorProxy(Proxy):
 
         if dtype is not None:
             assert dtype in (bool, int, float, complex) or isinstance(
-                dtype, dtypes
+                dtype, dtypes.datatype
             ), f"Unknown dtype={dtype}!"
 
         if tensor is not None:
