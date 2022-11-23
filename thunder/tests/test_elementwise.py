@@ -1,23 +1,15 @@
-from itertools import product
-import os
-import pytest
+from torch.testing import assert_close
 
 import thunder
-import thunder.core.lang as tlang
-import thunder.core.utils as utils
-
-import thunder.langs.torch as ttorch
-
-from .opinfos import elementwise_unary_ops, elementwise_binary_ops
-from .framework import ops, run_snippet
-
-from torch.testing import assert_close
 
 # TODO: sample across executor_types and devices
 from thunder.tests import executor_type, supported_device_types
 
+from .framework import ops, run_snippet
+from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 
 # Tests for elementwise binary operators
+
 
 # Snippets run a single test using a single sample
 # TODO: should snippets be able to access the original opinfo? -- No

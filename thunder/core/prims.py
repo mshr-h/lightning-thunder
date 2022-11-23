@@ -1,20 +1,14 @@
-from enum import Enum, auto
-import operator
-from numbers import Number
 import builtins
+import operator
+from enum import auto, Enum
 from functools import partial
+from numbers import Number
 
-from .trace import get_trace
-from .proxies import NumberProxy, IntegerProxy, TensorProxy, proxy
+
 import thunder.core.utils as utils
-from .utils import (
-    check,
-    check_same_dtype,
-    same_shape,
-    dtype_to_type,
-    get_numberlike_type,
-    get_numberlike_value,
-)
+from .proxies import NumberProxy, proxy, TensorProxy
+from .trace import get_trace
+from .utils import check, get_numberlike_value, same_shape
 
 # This file defines Thunder's "primitive" operations. These are the
 #   "building blocks" for all of Thunder's operators.
@@ -90,9 +84,8 @@ ops_to_pretty_name_map = {}
 # TODO: add error context
 
 
-class Prim(object):
-    """
-    A call to a primitive.
+class Prim:
+    """A call to a primitive.
 
     Holds the inputs, outputs, and printing information.
     """
@@ -109,7 +102,9 @@ class Prim(object):
         result_string = str(self.result)
         arg_string = ", ".join(str(arg) for arg in self.args)
         kwarg_string = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())
-        return f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
+        return (
+            f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
+        )
 
 
 def make_prim(id, name, meta):
@@ -157,13 +152,12 @@ def _convert_element_type_meta(a, dtype):
     return TensorProxy(tensor=a, dtype=dtype)
 
 
-convert_element_type = make_prim(
-    Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta
-)
+convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta)
 
 #
 # Tensor creation prims
 #
+
 
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
@@ -301,16 +295,12 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "trunc",
 
 
-def _elementwise_unary_meta(
-    a, *, name, type_promotion_kind, number_handler=None, **kwargs
-):
+def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None, **kwargs):
     # TODO: break fn into two, one for returning types, one for checking for equality?
     number_type, tensor_dtype = utils.check_same_dtype(a)
     input_type = tensor_dtype if tensor_dtype is not None else number_type
 
-    result_type = _prim_type_promotion(
-        input_type, type_promotion_kind=type_promotion_kind
-    )
+    result_type = _prim_type_promotion(input_type, type_promotion_kind=type_promotion_kind)
 
     # Tensor case
     if isinstance(a, TensorProxy):
@@ -327,7 +317,7 @@ def _elementwise_unary_meta(
         lambda: f"The elementwise unary primitive {name} doesn't support number inputs!",
     )
 
-    a_typ = get_numberlike_type(a)
+    # a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
     value = number_handler(va)
     return proxy(result_type(value))
@@ -392,12 +382,10 @@ abs = make_prim(
 # "pow",
 # "remainder",
 
+
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
-def _elementwise_binary_meta(
-    a, b, *, name, type_promotion_kind, number_handler=None, **kwargs
-):
-
+def _elementwise_binary_meta(a, b, *, name, type_promotion_kind, number_handler=None, **kwargs):
     # Tensors or Number inputs only
     if not isinstance(a, (TensorProxy, Number)):
         raise ValueError(f"Unexpected type {type(a)}!")
@@ -408,15 +396,16 @@ def _elementwise_binary_meta(
     number_type, tensor_dtype = utils.check_same_dtype(a, b)
     input_type = tensor_dtype if tensor_dtype is not None else number_type
 
-    result_type = _prim_type_promotion(
-        input_type, type_promotion_kind=type_promotion_kind
-    )
+    result_type = _prim_type_promotion(input_type, type_promotion_kind=type_promotion_kind)
 
     # tensor x tensor case
     if isinstance(a, TensorProxy) and isinstance(b, TensorProxy):
         check(
             same_shape(a.shape, b.shape),
-            lambda: f"Elementwise binary primitives require the shapes of the inputs tensors to be the same! But got shapes {a.shape} and {b.shape}!",
+            lambda: (
+                "Elementwise binary primitives require the shapes of the inputs tensors to "
+                f"be the same! But got shapes {a.shape} and {b.shape}!"
+            ),
         )
         return TensorProxy(tensor=a, dtype=result_type)
 
@@ -433,7 +422,7 @@ def _elementwise_binary_meta(
 
     # tensor x scalar case
     tensor = a if isinstance(a, TensorProxy) else b
-    number = b if tensor is a else a
+    # number = b if tensor is a else a
 
     return TensorProxy(tensor=tensor, dtype=result_type)
 
@@ -546,9 +535,7 @@ def _compute_reduction_output_shape(shape, dims):
 
 
 def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
-    """
-    Meta function for single output reduction operations
-    """
+    """Meta function for single output reduction operations."""
 
     if output_dtype is None:
         output_dtype = a.thunder_dtype()

@@ -1,22 +1,14 @@
+from enum import auto, Enum
 from typing import Sequence
-from collections import deque
-from enum import Enum, auto
-from functools import partial
-
-from thunder.core import prims
-from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy
-import thunder.core.dtypes as dtypes
-
-import thunder.langs.torch as ttorch
 
 import torch
+import torch._C._nvfuser as nvfuser
+from torch._C._nvfuser import DataType, Fusion, FusionDefinition
 
-from torch._C._nvfuser import (
-    DataType,
-    Fusion,
-    FusionDefinition,
-)
+import thunder.core.dtypes as dtypes
+import thunder.langs.torch as ttorch
+from thunder.core import prims, utils
+from thunder.core.proxies import NumberProxy, TensorProxy
 
 nvTensor = torch._C._nvfuser.Tensor
 
@@ -69,6 +61,7 @@ _thunder_dtype_to_nvfuser_dtype_map = {
     int: DataType.Int,
     bool: DataType.Bool,
 }
+
 
 # Wrapper for prims.convert_element_type, necessary to convert dtype to nvfuser_dtype
 def _convert_element_type_translation(fd):
@@ -144,7 +137,7 @@ def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
     # TODO: Creating a complex tensor from real and imaginary parts is not supported
     utils.check(
         not utils.is_complex_dtype(a.thunder_dtype()),
-        lambda: f"Complex tensors are not supported!",
+        lambda: "Complex tensors are not supported!",
     )
 
     v, m = var_mean_prim(a, dim, correction=correction)
@@ -169,12 +162,12 @@ def _get_nvfuser_op(fd, op):
     return nv_op(fd)
 
 
-class nvFuserCtx(object):
+class nvFuserCtx:
     def __init__(self):
         pass
 
     def intercept(self, op):
-        """ """
+        """"""
 
         # TODO: update match to not be on strings
         if op == "torch.var_mean":

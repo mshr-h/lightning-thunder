@@ -52,7 +52,7 @@ __all__ = [
 _abstract_classes = set()
 
 
-class datatype(object):
+class datatype:
 
     # TODO: in the future might want to use ABCMeta to prevent this and the
     #   abstract classes from being instantiated
@@ -89,17 +89,13 @@ class datatype(object):
 
 
 class exact(datatype):
-    """
-    Abstract base class for the signedinteger, unsignedinteger and bool_ datatypes.
-    """
+    """Abstract base class for the signedinteger, unsignedinteger and bool_ datatypes."""
 
     pass
 
 
 class signedinteger(exact):
-    """
-    Base class for the signed integer datatypes: int8, int16, int32, int64.
-    """
+    """Base class for the signed integer datatypes: int8, int16, int32, int64."""
 
     def __init__(self, name, *, bytes, is_weak):
         super().__init__(python_type=int, name=name, bytes=bytes, is_weak=is_weak)
@@ -116,9 +112,7 @@ int64_ = signedinteger("int", bytes=8, is_weak=True)
 
 
 class unsignedinteger(exact):
-    """
-    Base class for the unsigned integer datatypes: uint8.
-    """
+    """Base class for the unsigned integer datatypes: uint8."""
 
     def __init__(self, name, *, bytes, is_weak):
         super().__init__(python_type=int, name=name, bytes=bytes, is_weak=is_weak)
@@ -129,9 +123,7 @@ uint8_ = unsignedinteger("uint", bytes=1, is_weak=True)
 
 
 class bool_(exact):
-    """
-    Base class for the boolean datatype: bool8.
-    """
+    """Base class for the boolean datatype: bool8."""
 
     def __init__(self, name, *, is_weak):
         super().__init__(python_type=bool, name=name, bytes=1, is_weak=is_weak)
@@ -144,17 +136,13 @@ bool8_ = bool_("bool", is_weak=True)
 
 
 class inexact(datatype):
-    """
-    Abstract base class for the floating and complexfloating datatypes.
-    """
+    """Abstract base class for the floating and complexfloating datatypes."""
 
     pass
 
 
 class floating(inexact):
-    """
-    Base class for the floating datatypes: bfloat16, float16, float32, float64.
-    """
+    """Base class for the floating datatypes: bfloat16, float16, float32, float64."""
 
     def __init__(self, name, *, bytes, is_weak):
         super().__init__(python_type=float, name=name, bytes=bytes, is_weak=is_weak)
@@ -171,9 +159,7 @@ float64_ = floating("float", bytes=8, is_weak=True)
 
 
 class complexfloating(inexact):
-    """
-    Base class for the complex floating datatypes: complex32, complex64, complex128.
-    """
+    """Base class for the complex floating datatypes: complex32, complex64, complex128."""
 
     def __init__(self, name, *, bytes, is_weak):
         super().__init__(python_type=complex, name=name, bytes=bytes, is_weak=is_weak)

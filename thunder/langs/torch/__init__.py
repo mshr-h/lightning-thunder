@@ -1,7 +1,9 @@
-from enum import Enum
-from typing import Callable, Optional, Union, Sequence, Tuple
-from functools import partial, reduce
 import operator
+from enum import Enum
+from functools import partial, reduce
+from typing import Callable, Optional, Sequence, Tuple
+
+import torch
 
 import thunder.core.trace as trace
 import thunder.core.utils as utils
@@ -11,8 +13,7 @@ from thunder.core.proxies import TensorProxy
 import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
-
-import torch
+from thunder.core.proxies import TensorProxy
 
 __all__ = [
     # Elementwise Binary Ops
@@ -65,9 +66,7 @@ _thunder_to_torch_dtype_map = {
     dtypes.complex128: torch.complex128,
 }
 
-_torch_to_thunder_dtype_map = {
-    v: k for k, v in _thunder_to_torch_dtype_map.items() if not utils.is_weak_dtype(k)
-}
+_torch_to_thunder_dtype_map = {v: k for k, v in _thunder_to_torch_dtype_map.items() if not utils.is_weak_dtype(k)}
 
 # NOTE: bool must be added explicitly because it's a weak dtype in Thunder
 #   (and so is filtered in the above construction)
@@ -195,13 +194,10 @@ def _reduction_dtypes(
         or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
     ):
         result_dtype = dtype if dtype else arg.dtype
-        if (
-            output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
-            and utils.is_complex_dtype(thunder_dtype(result_dtype))
+        if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(
+            thunder_dtype(result_dtype)
         ):
-            result_dtype = torch_dtype(
-                utils.corresponding_real_dtype(thunder_dtype(result_dtype))
-            )
+            result_dtype = torch_dtype(utils.corresponding_real_dtype(thunder_dtype(result_dtype)))
     elif output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE:
         result_dtype = None
     else:  # ALWAYS_BOOL
@@ -250,7 +246,7 @@ def _reduction(
         valid_shape = (a.ndim == 0) or all(a.shape[i] for i in dims)
         utils.check(
             valid_shape,
-            lambda: f"Can't reduce over a zero-size dimension when computing a reduction without an identity value.",
+            lambda: "Can't reduce over a zero-size dimension when computing a reduction without an identity value.",
         )
 
     computation_dtype, result_dtype = _reduction_dtypes(a, output_dtype_kind, dtype)
@@ -298,7 +294,6 @@ def _dim_var_dispatch(dim=None, unbiased=None):
 
 
 def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
-
     # reduces over all dimensions if dim=() is passed
     if dim == () or dim == []:
         dim = None
@@ -308,7 +303,7 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     dtype = dtype if dtype is not None else a.dtype
     utils.check(
         not utils.is_integer_dtype(dtype) and not utils.is_boolean_dtype(dtype),
-        lambda: f"Dtype should be floating point or complex",
+        lambda: "Dtype should be floating point or complex",
     )
 
     result = _reduction(

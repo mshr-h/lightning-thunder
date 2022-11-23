@@ -1,12 +1,13 @@
-from typing import Callable, List, Type, Tuple, Union, Sequence
-from numbers import Number
 from enum import Enum
 from itertools import product
 from functools import wraps
+from numbers import Number
+from typing import Callable, Sequence, Type
 
 import thunder.core.trace as trace
-from .proxies import TensorProxy, NumberProxy
 import thunder.core.dtypes as dtypes
+from .proxies import TensorProxy, NumberProxy
+
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -25,7 +26,6 @@ __all__ = [
     "is_inexact_dtype",
     "is_number_type",
     "is_weak_dtype",
-    "higher_type",
     "can_safe_cast_to",
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
@@ -42,7 +42,6 @@ __all__ = [
     "canonicalize_dim",
     "check_valid_length",
     "check_valid_shape",
-    "check_valid_index",
     "check_no_duplicates",
 ]
 
@@ -50,12 +49,10 @@ __all__ = [
 # Error checking helpers
 #
 
+
 # TODO: maybe put check in a dependency-free base_utils that's also imported here (so it can be used by proxies.py)
-def check(
-    cond: bool, s: Callable[[], str], exception_type: Type[Exception] = RuntimeError
-) -> None:
-    """
-    Helper function for raising an error_type (default: RuntimeError) if a boolean condition fails.
+def check(cond: bool, s: Callable[[], str], exception_type: Type[Exception] = RuntimeError) -> None:
+    """Helper function for raising an error_type (default: RuntimeError) if a boolean condition fails.
 
     s is a callable producing a string to avoid string construction if the error check is passed.
     """
@@ -246,10 +243,7 @@ def corresponding_weak_dtype(dtype):
 
 
 def dtype_to_type(dtype):
-    """
-    Computes the corresponding Python type (AKA "type kind") for the
-    given dtype.
-    """
+    """Computes the corresponding Python type (AKA "type kind") for the given dtype."""
     if is_boolean_dtype(dtype):
         return bool
     if is_integer_dtype(dtype):
@@ -284,8 +278,7 @@ def get_numberlike_value(x):
 
 # TODO: maybe support numbers, too?
 def check_same_dtype(*args):
-    """
-    Accepts multiple dtypes, TensorProxies, and numbers.
+    """Accepts multiple dtypes, TensorProxies, and numbers.
 
     Checks that all given dtypes and dtypes of TensorProxies are equivalent,
     and that all numbers have the corresponding Python type.
@@ -327,7 +320,9 @@ def check_same_dtype(*args):
         expected = dtype_to_type(tensor_dtype)
         check(
             number_type is expected,
-            lambda: f"Expected the type {expected}, corresponding to the dtype {tensor_dtype}, but found {number_type}!",
+            lambda: (
+                f"Expected the type {expected}, corresponding to the dtype {tensor_dtype}, " f"but found {number_type}!"
+            ),
         )
 
     return number_type, tensor_dtype
@@ -356,13 +351,13 @@ _exact_dtype_to_number_map = {
 
 # fmt: off
 # Exact type lattice
-    # b -> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
-    #       `-> u8_ -> u8 ----------------------------^
+# b -> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
+#       `-> u8_ -> u8 ----------------------------^
 # TODO REVIEW: it's a little odd that u8_ + i64_ -> i16
 _elementwise_exact_promotion_table = [
     #    b      i   u8_     u8    i8_   i16_   i32_  i64_  i8  i16  i32  i64
     [ bool,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # b
-    [  int,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i 
+    [  int,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i
     [  u8_,   u8_,  u8_,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8_
     [   u8,    u8,   u8,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8
     [  i8_,   i8_,  i16,   i16,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i8_
@@ -373,7 +368,6 @@ _elementwise_exact_promotion_table = [
     [  i16,   i16,  i16,   i16,   i16,  i16,    i16,  i16, i16, i16, i32, i64], # i16
     [  i32,   i32,  i32,   i32,   i32,  i32,    i32,  i32, i32, i32, i32, i64], # i32
     [  i64,   i64,  i64,   i64,   i64,  i64,    i64,  i64, i64, i64, i64, i64], # i64
-    
 ]
 
 
@@ -487,12 +481,9 @@ class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
 
 
 # TODO: generalize to varargs, allow numbers, dtypes, and tensors
-def elementwise_type_promotion(
-    *args, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
-):
-    """
-    Computes the computation and result dtypes for elementwise type promotion
-    on the given arguments and with the given elementwise type promotion kind.
+def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND):
+    """Computes the computation and result dtypes for elementwise type promotion on the given arguments and with the
+    given elementwise type promotion kind.
 
     Type promotion in Thunder conceptually corresponds with JAX's type promotion.
     See https://jax.readthedocs.io/en/latest/type_promotion.html.
@@ -565,27 +556,18 @@ def elementwise_type_promotion(
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         return promotion_dtype, bool
 
-    if (
-        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT
-        and is_integer_dtype(promotion_dtype)
-    ):
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT and is_integer_dtype(promotion_dtype):
         if not has_tensor_input:
             return dtypes.float32_, dtypes.float32_
         return float, float
 
-    if (
-        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT
-        and is_complex_dtype(promotion_dtype)
-    ):
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT and is_complex_dtype(promotion_dtype):
         return (
             _computation_dtype(promotion_dtype),
             corresponding_real_dtype(promotion_dtype),
         )
 
-    if (
-        type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG
-        and is_boolean_dtype(promotion_dtype)
-    ):
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG and is_boolean_dtype(promotion_dtype):
         if has_tensor_input:
             return dtypes.int64_, dtypes.int64_
         return int, int
@@ -600,9 +582,9 @@ def elementwise_type_promotion(
 
 
 def is_number_tensor(t):
-    """
-    True if the input is a "number tensor" -- a single element tensor with
-    an empty shape. False otherwise.
+    """True if the input is a "number tensor" -- a single element tensor with an empty shape.
+
+    False otherwise.
     """
     if len(t.shape) == 0:
         return True
@@ -655,26 +637,21 @@ def canonicalize_dim(rank: int, idx: int, wrap_scalar: bool = True) -> int:
 
 
 def check_valid_length(length: int):
-    """
-    Validates that an object represents a valid
-    dimension length.
-    """
+    """Validates that an object represents a valid dimension length."""
 
     check(length >= 0, lambda: f"Found invalid length {length}!")
 
 
 def check_valid_shape(shape):
-    """
-    Validates that a sequence represents a valid shape.
-    """
+    """Validates that a sequence represents a valid shape."""
 
     for l in shape:
         check_valid_length(l)
 
 
 def validate_idx(rank: int, idx: int):
-    """
-    Validates that idx is a valid index for the given shape.
+    """Validates that idx is a valid index for the given shape.
+
     Assumes the index is already canonicalized.
     """
 

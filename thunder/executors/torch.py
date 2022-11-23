@@ -1,15 +1,10 @@
 from typing import Sequence
-from collections import deque
-from enum import Enum, auto
-from functools import partial
-
-from thunder.core import prims
-from thunder.core import utils
-from thunder.core.proxies import Proxy, NumberProxy, IntegerProxy, TensorProxy, dtypes
-
-import thunder.langs.torch as ttorch
 
 import torch
+
+import thunder.langs.torch as ttorch
+from thunder.core import prims
+from thunder.core.proxies import NumberProxy, TensorProxy
 
 __all__ = [
     "torch",
@@ -71,7 +66,7 @@ def _get_torch_op(op):
     return torch_op()
 
 
-class torchCtx(object):
+class torchCtx:
     def __init__(self):
         pass
 
@@ -161,13 +156,13 @@ def execute(t, *args, **kwargs):
 
         return False
 
-    filtered_args = tuple(arg for arg in args if not _arg_filter(arg))
+    # filtered_args = tuple(arg for arg in args if not _arg_filter(arg))
 
     # Adds kwargs
-    flattened_kwargs = []
-    for k, v in kwargs.items():
-        flattened_kwargs.append(v)
+    # flattened_kwargs = []
+    # for k, v in kwargs.items():
+    #     flattened_kwargs.append(v)
 
-    args_and_kwargs = filtered_args + tuple(flattened_kwargs)
+    # args_and_kwargs = filtered_args + tuple(flattened_kwargs)
 
     return torch_out, None

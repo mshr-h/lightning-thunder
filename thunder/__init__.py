@@ -1,30 +1,31 @@
-from typing import Callable, Sequence
-from functools import wraps
+import os
 from collections import deque
+from functools import wraps
+from typing import Callable, Sequence
+
+import thunder.langs as langs
+from thunder.__about__ import *
 
 from .core.trace import (
     get_trace,
     new_trace,
-    reset_trace,
-    set_language_context,
-    get_language_context,
-    reset_language_context,
-    set_executor_context,
-    get_executor_context,
     reset_executor_context,
+    reset_language_context,
+    reset_trace,
+    set_executor_context,
+    set_language_context,
 )
-from .core.proxies import proxy
 
-import thunder.langs as langs
+_PACKAGE_ROOT = os.path.dirname(__file__)
+_PROJECT_ROOT = os.path.dirname(_PACKAGE_ROOT)
 
 __all__ = [
     "make_traced",
 ]
 
-# TODO: pass executor directly, not a string
-def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Callable:
-    """
-    Converts a callable in a callable that will be traced and then executed.
+
+def make_traced(fn: Callable, executor: str, language_ctx=langs.torch) -> Callable:
+    """Converts a callable in a callable that will be traced and then executed.
 
     Example usage:
 
@@ -37,12 +38,12 @@ def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Cal
       b = torch.randn(2, 1, device='cuda')
 
       result = traced_foo(a, b)
-
     """
 
     if executor == "torch":
         try:
-            from .executors.torch import execute as torch_execute, torchCtx
+            from .executors.torch import execute as torch_execute
+            from .executors.torch import torchCtx
         except ModuleNotFoundError:
             raise RuntimeError(
                 "The 'torch' executor was requested, but the `torch` package "
@@ -51,7 +52,8 @@ def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Cal
             )
     elif executor == "nvfuser":
         try:
-            from .executors.nvfuser import execute as nvfuser, nvFuserCtx
+            from .executors.nvfuser import execute as nvfuser
+            from .executors.nvfuser import nvFuserCtx
         except ModuleNotFoundError:
             raise RuntimeError(
                 "The 'nvfuser' executor was requested, but NVFuser is not available. "
@@ -89,7 +91,7 @@ def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Cal
                 continue
 
             p = lang_ctx.proxy(arg)
-            inp = t.add_input(p)
+            t.add_input(p)
             proxy_args.append(p)
 
         proxy_kwargs = {}
@@ -102,7 +104,7 @@ def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Cal
                 proxy_kwargs[k] = lang_ctx.thunder_dtype(v)
             else:
                 p = lang_ctx.proxy(v)
-                inp = t.add_kwarg_input(k, p)
+                t.add_kwarg_input(k, p)
                 proxy_kwargs[k] = p
 
         # TODO: support multiple return values

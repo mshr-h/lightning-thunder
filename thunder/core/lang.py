@@ -1,11 +1,11 @@
-from typing import Callable, Sequence, Type
 from functools import reduce
 from numbers import Number
+from typing import Sequence
 
-from . import prims
-from . import utils
-from .proxies import TensorProxy, NumberProxy
 import thunder.core.dtypes as dtypes
+
+from . import prims, utils
+from .proxies import NumberProxy, TensorProxy
 
 # This files defines Thunder's core operators.
 # These operators are distinct from Thunder's primitives, which are the building blocks to build languages
@@ -38,11 +38,10 @@ __all__ = [
 # Data movement and transformation operations
 #
 
+
 # TODO: implement ref.cast with an option to enforce safe casting
 def maybe_convert_to_dtype(a, dtype):
-    """
-    Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified.
-    """
+    """Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified."""
 
     if isinstance(a, TensorProxy):
         if a.thunder_dtype() != dtype:
@@ -63,9 +62,7 @@ def maybe_convert_to_dtype(a, dtype):
     if a is None:
         return None
 
-    raise ValueError(
-        f"Received type {type(a)} that is neither a tensor, number, or sequence!"
-    )
+    raise ValueError(f"Received type {type(a)} that is neither a tensor, number, or sequence!")
 
 
 #
@@ -75,7 +72,8 @@ def maybe_convert_to_dtype(a, dtype):
 # TODO: add check that dtype is a valid dtype? -- write error checking rules
 #   for ops and prims
 def full(shape, fill_value, *, device, dtype=None):
-    dtype = dtype if dtype is not None else type(fill_value)
+    fill_value_type = type(fill_value)
+    dtype = dtype if dtype is not None else fill_value_type
 
     # TODO: fixme
     if device != "cuda":
@@ -84,8 +82,8 @@ def full(shape, fill_value, *, device, dtype=None):
     # Ensures the requested fill_value can be safely cast to the dtype
     # NOTE: this is always true if the dtype is inferred
     utils.check(
-        utils.can_safe_cast_to(cast_to=dtype, cast_from=typ),
-        lambda: f"Can't safely cast fill_value of {fill_value} to datatype {dtype}!",
+        utils.can_safe_cast_to(cast_to=dtype, cast_from=fill_value_type),
+        lambda: f"Can't safely cast fill_value of type {fill_value_type} to datatype {dtype}!",
     )
 
     return prims.full(shape, fill_value, device=device, dtype=dtype)
@@ -124,15 +122,11 @@ def expand(a, *shape):
     # At this point shape must be valid
     # utils.check_valid_shape(shape_)
 
-    return prims.broadcast_in_dim(
-        a, shape_, tuple(range(offset, len(a.shape) + offset))
-    )
+    return prims.broadcast_in_dim(a, shape_, tuple(range(offset, len(a.shape) + offset)))
 
 
 def _compute_broadcast_shape(*_shapes):
-    """
-    Computes the common shape with the fewest dimensions that all input shapes can be broadcast to.
-    """
+    """Computes the common shape with the fewest dimensions that all input shapes can be broadcast to."""
     shapes = tuple(x for x in filter(lambda x: x is not None, _shapes))
 
     # Short-circuits if there are no inputs shapes
@@ -160,14 +154,10 @@ def _compute_broadcast_shape(*_shapes):
 # TODO: add scalar support
 # TODO: review hasattr pattern
 def _maybe_broadcast(*args):
-    """
-    Returns tensors with the same shape, possibly broadcasting inputs to the result shape.
-    """
+    """Returns tensors with the same shape, possibly broadcasting inputs to the result shape."""
 
     # Computes common shape
-    common_shape = _compute_broadcast_shape(
-        *map(lambda t: t.shape if hasattr(t, "shape") else None, args)
-    )
+    common_shape = _compute_broadcast_shape(*map(lambda t: t.shape if hasattr(t, "shape") else None, args))
 
     def __maybe_broadcast(x, shape):
         if hasattr(x, "shape"):
@@ -183,9 +173,7 @@ def _maybe_broadcast(*args):
 # Elementwise unary operations
 #
 def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=None):
-    computation_dtype, result_dtype = utils.elementwise_type_promotion(
-        a, type_promotion_kind=type_promotion_kind
-    )
+    computation_dtype, result_dtype = utils.elementwise_type_promotion(a, type_promotion_kind=type_promotion_kind)
 
     if supported_dtypes is not None:
         utils.check(
@@ -202,9 +190,7 @@ def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=
 
 
 def abs(a):
-    return _elementwise_unary_helper(
-        prims.abs, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a
-    )
+    return _elementwise_unary_helper(prims.abs, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
 
 
 #
@@ -214,12 +200,8 @@ def abs(a):
 # Helper function that implements broadcasting and type promotion for elementwise binary operations
 # TODO: consider making type promotion kind an annotation on operations so it can be queried
 #   programmatically
-def _elementwise_binary_helper(
-    prim, type_promotion_kind, a, b, *, supported_dtypes=None
-):
-    computation_dtype, result_dtype = utils.elementwise_type_promotion(
-        a, b, type_promotion_kind=type_promotion_kind
-    )
+def _elementwise_binary_helper(prim, type_promotion_kind, a, b, *, supported_dtypes=None):
+    computation_dtype, result_dtype = utils.elementwise_type_promotion(a, b, type_promotion_kind=type_promotion_kind)
     a, b = _maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
@@ -228,9 +210,7 @@ def _elementwise_binary_helper(
             lambda: f"Unsupported dtype {computation_dtype}!",
         )
 
-    a, b = maybe_convert_to_dtype(a, computation_dtype), maybe_convert_to_dtype(
-        b, computation_dtype
-    )
+    a, b = maybe_convert_to_dtype(a, computation_dtype), maybe_convert_to_dtype(b, computation_dtype)
 
     result = prim(a, b)
     result = maybe_convert_to_dtype(result, result_dtype)
@@ -239,15 +219,11 @@ def _elementwise_binary_helper(
 
 
 def add(a, b):
-    return _elementwise_binary_helper(
-        prims.add, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
-    )
+    return _elementwise_binary_helper(prims.add, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b)
 
 
 def atan2(a, b):
-    return _elementwise_binary_helper(
-        prims.atan2, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b
-    )
+    return _elementwise_binary_helper(prims.atan2, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b)
 
 
 def bitwise_and(a, b):
@@ -272,18 +248,14 @@ def mul(a, b):
     )
 
 def sub(a, b):
-    return _elementwise_binary_helper(
-        prims.sub, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
-    )
+    return _elementwise_binary_helper(prims.sub, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b)
 
 
 def true_divide(a, b):
-    return _elementwise_binary_helper(
-        prims.div, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b
-    )
+    return _elementwise_binary_helper(prims.div, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b)
 
 
-class CoreLangCtx(object):
+class CoreLangCtx:
     def __init__(self):
         pass
 
