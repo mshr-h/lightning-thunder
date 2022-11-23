@@ -1,4 +1,3 @@
-# flake8: noqa: E241
 from enum import Enum
 from numbers import Number
 from typing import Callable, Sequence, Type
