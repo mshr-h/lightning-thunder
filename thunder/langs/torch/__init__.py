@@ -113,7 +113,7 @@ def _reduction_dtypes(
     computation_dtype = get_computation_dtype(inp_dtype)
     if (
         output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.SAME
-        or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT  # noqa: W503
+        or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
     ):
         result_dtype = dtype if dtype else arg.dtype
         if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(

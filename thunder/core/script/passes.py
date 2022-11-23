@@ -45,17 +45,11 @@ def inline_method_calls(gr):  # criterion?
                 del nbl.nodes[0]
                 # print("inline", i, n, n.inputs[0], n.inputs[0].value is None)
                 print(n.inputs[1].value)
-                gr1 = acquire_method(
-                    n.inputs[0].value, module=n.inputs[1].value, mro_klass=gr.mro_klass
-                )
+                gr1 = acquire_method(n.inputs[0].value, module=n.inputs[1].value, mro_klass=gr.mro_klass)
                 make_ssa(gr1)
                 make_single_return(gr1)
                 # there should be exactly one
-                (ret_bl,) = [
-                    bl
-                    for bl in gr1.blocks
-                    if len(bl.nodes) == 1 and bl.nodes[0].i.opname == "RETURN_VALUE"
-                ]
+                (ret_bl,) = (bl for bl in gr1.blocks if len(bl.nodes) == 1 and bl.nodes[0].i.opname == "RETURN_VALUE")
 
                 # print("inline")
                 # print_graph(gr1)
@@ -64,9 +58,7 @@ def inline_method_calls(gr):  # criterion?
                     if bl1.continue_at == ret_bl:
                         bl1.continue_at = nbl
                     for n1 in bl1.nodes:
-                        n1.jump_targets = [
-                            nbl if jt == ret_bl else jt for jt in n1.jump_targets
-                        ]
+                        n1.jump_targets = [nbl if jt == ret_bl else jt for jt in n1.jump_targets]
                 # output values...
                 (rv,) = ret_bl.nodes[0].inputs
                 print("######orv#", n)

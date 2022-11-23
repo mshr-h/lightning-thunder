@@ -1,11 +1,11 @@
 import sys
-import pytest
 
+import pytest
 import torch
+from torch.testing import assert_close
 
 import thunder.core.script.frontend
 import thunder.core.script.python_ir
-from torch.testing import assert_close
 
 
 class M1(torch.nn.Module):

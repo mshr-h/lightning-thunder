@@ -1,5 +1,5 @@
-import sys
 import dis
+import sys
 import types
 
 from .graph import Node
@@ -154,11 +154,7 @@ def stack_effect_detail(opname: str, oparg: int, *, jump: bool = False):
         return (2 + ((oparg & 0x01) != 0), 1)
     elif opname == "MAKE_FUNCTION":
         return (
-            2
-            + ((oparg & 0x01) != 0)
-            + ((oparg & 0x02) != 0)
-            + ((oparg & 0x04) != 0)
-            + ((oparg & 0x08) != 0),
+            2 + ((oparg & 0x01) != 0) + ((oparg & 0x02) != 0) + ((oparg & 0x04) != 0) + ((oparg & 0x08) != 0),
             1,
         )
     elif opname == "BUILD_SLICE":
@@ -210,9 +206,7 @@ def undo_ssa(gr):
         if v.is_const:
             idx = len(consts)
             consts.append(v.value)
-            new_n = Node(
-                i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[])
             insert_before(new_n, n)
         elif v.parent is not None:
             get_value(v.parent, n)
@@ -233,9 +227,7 @@ def undo_ssa(gr):
         else:
             idx = local_vars.index(v)
             # assert idx >= 0
-            new_n = Node(
-                i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[v], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[v], inputs=[])
             insert_before(new_n, n)
 
     for bl in gr.blocks:
@@ -254,17 +246,13 @@ def undo_ssa(gr):
             except ValueError as e:
                 idx2 = len(local_vars)
                 local_vars.append(v)
-            new_n = Node(
-                i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[o], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[o], inputs=[])
             if last_n is None:
                 insert_before(new_n, gr.blocks[0].nodes[0])
             else:
                 insert_after(new_n, last_n)
             last_n = new_n
-            new_n = Node(
-                i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o]
-            )
+            new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o])
             insert_after(new_n, last_n)
             last_n = new_n
 
@@ -312,11 +300,9 @@ def undo_ssa(gr):
 ## this function is taken from PyTorch Dynamo (c) 2022 by Facebook/Meta licensed
 ## as per https://github.com/pytorch/pytorch/blob/master/LICENSE
 def linetable_writer(first_lineno):
-    """
-    Used to create typing.CodeType.co_linetable
-    See https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt
-    This is the internal format of the line number table if Python >= 3.10
-    """
+    """Used to create typing.CodeType.co_linetable See
+    https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt This is the internal format of the line number
+    table if Python >= 3.10."""
     assert sys.version_info >= (3, 10)
     linetable = []
     lineno = first_lineno
