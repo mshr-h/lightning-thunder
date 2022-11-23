@@ -18,9 +18,9 @@ exclude *.yml
 exclude *.yaml
 
 # exclude tests from package
-recursive-exclude tests *
+recursive-exclude thunder/tests *
 recursive-exclude site *
-exclude tests
+exclude thunder/tests
 
 # Exclude the documentation files
 recursive-exclude docs *
