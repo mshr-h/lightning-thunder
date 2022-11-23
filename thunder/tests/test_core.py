@@ -181,7 +181,7 @@ def test_integer_isinstance_mimicry():
         torch_result = b + c
         assert_close(thunder_result, torch_result)
         pytest.fail()
-    except Exception:
+    except BaseException:
         pass
 
     try:
@@ -189,7 +189,7 @@ def test_integer_isinstance_mimicry():
         torch_result = 2 + b
         assert_close(thunder_result, torch_result)
         pytest.fail()
-    except Exception:
+    except BaseException:
         pass
 
 
