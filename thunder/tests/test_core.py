@@ -1,19 +1,15 @@
-from itertools import product
 import pytest
-
 import torch
+from torch.testing import assert_close, make_tensor
+
 import thunder
 import thunder.core.lang as tlang
-import thunder.core.utils as utils
-
 import thunder.langs.torch as ttorch
-
-from torch.testing import make_tensor, assert_close
-
 from thunder.tests import executor_type
 
 # TODO: sample across executor_types and devices
 device = "cuda" if torch.has_cuda else "cpu"
+
 
 # TODO: add device/dtype instantiation
 # TODO: use OpInfo samples
@@ -185,7 +181,7 @@ def test_integer_isinstance_mimicry():
         torch_result = b + c
         assert_close(thunder_result, torch_result)
         pytest.fail()
-    except:
+    except BaseException:
         pass
 
     try:
@@ -193,7 +189,7 @@ def test_integer_isinstance_mimicry():
         torch_result = 2 + b
         assert_close(thunder_result, torch_result)
         pytest.fail()
-    except:
+    except BaseException:
         pass
 
 

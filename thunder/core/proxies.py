@@ -1,10 +1,9 @@
 import operator
-from collections import deque
-from numbers import Number
-from enum import Enum, auto
+from enum import auto, Enum
 
-from .trace import Constraint, get_trace, get_language_context
 import thunder.core.dtypes as dtypes
+
+from .trace import Constraint, get_language_context, get_trace
 
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
@@ -20,11 +19,11 @@ __all__ = [
     "TensorProxy",
     # Proxy helpers and types
     "proxy",
-    "NumberLike",
+    # "NumberLike",
 ]
 
 
-class Proxy(object):
+class Proxy:
     pass
 
 
@@ -42,9 +41,7 @@ class NumberProxy(Proxy):
 # TODO: implement more methods
 #   See https://docs.python.org/3/reference/datamodel.html#emulating-numeric-types
 class IntegerProxy(NumberProxy, int):
-    """
-    A wrapper for an integer that records the dunder methods called on it and their
-    results as constraints.
+    """A wrapper for an integer that records the dunder methods called on it and their results as constraints.
 
     TODO: implement all dunder methods
     """
@@ -174,8 +171,7 @@ class TensorMethods(Enum):
 #   language context
 # TODO: add method resolution through language context
 class TensorProxy(Proxy):
-    """
-    A wrapper for a tensor that records data and metadata accesses.
+    """A wrapper for a tensor that records data and metadata accesses.
 
     TODO: implement all tensor metadata and data access methods
     TODO: consider delaying/avoiding string construction of names (possibly using ints for names when not debugging)
@@ -206,16 +202,12 @@ class TensorProxy(Proxy):
         self.name = name
 
         if dtype is not None:
-            assert dtype in (bool, int, float, complex) or isinstance(
-                dtype, dtypes.datatype
-            ), f"Unknown dtype={dtype}!"
+            assert dtype in (bool, int, float, complex) or isinstance(dtype, dtypes.datatype), f"Unknown dtype={dtype}!"
 
         if tensor is not None:
             # Pulls metadata from the tensor, but explicit kwargs take precedence
             assert isinstance(tensor, TensorProxy)
-            self.shape = (
-                tensor.shape if shape is None else self._make_shape(name, shape)
-            )
+            self.shape = tensor.shape if shape is None else self._make_shape(name, shape)
             self._dtype = tensor.thunder_dtype() if dtype is None else dtype
         else:
             # Requires all metadata be specified explicitly
@@ -260,9 +252,7 @@ class TensorProxy(Proxy):
 
 # TODO: differentiate tensor and other types of names
 def proxy(x):
-    """
-    Creates a proxy object.
-    """
+    """Creates a proxy object."""
 
     if isinstance(x, TensorProxy):
         name = get_trace().tensor_name()
