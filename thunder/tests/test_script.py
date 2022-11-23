@@ -1,3 +1,4 @@
+import sys
 import pytest
 
 import torch
@@ -21,6 +22,10 @@ class M1(torch.nn.Module):
         return 2 * x
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
 def test_acquisition_compile():
     model = M1()
     gr = thunder.core.script.frontend.acquire_method(model.forward)
