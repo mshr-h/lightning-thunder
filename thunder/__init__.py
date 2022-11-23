@@ -4,7 +4,7 @@ from functools import wraps
 from typing import Callable, Sequence
 
 import thunder.langs as langs
-from thunder.__about__ import *  # noqa: F401, F403
+from thunder.__about__ import *
 
 from .core.trace import (
     get_trace,
