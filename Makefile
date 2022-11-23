@@ -5,7 +5,7 @@ export SPHINX_MOCK_REQUIREMENTS=0
 
 test: clean
 	pip install -q -r requirements.txt
-	pip install -q -r tests/requirements.txt
+	pip install -q -r requirements/test.txt
 
 	# use this to run tests
 	python -m coverage run --source thunder -m pytest thunder tests -v --flake8

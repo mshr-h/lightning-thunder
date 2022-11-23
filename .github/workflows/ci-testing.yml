@@ -40,7 +40,7 @@ jobs:
     - name: Set min. dependencies
       if: matrix.requires == 'oldest'
       run: |
-        for fpath in ('requirements.txt', 'tests/requirements.txt'):
+        for fpath in ('requirements.txt', 'requirements/test.txt'):
             req = open(fpath).read().replace('>=', '==')
             open(fpath, 'w').write(req)
       shell: python
@@ -60,7 +60,7 @@ jobs:
     - name: Install package & dependencies
       run: |
         pip --version
-        pip install -e . -U -q -r tests/requirements.txt --find-links https://download.pytorch.org/whl/cpu/torch_stable.html
+        pip install -e . -U -q -r requirements/test.txt --find-links https://download.pytorch.org/whl/cpu/torch_stable.html
         pip list
       shell: bash
 
