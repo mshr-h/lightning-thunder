@@ -1,13 +1,12 @@
-import thunder.core.lang as tlang
-from thunder.core.proxies import dtypes
-
-from thunder.langs.torch import torch_dtype
-
 import torch
 from torch.testing import make_tensor
 
+import thunder.core.lang as tlang
+from thunder.core.proxies import dtypes
+from thunder.langs.torch import torch_dtype
 
-class SampleInput(object):
+
+class SampleInput:
     """Represents sample inputs to a function."""
 
     __slots__ = [
@@ -22,8 +21,9 @@ class SampleInput(object):
 
 opinfos = []
 
+
 # TODO: require use of generic Thunder dtypes (once they exist)
-class OpInfo(object):
+class OpInfo:
     """Operator information and helper functions for acquiring it."""
 
     def __init__(
@@ -57,9 +57,7 @@ class OpInfo(object):
 
     # TODO: different sample inputs must be generated depending on the language context
     def sample_inputs(self, device_type, dtype, *, requires_grad=False, **kwargs):
-        return self.sample_input_generator(
-            self, device_type, dtype, requires_grad, **kwargs
-        )
+        return self.sample_input_generator(self, device_type, dtype, requires_grad, **kwargs)
 
     def device_types(self):
         return set(self._device_types)
@@ -77,6 +75,7 @@ class OpInfo(object):
 
 # TODO: create elementwise unary OpInfo subclass and maybe auto add to list
 elementwise_unary_ops = []
+
 
 # TODO: extend this generator
 def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
@@ -107,6 +106,7 @@ opinfos.extend(elementwise_unary_ops)
 
 # TODO: create elementwise binary OpInfo subclass and maybe auto add to list
 elementwise_binary_ops = []
+
 
 # TODO: extend this generator
 def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):

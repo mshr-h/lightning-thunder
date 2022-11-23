@@ -1,7 +1,6 @@
-from collections import deque
+# import contextvars  # TODO: review this (vs threadlocal?) -- currently used to set the current trace
 import string
-
-import contextvars  # TODO: review this (vs threadlocal?) -- currently used to set the current trace
+from collections import deque
 from contextvars import ContextVar
 
 # This file defines the tracing context, methods for acquiring it, and related classes.
@@ -35,9 +34,7 @@ _trace = ContextVar("trace")
 
 
 def new_trace():
-    """
-    Sets the current trace.
-    """
+    """Sets the current trace."""
 
     return _trace.set(Trace())
 
@@ -45,10 +42,7 @@ def new_trace():
 # TODO: add ability to get a temporary "anonymous" trace
 # TODO: possibly add a kwarg to control this behavior
 def get_trace():
-    """
-    Gets the current trace, returning None
-    if there is no current trace.
-    """
+    """Gets the current trace, returning None if there is no current trace."""
 
     try:
         t = _trace.get()
@@ -60,9 +54,7 @@ def get_trace():
 
 
 def reset_trace(token):
-    """
-    Resets the tracing state.
-    """
+    """Resets the tracing state."""
 
     _trace.set(token)
 
@@ -75,9 +67,7 @@ _language_ctx = ContextVar("language_ctx")
 
 
 def set_language_context(ctx):
-    """
-    Sets the current trace.
-    """
+    """Sets the current trace."""
 
     return _language_ctx.set(ctx)
 
@@ -85,10 +75,7 @@ def set_language_context(ctx):
 # TODO: add ability to get a temporary "anonymous" trace
 # TODO: possibly add a kwarg to control this behavior
 def get_language_context():
-    """
-    Gets the current trace, returning None
-    if there is no current trace.
-    """
+    """Gets the current trace, returning None if there is no current trace."""
 
     try:
         ctx = _language_ctx.get()
@@ -100,9 +87,7 @@ def get_language_context():
 
 
 def reset_language_context(token):
-    """
-    Resets the tracing state.
-    """
+    """Resets the tracing state."""
 
     _language_ctx.set(token)
 
@@ -114,9 +99,7 @@ _executor_ctx = ContextVar("executor_ctx")
 
 
 def set_executor_context(ctx):
-    """
-    Sets the current trace.
-    """
+    """Sets the current trace."""
 
     return _executor_ctx.set(ctx)
 
@@ -124,10 +107,7 @@ def set_executor_context(ctx):
 # TODO: add ability to get a temporary "anonymous" trace
 # TODO: possibly add a kwarg to control this behavior
 def get_executor_context():
-    """
-    Gets the current trace, returning None
-    if there is no current trace.
-    """
+    """Gets the current trace, returning None if there is no current trace."""
 
     try:
         ctx = _executor_ctx.get()
@@ -139,16 +119,13 @@ def get_executor_context():
 
 
 def reset_executor_context(token):
-    """
-    Resets the tracing state.
-    """
+    """Resets the tracing state."""
 
     _executor_ctx.set(token)
 
 
-class Constraint(object):
-    """
-    Represents a "constraint" on the validity of a region.
+class Constraint:
+    """Represents a "constraint" on the validity of a region.
 
     Constrains include a function to be evaluated, the arguments to it, and
     the expected result.
@@ -169,9 +146,8 @@ class Constraint(object):
         return f"[Constraint op={str(self.op)} expected={str(self.expected)} args={[str(arg) for arg in self.args]}]"
 
 
-class Trace(object):
-    """
-    The tracing context.
+class Trace:
+    """The tracing context.
 
     Contains common datastructures to track the trace.
     """
@@ -191,15 +167,17 @@ class Trace(object):
         self._constant_name_counter = 0
 
     def __repr__(self):
-        constraint_string = "\n".join(
-            str(constraint) for constraint in self.constraints
-        )
+        constraint_string = "\n".join(str(constraint) for constraint in self.constraints)
         input_string = "\n".join(str(inp) for inp in self.inputs)
         kwarg_input_string = "\n".join(f"{k}={v}" for k, v in self.kwargs)
         constant_string = "\n".join(str(constant) for constant in self.constants)
         symbol_string = "\n".join(str(sym) for sym in self.symbols)
         output_string = "\n".join(str(out) for out in self.outputs)
-        return f"[Trace, \nConstraints:\n{constraint_string}\nInputs:\n{input_string}\nKwarg Inputs:\n{kwarg_input_string}\nConstants:\n{constant_string}\nSymbols:\n{symbol_string}\nOutputs:\n{output_string}]"
+        return (
+            f"[Trace, \nConstraints:\n{constraint_string}\nInputs:\n{input_string}\n"
+            f"Kwarg Inputs:\n{kwarg_input_string}\nConstants:\n{constant_string}\n"
+            f"Symbols:\n{symbol_string}\nOutputs:\n{output_string}]"
+        )
 
     # TODO: Consider using a different name generation technique that reuses the original names
     @staticmethod
