@@ -23,15 +23,9 @@ def _instantiate_test_template(template, scope, *, opinfo, device, dtype):
     Instanties a test template for an operator.
     """
 
-    # TODO: make generic using Thunder dtypes
-    def _extract_dtype_string(dtype):
-        # Ex. torch.float32
-        s = str(dtype)
-        return s.split(".")[1]
-
     # Ex. test_foo_CUDA_float32
     test_name = "_".join(
-        (template.__name__, opinfo.name, device.upper(), _extract_dtype_string(dtype))
+        (template.__name__, opinfo.name, device.upper(), str(dtype))
     )
 
     def test():

@@ -140,6 +140,15 @@ bitwise_and_opinfo = OpInfo(
 )
 elementwise_binary_ops.append(bitwise_and_opinfo)
 
+mul_opinfo = OpInfo(
+    tlang.mul,
+    device_types=("cpu", "cuda"),
+    dtypes=(dtypes.float16, dtypes.float32, dtypes.float64),
+    sample_input_generator=elementwise_binary_generator,
+    torch_reference=torch.mul,
+)
+elementwise_binary_ops.append(mul_opinfo)
+
 sub_opinfo = OpInfo(
     tlang.sub,
     device_types=("cpu", "cuda"),

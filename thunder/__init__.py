@@ -2,8 +2,6 @@ from typing import Callable, Sequence
 from functools import wraps
 from collections import deque
 
-from .core import lang
-from .core import trace
 from .core.trace import (
     get_trace,
     new_trace,
@@ -19,13 +17,12 @@ from .core.proxies import proxy
 
 import thunder.langs as langs
 
-
 __all__ = [
     "make_traced",
 ]
 
-
-def make_traced(fn: Callable, executor: str) -> Callable:
+# TODO: pass executor directly, not a string
+def make_traced(fn: Callable, *, executor: str, language_ctx=langs.torch) -> Callable:
     """
     Converts a callable in a callable that will be traced and then executed.
 
@@ -62,7 +59,7 @@ def make_traced(fn: Callable, executor: str) -> Callable:
             )
 
     @wraps(fn)
-    def _fn(*args, lang=langs.torch, **kwargs):
+    def _fn(*args, **kwargs):
         # Acquires a new tracing context
         trace_token = new_trace()
 
@@ -77,7 +74,7 @@ def make_traced(fn: Callable, executor: str) -> Callable:
             executor_fn = torch_execute
 
         executor_token = set_executor_context(ctx)
-        lang_ctx = lang.ctx()
+        lang_ctx = language_ctx.ctx()
         lang_token = set_language_context(lang_ctx)
 
         t = get_trace()

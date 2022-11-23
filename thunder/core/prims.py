@@ -16,9 +16,6 @@ from .utils import (
     get_numberlike_value,
 )
 
-# TODO: get rid of requiring torch
-import torch
-
 # This file defines Thunder's "primitive" operations. These are the
 #   "building blocks" for all of Thunder's operators.
 
@@ -44,6 +41,7 @@ __all__ = [
     "atan2",
     "bitwise_and",
     "div",
+    "mul",
     "sub",
     # Reduction prims
     "reduction_meta",
@@ -61,11 +59,13 @@ class Ops(Enum):
     FULL = auto()
     # Elementwise unary prims
     ABS = auto()
+    ACOS = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
     BITWISE_AND = auto()
     DIV = auto()
+    MUL = auto()
     SUB = auto()
     # Shape prims
     BROADCAST_IN_DIM = auto()
@@ -205,7 +205,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         if utils.is_number_type(type):
             return bool
-        return torch.bool
+        return thunder.dtypes.bool8
 
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
         if typ is complex:
@@ -332,6 +332,9 @@ def _elementwise_unary_meta(
     value = number_handler(va)
     return proxy(result_type(value))
 
+acos = make_prim(
+    
+)
 
 abs = make_prim(
     Ops.ABS,
@@ -483,6 +486,17 @@ div = make_prim(
         name="div",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=_div_number_handler,
+    ),
+)
+
+mul = make_prim(
+    Ops.MUL,
+    "mul",
+    partial(
+        _elementwise_binary_meta,
+        name="mul",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.mul,
     ),
 )
 

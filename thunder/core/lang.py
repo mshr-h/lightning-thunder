@@ -27,6 +27,7 @@ __all__ = [
     "add",
     "atan2",
     "bitwise_and",
+    "mul",
     "sub",
     "true_divide",
     # Language context
@@ -265,6 +266,10 @@ def bitwise_and(a, b):
         ),
     )
 
+def mul(a, b):
+    return _elementwise_binary_helper(
+        prims.mul, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b
+    )
 
 def sub(a, b):
     return _elementwise_binary_helper(

@@ -82,7 +82,10 @@ class datatype(object):
         return self._is_weak
 
     def __repr__(self):
-        return f"thunder.{self._name}{8 * self._bytes}{'_' if self._is_weak else ''}"
+        return f"{self._name}{8 * self._bytes}{'_' if self._is_weak else ''}"
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class exact(datatype):
@@ -161,10 +164,10 @@ bfloat16 = floating("bfloat", bytes=2, is_weak=False)
 bfloat16_ = floating("bfloat", bytes=2, is_weak=True)
 float16 = floating("float", bytes=2, is_weak=False)
 float16_ = floating("float", bytes=2, is_weak=True)
-float32 = floating("float", bytes=2, is_weak=False)
-float32_ = floating("float", bytes=2, is_weak=True)
-float64 = floating("float", bytes=2, is_weak=False)
-float64_ = floating("float", bytes=2, is_weak=True)
+float32 = floating("float", bytes=4, is_weak=False)
+float32_ = floating("float", bytes=4, is_weak=True)
+float64 = floating("float", bytes=8, is_weak=False)
+float64_ = floating("float", bytes=8, is_weak=True)
 
 
 class complexfloating(inexact):

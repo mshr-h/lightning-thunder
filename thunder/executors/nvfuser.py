@@ -106,6 +106,7 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.ATAN2: "atan2",
     prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
+    prims.Ops.MUL: "mul",
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",

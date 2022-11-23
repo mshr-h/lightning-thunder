@@ -2,7 +2,9 @@ from typing import Callable, List, Type, Tuple, Union, Sequence
 from numbers import Number
 from enum import Enum
 from itertools import product
+from functools import wraps
 
+import thunder.core.trace as trace
 from .proxies import TensorProxy, NumberProxy
 import thunder.core.dtypes as dtypes
 
@@ -681,6 +683,24 @@ def validate_idx(rank: int, idx: int):
         lambda: f"Found invalid index {idx} for rank {rank}!",
     )
 
+# TODO: think about preserving the original function's signature
+class langctx(object):
+    """
+    A decorator that calls the decorated function in the given language context,
+    resetting to the caller's language context when the function is done.
+    """
 
-def check_no_duplicates(dims: Sequence):
-    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in {dims}!")
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __call__(self, fn_):
+        
+        @wraps(fn_)
+        def fn(*args, **kwargs):
+            tok = trace.set_language_context(self.ctx)
+            result = fn_(*args, **kwargs)
+            trace.set_language_context(tok)
+            return result
+
+
+        return fn
