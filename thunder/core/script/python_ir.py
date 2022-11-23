@@ -1,5 +1,5 @@
-import sys
 import dis
+import sys
 import types
 
 from .graph import Node
@@ -154,11 +154,7 @@ def stack_effect_detail(opname: str, oparg: int, *, jump: bool = False):
         return (2 + ((oparg & 0x01) != 0), 1)
     elif opname == "MAKE_FUNCTION":
         return (
-            2
-            + ((oparg & 0x01) != 0)
-            + ((oparg & 0x02) != 0)
-            + ((oparg & 0x04) != 0)
-            + ((oparg & 0x08) != 0),
+            2 + ((oparg & 0x01) != 0) + ((oparg & 0x02) != 0) + ((oparg & 0x04) != 0) + ((oparg & 0x08) != 0),
             1,
         )
     elif opname == "BUILD_SLICE":
@@ -210,16 +206,14 @@ def undo_ssa(gr):
         if v.is_const:
             idx = len(consts)
             consts.append(v.value)
-            new_n = Node(
-                i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[])
             insert_before(new_n, n)
         elif v.parent is not None:
             get_value(v.parent, n)
             if n.i.opname == "CALL_METHOD":
                 try:
                     idx = names.index(v.name)
-                except ValueError as e:
+                except ValueError:
                     idx = len(names)
                     names.append(v.name)
                 new_n = Node(
@@ -229,13 +223,11 @@ def undo_ssa(gr):
                 )
                 insert_before(new_n, n)
             else:
-                XXX
+                raise NotImplementedError()
         else:
             idx = local_vars.index(v)
             # assert idx >= 0
-            new_n = Node(
-                i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[v], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[v], inputs=[])
             insert_before(new_n, n)
 
     for bl in gr.blocks:
@@ -251,20 +243,16 @@ def undo_ssa(gr):
         for v in i.phi_values:
             try:
                 idx2 = local_vars.index(v)
-            except ValueError as e:
+            except ValueError:
                 idx2 = len(local_vars)
                 local_vars.append(v)
-            new_n = Node(
-                i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[o], inputs=[]
-            )
+            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[i], inputs=[])
             if last_n is None:
                 insert_before(new_n, gr.blocks[0].nodes[0])
             else:
                 insert_after(new_n, last_n)
             last_n = new_n
-            new_n = Node(
-                i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o]
-            )
+            new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[i], inputs=[])
             insert_after(new_n, last_n)
             last_n = new_n
 
@@ -276,7 +264,7 @@ def undo_ssa(gr):
             for inpidx, i in enumerate(n.inputs):
                 get_value(i, n=n, inpidx=inpidx)
             for o in n.outputs[::-1]:
-                ## what about values that are UnionValue?
+                # what about values that are UnionValue?
                 idx = len(local_vars)
                 local_vars.append(o)
                 new_n = Node(
@@ -289,7 +277,7 @@ def undo_ssa(gr):
                 for v in o.phi_values:
                     try:
                         idx2 = local_vars.index(v)
-                    except ValueError as e:
+                    except ValueError:
                         idx2 = len(local_vars)
                         local_vars.append(v)
                     new_n = Node(
@@ -309,14 +297,12 @@ def undo_ssa(gr):
     return local_vars, names, consts
 
 
-## this function is taken from PyTorch Dynamo (c) 2022 by Facebook/Meta licensed
-## as per https://github.com/pytorch/pytorch/blob/master/LICENSE
+# this function is taken from PyTorch Dynamo (c) 2022 by Facebook/Meta licensed
+# as per https://github.com/pytorch/pytorch/blob/master/LICENSE
 def linetable_writer(first_lineno):
-    """
-    Used to create typing.CodeType.co_linetable
-    See https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt
-    This is the internal format of the line number table if Python >= 3.10
-    """
+    """Used to create typing.CodeType.co_linetable See
+    https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt This is the internal format of the line number
+    table if Python >= 3.10."""
     assert sys.version_info >= (3, 10)
     linetable = []
     lineno = first_lineno
@@ -353,7 +339,7 @@ def generate_function(gr):
     linetable, linetable_update, linetable_end = linetable_writer(0)
     address_map = {}
     for bl in gr.blocks:
-        ## assumes first block is function start
+        # assumes first block is function start
         for n in bl.nodes:
             address_map[n] = len(address_map)
 
@@ -384,7 +370,7 @@ def generate_function(gr):
     co_posonlyargcount = 0
     co_kwonlyargcount = 0
     co_nlocals = len(local_vars)
-    co_stacksize = 10  ## TODO
+    co_stacksize = 10  # TODO
     co_flags = 0
     co_codestring = bc_bytes
     co_consts = tuple(consts)
@@ -395,27 +381,27 @@ def generate_function(gr):
     co_filename = "__none__"
     co_name = "__none__"
     co_firstlineno = 0
-    co_linetable = linetable  ## XXX
+    co_linetable = linetable  # XXX
     co_freevars = ()
     co_cellvars = ()
 
     c = types.CodeType(
-        co_argcount,  #   int
-        co_posonlyargcount,  #   int
-        co_kwonlyargcount,  #   int
-        co_nlocals,  #   int
-        co_stacksize,  #   int
-        co_flags,  #   int
-        co_codestring,  #   bytes
-        co_consts,  #   tuple
-        co_names,  #   tuple
-        co_varnames,  #   tuple
-        co_filename,  #   string
-        co_name,  #   string
-        co_firstlineno,  #   integer
-        co_linetable,  #   bytes
-        co_freevars,  #   tuple
-        co_cellvars,  #   tuple
+        co_argcount,  # int
+        co_posonlyargcount,  # int
+        co_kwonlyargcount,  # int
+        co_nlocals,  # int
+        co_stacksize,  # int
+        co_flags,  # int
+        co_codestring,  # bytes
+        co_consts,  # tuple
+        co_names,  # tuple
+        co_varnames,  # tuple
+        co_filename,  # string
+        co_name,  # string
+        co_firstlineno,  # integer
+        co_linetable,  # bytes
+        co_freevars,  # tuple
+        co_cellvars,  # tuple
     )
 
     return types.FunctionType(c, {})

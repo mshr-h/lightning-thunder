@@ -43,7 +43,7 @@ class UnionValue(Value):
 
 
 def unify_values(values, jump_sources, bl):
-    ## what to do with loops, really?
+    # what to do with loops, really?
     if bl in jump_sources:
         print("ohoh, loop")
     if len(values) == 1:
@@ -87,10 +87,7 @@ class Block:
         self.continue_at = None
 
     def __str__(self):
-        return "\n".join(
-            [f"  Block (reached from {self.jump_sources})"]
-            + ["    " + str(n) for n in self.nodes]
-        )
+        return "\n".join([f"  Block (reached from {self.jump_sources})"] + ["    " + str(n) for n in self.nodes])
 
     def __repr__(self):
         return f"{super().__repr__()[:-1]} {self}>"
@@ -107,7 +104,7 @@ class Graph:
         return f"{super().__repr__()[:-1]} {self}>"
 
     def nodes(self):
-        for b in blocks:
+        for b in self.blocks:
             pass
 
     def print(self):
@@ -116,19 +113,11 @@ class Graph:
         for bl in self.blocks:
             for n in bl.i:
                 for o in n.outputs:
-                    o.print_name = (
-                        f"{o.name}:{value_counter}"
-                        if o.name is not None
-                        else f":{value_counter}"
-                    )
+                    o.print_name = f"{o.name}:{value_counter}" if o.name is not None else f":{value_counter}"
                     value_counter += 1
                 for i in n.inputs:
                     if not hasattr(i, "print_name"):
-                        i.print_name = (
-                            f"{i.name}:{value_counter}"
-                            if i.name is not None
-                            else f":{value_counter}"
-                        )
+                        i.print_name = f"{i.name}:{value_counter}" if i.name is not None else f":{value_counter}"
                         value_counter += 1
                 av = f"[{n.i.argval}]" if n.i.argval is not None else ""
                 print(
