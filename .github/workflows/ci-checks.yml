@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   check-code:
-    uses: Lightning-AI/utilities/.github/workflows/check-code.yml@v0.4.1
+    uses: ./.github/workflows/check-code.yml
 
   check-schema:
     uses: Lightning-AI/utilities/.github/workflows/check-schema.yml@v0.4.1
