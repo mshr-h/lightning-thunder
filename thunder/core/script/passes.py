@@ -1,7 +1,3 @@
-# just to make code check pass
-Block = None
-
-
 def specify_inputs(gr, inps):
     inp_map = {p: v for p, v in zip(gr.local_variables_at_start, inps)}
     for bl in gr.blocks:
@@ -28,7 +24,7 @@ def split_block(gr, bl, n):
 
 
 def inline_method_calls(gr):  # criterion?
-    # node_map = {}
+    node_map = {}
     i_bl = 0
     while i_bl < len(gr.blocks):
         bl = gr.blocks[i_bl]
