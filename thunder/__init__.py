@@ -1,8 +1,10 @@
+import os
 from collections import deque
 from functools import wraps
 from typing import Callable, Sequence
 
 import thunder.langs as langs
+from thunder.__about__ import *  # noqa: F401, F403
 
 from .core.trace import (
     get_trace,
@@ -13,6 +15,9 @@ from .core.trace import (
     set_executor_context,
     set_language_context,
 )
+
+_PACKAGE_ROOT = os.path.dirname(__file__)
+_PROJECT_ROOT = os.path.dirname(_PACKAGE_ROOT)
 
 __all__ = [
     "make_traced",
