@@ -1,13 +1,13 @@
-import sys
-import inspect
-import dis
 import collections
+import dis
+import inspect
 import itertools
+import sys
+
 import opcode
 
+from .graph import Block, Graph, Node, unify_values, Value
 from .python_ir import stack_effect_detail
-
-from .graph import Value, Graph, Block, Node, unify_values
 
 
 class Super:
@@ -66,9 +66,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
     blocks = {}
 
     def append_if_needed(offset_start, bl, jump_source):
-        for other_offset_start, other_bl in itertools.chain(
-            blocks_to_process.items(), blocks.items()
-        ):
+        for other_offset_start, other_bl in itertools.chain(blocks_to_process.items(), blocks.items()):
             if other_offset_start == offset_start:
                 ### take anything?
                 print("#oldbl##", offset_start, jump_source, other_bl.jump_sources)
@@ -95,9 +93,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
 
             # need to handle branching instructions here
             if i.opname == "FOR_ITER":
-                b1 = append_if_needed(
-                    offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n
-                )
+                b1 = append_if_needed(offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n)
                 # try to do values here?
                 n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
             elif i.opname in {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"}:
@@ -110,9 +106,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                 ]
             elif i.opname == "JUMP_FORWARD":
                 done = True
-                b1 = append_if_needed(
-                    offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n
-                )
+                b1 = append_if_needed(offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n)
                 n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
             elif i.opname == "JUMP_ABSOLUTE":
                 done = True
@@ -148,14 +142,10 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                     )
                     jump_node = Node(i=jump_ins, inputs=[], outputs=[])
                     bl.nodes.append(jump_node)
-                    b1 = append_if_needed(
-                        offset_start=ic, bl=Block(), jump_source=jump_node
-                    )
+                    b1 = append_if_needed(offset_start=ic, bl=Block(), jump_source=jump_node)
                     jump_node.jump_targets = [
                         (
-                            stack_effect_detail(
-                                jump_ins.opname, jump_ins.arg, jump=True
-                            ),
+                            stack_effect_detail(jump_ins.opname, jump_ins.arg, jump=True),
                             b1,
                         )
                     ]
@@ -172,21 +162,16 @@ def make_ssa(gr, verbose=False):
     for bl in gr.blocks:
         for n in bl.nodes:
             n.block = bl
-        bl.all_stacks_at_start = [
-            None if js is not None else [] for js in bl.jump_sources
-        ]
+        bl.all_stacks_at_start = [None if js is not None else [] for js in bl.jump_sources]
         bl.all_local_variables_at_start = [
-            None if js is not None else gr.local_variables_at_start[:]
-            for js in bl.jump_sources
+            None if js is not None else gr.local_variables_at_start[:] for js in bl.jump_sources
         ]
     blocks_to_do = set(gr.blocks)
     while blocks_to_do:
         one_block_done = False
         for bl in list(blocks_to_do):
             all_deps_done = not any(
-                js.block in blocks_to_do
-                for js in bl.jump_sources
-                if js is not None and js.block is not bl
+                js.block in blocks_to_do for js in bl.jump_sources if js is not None and js.block is not bl
             )
             if all_deps_done:
                 one_block_done = True
@@ -198,14 +183,8 @@ def make_ssa(gr, verbose=False):
                     bl,
                 )
                 # TODO: We cannot currently support loops. :/
-                stack = [
-                    unify_values(v, jump_sources, bl)
-                    for v in zip(*bl.all_stacks_at_start)
-                ]
-                local_variables = [
-                    unify_values(v, jump_sources, bl)
-                    for v in zip(*bl.all_local_variables_at_start)
-                ]
+                stack = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_stacks_at_start)]
+                local_variables = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_local_variables_at_start)]
                 print("###lv1", local_variables)
 
                 new_nodes = []
@@ -234,18 +213,8 @@ def make_ssa(gr, verbose=False):
                             outputs = [Value(name=gn, value=gv, is_global=True)]
                         else:
                             outputs = [Value(name="super", value=Super())]
-                    elif (
-                        i.opname == "CALL_FUNCTION"
-                        and i.arg == 0
-                        and isinstance(inputs[0].value, Super)
-                    ):
-                        outputs = [
-                            Value(
-                                value=MROAwareObjectRef(
-                                    gr.module, start_klass=gr.mro_klass
-                                )
-                            )
-                        ]
+                    elif i.opname == "CALL_FUNCTION" and i.arg == 0 and isinstance(inputs[0].value, Super):
+                        outputs = [Value(value=MROAwareObjectRef(gr.module, start_klass=gr.mro_klass))]
                         print("##super#", outputs)
                     elif i.opname == "LOAD_METHOD":  # also used for modules (callables)
                         (obj,) = inputs
@@ -261,11 +230,7 @@ def make_ssa(gr, verbose=False):
                         #    obj = obj.obj
                         outputs = [m, obj]
                     elif i.opname == "LOAD_CONST":
-                        outputs = [
-                            Value(
-                                value=gr.method.__code__.co_consts[i.arg], is_const=True
-                            )
-                        ]
+                        outputs = [Value(value=gr.method.__code__.co_consts[i.arg], is_const=True)]
                     elif i.opname == "CALL_METHOD":
                         print(n.inputs[0])
                         outputs = [Value(n=n, nr=k) for k in range(push)]
@@ -310,15 +275,11 @@ def make_ssa(gr, verbose=False):
                     if pop > 0:
                         stack = stack[:-pop]
                     stack.extend(outputs)
-                    assert (
-                        i.opname == "JUMP_ABSOLUTE"
-                        and i.arg == None
-                        and len(stack) == ol
-                    ) or (len(stack) - ol == opcode.stack_effect(i.opcode, i.arg))
-                if bl.continue_at is not None:
-                    bl.continue_at.all_local_variables_at_start.append(
-                        (n, local_variables[:])
+                    assert (i.opname == "JUMP_ABSOLUTE" and i.arg == None and len(stack) == ol) or (
+                        len(stack) - ol == opcode.stack_effect(i.opcode, i.arg)
                     )
+                if bl.continue_at is not None:
+                    bl.continue_at.all_local_variables_at_start.append((n, local_variables[:]))
                 bl.nodes = new_nodes
         assert one_block_done
     for bl in gr.blocks:
@@ -359,8 +320,5 @@ def make_single_return(gr):
                 all_return_values.append(b.nodes[-1].inputs)
                 del b.nodes[-1]
                 b.nodes.append(jump_node)
-        ret_node.inputs = [
-            unify_values(values, ret_bl.jump_sources, ret_bl)
-            for values in zip(*all_return_values)
-        ]
+        ret_node.inputs = [unify_values(values, ret_bl.jump_sources, ret_bl) for values in zip(*all_return_values)]
     return gr
