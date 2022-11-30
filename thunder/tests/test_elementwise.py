@@ -14,7 +14,7 @@ from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 # Snippets run a single test using a single sample
 # TODO: should snippets be able to access the original opinfo? -- No
 def snippet_torch_consistency(op, torch_op, sample):
-    traced_op = thunder.make_traced(op, executor=executor_type)
+    traced_op = thunder.make_traced(op)
     thunder_result = traced_op(*sample.args, **sample.kwargs)
 
     torch_result = torch_op(*sample.args, **sample.kwargs)

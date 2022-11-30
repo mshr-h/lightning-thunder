@@ -660,6 +660,11 @@ def validate_idx(rank: int, idx: int):
         lambda: f"Found invalid index {idx} for rank {rank}!",
     )
 
+
+def check_no_duplicates(dims: Sequence):
+    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in list of dimensions {dims}!")
+
+
 # TODO: think about preserving the original function's signature
 class langctx(object):
     """
@@ -671,13 +676,11 @@ class langctx(object):
         self.ctx = ctx
 
     def __call__(self, fn_):
-        
         @wraps(fn_)
         def fn(*args, **kwargs):
             tok = trace.set_language_context(self.ctx)
             result = fn_(*args, **kwargs)
             trace.set_language_context(tok)
             return result
-
 
         return fn

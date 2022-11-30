@@ -203,3 +203,21 @@ all_datatypes = (
     complex128,
     complex128_,
 )
+
+
+def _filter_dtypes(cls):
+    return (dtype for dtype in all_datatypes if isinstance(dtype, cls) and not dtype.is_weak)
+
+
+# Translates a sequence of dtypes and dtype classes into a concrete set of corresponding dtypes
+def resolve_dtypes(args):
+    dtypes = set()
+    for arg in args:
+        if isinstance(arg, datatype):
+            dtypes.add(arg)
+            continue
+
+        assert arg in (datatype, exact, signedinteger, unsignedinteger, bool_, inexact, floating, complexfloating)
+        dtypes.update(_filter_dtypes(arg))
+
+    return dtypes

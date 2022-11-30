@@ -237,7 +237,7 @@ class TensorProxy(Proxy):
     def thunder_dtype(self):
         return self._dtype
 
-    # + 
+    # +
     def __add__(self, other):
         ctx = get_language_context()
         return ctx.add(self, other)
@@ -258,9 +258,9 @@ class TensorProxy(Proxy):
         return ctx.true_divide(self, other)
 
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
-    #  by the language context. Just returning that method wouldn't work, however, 
-    #  since the TensorProxy, passed as self here, wouldn't be passed through to the 
-    #  actual method. That's why this partials the returned method. 
+    #  by the language context. Just returning that method wouldn't work, however,
+    #  since the TensorProxy, passed as self here, wouldn't be passed through to the
+    #  actual method. That's why this partials the returned method.
     def __getattr__(self, name):
         ctx = get_language_context()
         return partial(getattr(ctx, name), self)

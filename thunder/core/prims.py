@@ -3,6 +3,7 @@ import operator
 from enum import auto, Enum
 from functools import partial
 from numbers import Number
+import math
 
 
 import thunder.core.utils as utils
@@ -30,6 +31,7 @@ __all__ = [
     "broadcast_in_dim",
     # Elementwise unary prims
     "abs",
+    "acos",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -322,8 +324,16 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
     value = number_handler(va)
     return proxy(result_type(value))
 
+
 acos = make_prim(
-    
+    Ops.ACOS,
+    "acos",
+    partial(
+        _elementwise_unary_meta,
+        name="acos",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.acos,
+    ),
 )
 
 abs = make_prim(

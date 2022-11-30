@@ -16,6 +16,8 @@ import thunder.core.prims as prims
 from thunder.core.proxies import TensorProxy
 
 __all__ = [
+    # Elementwise Unary Ops
+    "acos",
     # Elementwise Binary Ops
     "add",
     "mul",
@@ -80,11 +82,12 @@ def thunder_dtype(torch_dtype):
 def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
 
+
 class TorchLangCtx(object):
 
-    # NOTE: language context is a singleton    
+    # NOTE: language context is a singleton
     def __new__(cls):
-        if not hasattr(cls, 'instance'):
+        if not hasattr(cls, "instance"):
             cls.instance = super(TorchLangCtx, cls).__new__(cls)
         return cls.instance
 
@@ -119,6 +122,16 @@ class TorchLangCtx(object):
     def intercept(self, op, *args, **kwargs):
         return None
 
+    #
+    # Elementwise Unary Methods
+    #
+    def acos(self, a):
+        return acos(a)
+
+    #
+    # Elementwise Binary Methods
+    #
+
     # +
     def add(self, a, b):
         return tlang.add(a, b)
@@ -131,28 +144,46 @@ class TorchLangCtx(object):
     def sub(self, a, b):
         return tlang.sub(a, b)
 
-    # / 
+    # /
     def true_divide(self, a, b):
         return tlang.true_divide(a, b)
+
+    #
+    # Reduction Methods
+    #
 
     def var(self, *args, **kwargs):
         return var(*args, **kwargs)
 
+
 def ctx():
     return TorchLangCtx()
+
+
+#
+# Elementwise Unary Ops
+#
+
+
+def acos(a):
+    return tlang.acos(a)
+
 
 #
 # Elementwise Binary Ops
 #
 
+
 def add(a, b, *, alpha=None):
     if alpha is not None:
         b = b * alpha
 
-    return (a + b)
+    return a + b
+
 
 def mul(a, b):
     return a * b
+
 
 #
 # Reduction Ops
