@@ -29,12 +29,6 @@ def _available_device_types():
         ("cpu",)
 
 
-# _device_types_executor_support_map = {
-#     "torch": ("cpu", "cuda"),
-#     "nvfuser": ("cuda", )
-# }
-
-
 class Executor(object):
     def supports_datatype(self, dtype):
         return dtype in dtypes.resolve_dtypes(self.supported_datatypes)
@@ -45,7 +39,7 @@ class Executor(object):
 
 class nvFuser(Executor):
     name = "nvFuser"
-    supported_devicetypes = "cuda"
+    supported_devicetypes = ("cuda",)
     supported_datatypes = (
         dtypes.floating,
         dtypes.bool8,
@@ -119,7 +113,6 @@ def _instantiate_test_template(template, scope, *, opinfo, executor, device, dty
 
     # TODO: pass device type explicitly
     for decorator in opinfo.test_decorators(template.__name__, device, dtype):
-        print("decorator!")
         test = decorator(test)
 
     # Mimics the instantiated test
@@ -164,7 +157,9 @@ class ops:
 
         for opinfo in self.opinfos:
             device_types = (
-                opinfo.device_types().intersection(self.supported_device_types).intersection(_available_device_types())
+                opinfo.device_types()
+                .intersection(self.supported_device_types)
+                .intersection(set(_available_device_types()))
             )
             for executor, devicetype in product(self.supported_executors, device_types):
                 if not executor.supports_devicetype(devicetype):

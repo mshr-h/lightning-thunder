@@ -235,6 +235,12 @@ abs_opinfo = OpInfo(
     dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.abs,
+    test_directives=(
+        # Torch doesn't support CPU bool abs
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,), devicetypes=("cpu",)
+        ),
+    ),
 )
 elementwise_unary_ops.append(abs_opinfo)
 
@@ -246,6 +252,15 @@ acos_opinfo = OpInfo(
     dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.acos,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 acos
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
 )
 elementwise_unary_ops.append(acos_opinfo)
 
@@ -309,7 +324,10 @@ sub_opinfo = OpInfo(
     dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.sub,
-    test_directives=(DecorateInfo(pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,)),),
+    test_directives=(
+        # torch doesn't support bool sub
+        DecorateInfo(pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,)),
+    ),
 )
 elementwise_binary_ops.append(sub_opinfo)
 

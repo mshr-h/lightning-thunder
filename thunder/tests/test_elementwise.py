@@ -26,7 +26,6 @@ def snippet_torch_consistency(op, torch_op, sample):
 #   using a snippet and an "extractor" that constructs the args and kwargs for the snippet
 @ops(
     elementwise_unary_ops + elementwise_binary_ops,
-    supported_device_types=supported_device_types,
 )
 def test_core_vs_torch_consistency(op, device, dtype):
     for sample in op.sample_inputs(device, dtype):
