@@ -23,10 +23,12 @@ __all__ = [
     "expand",
     # Elemenwise unary operations
     "abs",
+    "acos",
     # Elementwise binary operations
     "add",
     "atan2",
     "bitwise_and",
+    "mul",
     "sub",
     "true_divide",
     # Language context
@@ -189,7 +191,11 @@ def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=
 
 
 def abs(a):
-    return _elementwise_unary_helper(prims.abs, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
+    return _elementwise_unary_helper(prims.abs, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT, a)
+
+
+def acos(a):
+    return _elementwise_unary_helper(prims.acos, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
 #
@@ -240,6 +246,10 @@ def bitwise_and(a, b):
             dtypes.int64,
         ),
     )
+
+
+def mul(a, b):
+    return _elementwise_binary_helper(prims.mul, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b)
 
 
 def sub(a, b):

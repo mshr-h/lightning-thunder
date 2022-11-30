@@ -94,11 +94,13 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
+    prims.Ops.ACOS: "acos",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
     prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
+    prims.Ops.MUL: "mul",
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
@@ -173,6 +175,9 @@ class nvFuserCtx:
             return var_mean
 
         return None
+
+    def execute(self, *args, **kwargs):
+        return execute(*args, **kwargs)
 
 
 def _convert(fd, m, v, p):

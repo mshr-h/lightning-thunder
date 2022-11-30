@@ -107,7 +107,7 @@ def set_executor_context(ctx):
 # TODO: add ability to get a temporary "anonymous" trace
 # TODO: possibly add a kwarg to control this behavior
 def get_executor_context():
-    """Gets the current trace, returning None if there is no current trace."""
+    """Gets the current execution context, returning None if there is no current trace."""
 
     try:
         ctx = _executor_ctx.get()

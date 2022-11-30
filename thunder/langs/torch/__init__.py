@@ -5,15 +5,22 @@ from typing import Callable, Optional, Sequence, Tuple
 
 import torch
 
+import thunder.core.trace as trace
+import thunder.core.utils as utils
+from thunder.core.utils import langctx
+import thunder.core.proxies as proxies
+from thunder.core.proxies import TensorProxy
 import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
-import thunder.core.proxies as proxies
-import thunder.core.trace as trace
-import thunder.core.utils as utils
 from thunder.core.proxies import TensorProxy
 
 __all__ = [
+    # Elementwise Unary Ops
+    "acos",
+    # Elementwise Binary Ops
+    "add",
+    "mul",
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
@@ -74,6 +81,108 @@ def thunder_dtype(torch_dtype):
 
 def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
+
+
+class TorchLangCtx(object):
+
+    # NOTE: language context is a singleton
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = super(TorchLangCtx, cls).__new__(cls)
+        return cls.instance
+
+    def __init__(self):
+        pass
+
+    def proxy(self, x):
+        # TODO: maybe make this pre-emption mandatory by always calling it
+        #  before calling the language context's proxy method?
+        try:
+            return proxies.proxy(x)
+        except ValueError:
+            pass
+
+        if isinstance(x, torch.Tensor):
+            name = trace.get_trace().tensor_name()
+            dtype = self.thunder_dtype(x.dtype)
+
+            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
+
+        raise ValueError(f"Torch doesn't know how to proxy {x}!")
+
+    def is_dtype(self, x):
+        return isinstance(x, torch.dtype)
+
+    def dtype(self, thunder_dtype):
+        return _thunder_to_torch_dtype_map[thunder_dtype]
+
+    def thunder_dtype(self, torch_dtype):
+        return _torch_to_thunder_dtype_map[torch_dtype]
+
+    def intercept(self, op, *args, **kwargs):
+        return None
+
+    #
+    # Elementwise Unary Methods
+    #
+    def acos(self, a):
+        return acos(a)
+
+    #
+    # Elementwise Binary Methods
+    #
+
+    # +
+    def add(self, a, b):
+        return tlang.add(a, b)
+
+    # *
+    def mul(self, a, b):
+        return tlang.mul(a, b)
+
+    # -
+    def sub(self, a, b):
+        return tlang.sub(a, b)
+
+    # /
+    def true_divide(self, a, b):
+        return tlang.true_divide(a, b)
+
+    #
+    # Reduction Methods
+    #
+
+    def var(self, *args, **kwargs):
+        return var(*args, **kwargs)
+
+
+def ctx():
+    return TorchLangCtx()
+
+
+#
+# Elementwise Unary Ops
+#
+
+
+def acos(a):
+    return tlang.acos(a)
+
+
+#
+# Elementwise Binary Ops
+#
+
+
+def add(a, b, *, alpha=None):
+    if alpha is not None:
+        b = b * alpha
+
+    return a + b
+
+
+def mul(a, b):
+    return a * b
 
 
 #
@@ -273,6 +382,9 @@ def var(
 
 
 # TODO: consider being more aggressive about kwarg-only
+# TODO: use of @langctx here is just for testing and could be removed
+#  (the method call to var below would need to be replaced with a function call)
+@langctx(ctx())
 def var_mean(
     a,
     dim=None,
@@ -288,53 +400,6 @@ def var_mean(
         return intercepted(a, dim, unbiased, keepdim, correction=correction)
 
     dim, unbiased = _dim_var_dispatch(dim, unbiased)
-    v = var(a, dim, unbiased, keepdim, correction=correction)
+    v = a.var(dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
-
-
-# TODO: make this a singleton?
-class TorchLangCtx:
-    def __init__(self):
-        pass
-
-    def proxy(self, x):
-        # TODO: maybe make this pre-emption mandatory by always calling it
-        #  before calling the language context's proxy method?
-        try:
-            return proxies.proxy(x)
-        except ValueError:
-            pass
-
-        if isinstance(x, torch.Tensor):
-            name = trace.get_trace().tensor_name()
-            dtype = self.thunder_dtype(x.dtype)
-
-            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
-
-        raise ValueError(f"Torch doesn't know how to proxy {x}!")
-
-    def is_dtype(self, x):
-        return isinstance(x, torch.dtype)
-
-    def dtype(self, thunder_dtype):
-        return _thunder_to_torch_dtype_map[thunder_dtype]
-
-    def thunder_dtype(self, torch_dtype):
-        return _torch_to_thunder_dtype_map[torch_dtype]
-
-    def intercept(self, op, *args, **kwargs):
-        return None
-
-    def add(self, a, b):
-        return tlang.add(a, b)
-
-    def sub(self, a, b):
-        return tlang.sub(a, b)
-
-    def true_divide(self, a, b):
-        return tlang.true_divide(a, b)
-
-
-def ctx():
-    return TorchLangCtx()

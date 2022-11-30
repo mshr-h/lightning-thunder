@@ -1,10 +1,13 @@
 from enum import Enum
+from itertools import product
+from functools import wraps
 from numbers import Number
 from typing import Callable, Sequence, Type
 
+import thunder.core.trace as trace
 import thunder.core.dtypes as dtypes
+from .proxies import TensorProxy, NumberProxy
 
-from .proxies import NumberProxy, TensorProxy
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -659,4 +662,25 @@ def validate_idx(rank: int, idx: int):
 
 
 def check_no_duplicates(dims: Sequence):
-    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in {dims}!")
+    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in list of dimensions {dims}!")
+
+
+# TODO: think about preserving the original function's signature
+class langctx(object):
+    """
+    A decorator that calls the decorated function in the given language context,
+    resetting to the caller's language context when the function is done.
+    """
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __call__(self, fn_):
+        @wraps(fn_)
+        def fn(*args, **kwargs):
+            tok = trace.set_language_context(self.ctx)
+            result = fn_(*args, **kwargs)
+            trace.set_language_context(tok)
+            return result
+
+        return fn

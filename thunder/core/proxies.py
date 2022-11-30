@@ -1,4 +1,7 @@
 import operator
+from collections import deque
+from numbers import Number
+from functools import partial
 from enum import auto, Enum
 
 import thunder.core.dtypes as dtypes
@@ -234,20 +237,33 @@ class TensorProxy(Proxy):
     def thunder_dtype(self):
         return self._dtype
 
+    # +
     def __add__(self, other):
         ctx = get_language_context()
         return ctx.add(self, other)
 
+    # *
+    def __mul__(self, other):
+        ctx = get_language_context()
+        return ctx.mul(self, other)
+
+    # -
     def __sub__(self, other):
         ctx = get_language_context()
         return ctx.sub(self, other)
 
+    # /
     def __truediv__(self, other):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
 
+    # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
+    #  by the language context. Just returning that method wouldn't work, however,
+    #  since the TensorProxy, passed as self here, wouldn't be passed through to the
+    #  actual method. That's why this partials the returned method.
     def __getattr__(self, name):
-        raise LookupError(f"No {name} property!")
+        ctx = get_language_context()
+        return partial(getattr(ctx, name), self)
 
 
 # TODO: differentiate tensor and other types of names
