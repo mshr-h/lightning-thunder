@@ -42,6 +42,7 @@ ops_to_torch_ops_map = {
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
+    prims.Ops.ACOSH: "acosh",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",

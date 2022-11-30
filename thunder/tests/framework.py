@@ -112,7 +112,7 @@ def _instantiate_test_template(template, scope, *, opinfo, executor, device, dty
         return result
 
     # TODO: pass device type explicitly
-    for decorator in opinfo.test_decorators(template.__name__, device, dtype):
+    for decorator in opinfo.test_decorators(template.__name__, executor, device, dtype):
         test = decorator(test)
 
     # Mimics the instantiated test
