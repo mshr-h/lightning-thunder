@@ -24,6 +24,7 @@ __all__ = [
     # Elemenwise unary operations
     "abs",
     "acos",
+    "acosh",
     # Elementwise binary operations
     "add",
     "atan2",
@@ -196,6 +197,10 @@ def abs(a):
 
 def acos(a):
     return _elementwise_unary_helper(prims.acos, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def acosh(a):
+    return _elementwise_unary_helper(prims.acosh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
 #

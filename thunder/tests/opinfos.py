@@ -93,6 +93,7 @@ class DecorateInfo(object):
     __slots__ = [
         "decorator",
         "test_template_name",
+        "executors",
         "devicetypes",
         "dtypes",
         "active_if",
@@ -103,19 +104,22 @@ class DecorateInfo(object):
         decorator,
         test_template_name=None,
         *,
+        executors=None,
         devicetypes=None,
         dtypes=None,
         active_if=True,
     ):
         self.decorator = decorator
         self.test_template_name = test_template_name
+        self.executors = executors
         self.devicetypes = devicetypes
-        self.dtypes = datatypes.resolve_dtypes(dtypes)
+        self.dtypes = None if dtypes is None else datatypes.resolve_dtypes(dtypes)
         self.active_if = active_if
 
-    def is_active(self, test_template_name, devicetype, dtype):
+    def is_active(self, test_template_name, executor, devicetype, dtype):
         return (
             self.active_if
+            and (self.executors is None or executor.name in self.executors)
             and (self.test_template_name is None or self.test_template_name == test_template_name)
             and (self.devicetypes is None or devicetype in self.devicetypes)
             and (self.dtypes is None or dtype in self.dtypes)
@@ -174,8 +178,8 @@ class OpInfo:
         return datatypes.resolve_dtypes(self._dtypes)
 
     # TODO: add executor
-    def test_decorators(self, test_name, devicetype, dtype):
-        return [d.decorator for d in self.test_directives if d.is_active(test_name, devicetype, dtype)]
+    def test_decorators(self, test_name, executor, devicetype, dtype):
+        return [d.decorator for d in self.test_directives if d.is_active(test_name, executor, devicetype, dtype)]
 
 
 #
@@ -248,7 +252,6 @@ acos_opinfo = OpInfo(
     tlang.acos,
     domain=(-1, 1),
     device_types=("cpu", "cuda"),
-    # TODO check types we support
     dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.acos,
@@ -263,6 +266,32 @@ acos_opinfo = OpInfo(
     ),
 )
 elementwise_unary_ops.append(acos_opinfo)
+
+acosh_opinfo = OpInfo(
+    tlang.acosh,
+    domain=(1, math.inf),
+    device_types=("cpu", "cuda"),
+    dtypes=(datatypes.exact, datatypes.inexact),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.acosh,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 acosh
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+        # TODO: investigate
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bool8,),
+        ),
+        DecorateInfo(pytest.mark.xfail, executors=("nvFuser,")),
+    ),
+)
+elementwise_unary_ops.append(acosh_opinfo)
 
 
 # Puts all opinfos into the "opinfos" list

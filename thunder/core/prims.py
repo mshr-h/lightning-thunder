@@ -32,6 +32,7 @@ __all__ = [
     # Elementwise unary prims
     "abs",
     "acos",
+    "acosh",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -56,6 +57,7 @@ class Ops(Enum):
     # Elementwise unary prims
     ABS = auto()
     ACOS = auto()
+    ACOSH = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
@@ -220,8 +222,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 #
 
 # Elementwise unary prims to implement:
-# "acos",
-# "acosh",
 # "asin",
 # "asinh",
 # "atan",
@@ -333,6 +333,17 @@ acos = make_prim(
         name="acos",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=math.acos,
+    ),
+)
+
+acosh = make_prim(
+    Ops.ACOSH,
+    "acosh",
+    partial(
+        _elementwise_unary_meta,
+        name="acosh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.acosh,
     ),
 )
 
