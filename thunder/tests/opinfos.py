@@ -277,7 +277,7 @@ acosh_opinfo = OpInfo(
             dtypes=(datatypes.float16, datatypes.complex32),
             devicetypes=("cpu",),
         ),
-        DecorateInfo(pytest.mark.xfail, executors=("nvFuser,")),
+        DecorateInfo(pytest.mark.xfail, executors=("nvFuser",)),
     ),
 )
 elementwise_unary_ops.append(acosh_opinfo)
@@ -454,6 +454,71 @@ exp_opinfo = OpInfo(
     ),
 )
 elementwise_unary_ops.append(exp_opinfo)
+
+expm1_opinfo = OpInfo(
+    tlang.expm1,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.expm1,
+    test_directives=(
+        # Torch doesn't support CPU float16 expm1
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # Torch doesn't support complex expm1
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complexfloating,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(expm1_opinfo)
+
+floor_opinfo = OpInfo(
+    tlang.floor,
+    dtypes=(datatypes.floating, datatypes.exact),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.floor,
+    test_directives=(
+        # Torch doesn't support bool floor
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bool8,),
+        ),
+        # Torch doesn't support cpu float16 floor
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(floor_opinfo)
+
+isfinite_opinfo = OpInfo(
+    tlang.isfinite,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.isfinite,
+    test_directives=(
+        # nvFuser doesn't correctly return outputs as boolean tensors, and doesn't support full
+        DecorateInfo(
+            pytest.mark.xfail,
+            executors=("nvFuser",),
+        ),
+        # Torch preserves the uint8 datatype
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.uint8,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(isfinite_opinfo)
 
 
 # Puts all opinfos into the "opinfos" list

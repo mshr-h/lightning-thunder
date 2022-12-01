@@ -199,41 +199,44 @@ class TensorProxy(Proxy):
         name=None,
         tensor=None,
         shape=None,
+        device=None,
         dtype=None,
     ):
         name = name if name is not None else get_trace().tensor_name()
         self.name = name
 
         if dtype is not None:
-            assert dtype in (bool, int, float, complex) or isinstance(dtype, dtypes.datatype), f"Unknown dtype={dtype}!"
+            assert isinstance(dtype, dtypes.datatype), f"Unknown dtype={dtype}!"
 
         if tensor is not None:
             # Pulls metadata from the tensor, but explicit kwargs take precedence
             assert isinstance(tensor, TensorProxy)
             self.shape = tensor.shape if shape is None else self._make_shape(name, shape)
-            self._dtype = tensor.thunder_dtype() if dtype is None else dtype
+            self._dtype = tensor.dtype if dtype is None else dtype
+            self.device = tensor.device if device is None else device
         else:
             # Requires all metadata be specified explicitly
             assert shape is not None
+            assert device is not None
             assert dtype is not None
 
             # Shape is a tuple of integer proxies
             self.shape = self._make_shape(name, shape)
+            self.device = device
             self._dtype = dtype
 
         # TODO: should ndim be an integer proxy, too?
         self.ndim = len(self.shape)
 
     def __repr__(self):
-        return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.thunder_dtype()}]"
+        return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.dtype}]"
 
     @property
     def dtype(self):
-        return self._dtype
+        #  Special-cases number tensors, which always have weak dtypes
+        if len(self.shape) == 0:
+            return dtypes.corresponding_weak_dtype(self._dtype)
 
-    # TODO: see if we can get rid of this by running code from different files
-    #   in their expected language context
-    def thunder_dtype(self):
         return self._dtype
 
     # +
@@ -271,7 +274,7 @@ def proxy(x):
 
     if isinstance(x, TensorProxy):
         name = get_trace().tensor_name()
-        return TensorProxy(name=name, shape=x.shape, dtype=x.dtype)
+        return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=x.dtype)
     if isinstance(x, NumberProxy):
         return x
     if isinstance(x, int):
