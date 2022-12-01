@@ -2,6 +2,7 @@ from typing import Sequence
 
 import torch
 
+import thunder.core.dtypes as datatypes
 import thunder.langs.torch as ttorch
 from thunder.core import prims
 from thunder.core.proxies import NumberProxy, TensorProxy
@@ -13,8 +14,7 @@ __all__ = [
 
 def _convert_element_type_translation():
     def _fn(a, dtype):
-        torch_dtype = ttorch._thunder_to_torch_dtype_map[dtype]
-        return a.to(torch_dtype)
+        return a.to(dtype)
 
     return _fn
 
@@ -39,6 +39,8 @@ def _broadcast_in_dim_translation():
 ops_to_torch_ops_map = {
     # Data movement and transformation prims
     prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
+    # Tensor creation prims
+    prims.Ops.FULL: "full",
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
@@ -53,6 +55,9 @@ ops_to_torch_ops_map = {
     prims.Ops.ERF: "erf",
     prims.Ops.ERFC: "erfc",
     prims.Ops.EXP: "exp",
+    prims.Ops.EXPM1: "expm1",
+    prims.Ops.FLOOR: "floor",
+    prims.Ops.ISFINITE: "isfinite",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
@@ -126,6 +131,10 @@ def execute(t, *args, **kwargs):
             return x
 
         def _proxy_to_torch(x):
+            if isinstance(x, datatypes.datatype):
+                return ttorch.torch_dtype(x)
+            if isinstance(x, str):
+                return x
             # TODO: always enumerating every element of a sequence seems expensive
             #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
             if isinstance(x, Sequence):

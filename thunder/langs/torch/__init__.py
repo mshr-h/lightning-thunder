@@ -2,6 +2,7 @@ import operator
 from enum import Enum
 from functools import partial, reduce
 from typing import Callable, Optional, Sequence, Tuple
+from numbers import Number
 
 import torch
 
@@ -68,11 +69,11 @@ _thunder_to_torch_dtype_map = {
     dtypes.complex128: torch.complex128,
 }
 
-_torch_to_thunder_dtype_map = {v: k for k, v in _thunder_to_torch_dtype_map.items() if not utils.is_weak_dtype(k)}
-
-# NOTE: bool must be added explicitly because it's a weak dtype in Thunder
-#   (and so is filtered in the above construction)
-_torch_to_thunder_dtype_map[torch.bool] = bool
+_torch_to_thunder_dtype_map = {
+    v: k
+    for k, v in _thunder_to_torch_dtype_map.items()
+    if not utils.is_weak_dtype(k) and not (type(k) is type and issubclass(k, Number))
+}
 
 
 def thunder_dtype(torch_dtype):
@@ -104,20 +105,14 @@ class TorchLangCtx(object):
 
         if isinstance(x, torch.Tensor):
             name = trace.get_trace().tensor_name()
-            dtype = self.thunder_dtype(x.dtype)
+            dtype = _torch_to_thunder_dtype_map[x.dtype]
 
-            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
+            return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=dtype)
 
         raise ValueError(f"Torch doesn't know how to proxy {x}!")
 
     def is_dtype(self, x):
         return isinstance(x, torch.dtype)
-
-    def dtype(self, thunder_dtype):
-        return _thunder_to_torch_dtype_map[thunder_dtype]
-
-    def thunder_dtype(self, torch_dtype):
-        return _torch_to_thunder_dtype_map[torch_dtype]
 
     def intercept(self, op, *args, **kwargs):
         return None

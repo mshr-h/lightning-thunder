@@ -7,6 +7,7 @@ import math
 
 
 import thunder.core.utils as utils
+import thunder.core.dtypes as datatypes
 from .proxies import NumberProxy, proxy, TensorProxy
 from .trace import get_trace
 from .utils import check, get_numberlike_value, same_shape
@@ -43,6 +44,9 @@ __all__ = [
     "erf",
     "erfc",
     "exp",
+    "expm1",
+    "floor",
+    "isfinite",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -78,6 +82,9 @@ class Ops(Enum):
     ERF = auto()
     ERFC = auto()
     EXP = auto()
+    EXPM1 = auto()
+    FLOOR = auto()
+    ISFINITE = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
@@ -186,7 +193,7 @@ convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
 def _full_meta(shape, fill_value, *, dtype, device):
-    return TensorProxy(shape=shape, dtype=dtype)
+    return TensorProxy(shape=shape, device=device, dtype=dtype)
 
 
 full = make_prim(Ops.FULL, "full", _full_meta)
@@ -223,12 +230,9 @@ def _prim_type_promotion(typ, type_promotion_kind):
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         if utils.is_number_type(type):
             return bool
-        return thunder.dtypes.bool8
+        return datatypes.bool8
 
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
-        if typ is complex:
-            return float
-
         if utils.is_complex_dtype(typ):
             return utils.corresponding_real_dtype(typ)
 
@@ -247,13 +251,9 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "digamma",
 # "erf_inv",
 # "erfcx",
-# "exp",
-# "expm1",
 # "exp2",
 # "fill",
-# "floor",
 # "imag",
-# "isfinite",
 # "lgamma",
 # "log",
 # "log1p",
@@ -274,10 +274,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "trunc",
 
 # nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
-# "expm1",
-# "floor",
 # "imag",
-# "isfinite",
 # "lgamma",
 # "log",
 # "log1p",
@@ -318,7 +315,6 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
         number_handler is not None,
         lambda: f"The elementwise unary primitive {name} doesn't support number inputs!",
     )
-
     # a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
     value = number_handler(va)
@@ -465,6 +461,39 @@ exp = make_prim(
         name="exp",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=math.exp,
+    ),
+)
+
+expm1 = make_prim(
+    Ops.EXPM1,
+    "expm1",
+    partial(
+        _elementwise_unary_meta,
+        name="expm1",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.expm1,
+    ),
+)
+
+floor = make_prim(
+    Ops.FLOOR,
+    "floor",
+    partial(
+        _elementwise_unary_meta,
+        name="floor",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.floor,
+    ),
+)
+
+isfinite = make_prim(
+    Ops.ISFINITE,
+    "isfinite",
+    partial(
+        _elementwise_unary_meta,
+        name="isfinite",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
+        number_handler=math.isfinite,
     ),
 )
 
@@ -638,7 +667,7 @@ sub = make_prim(
 
 
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
-    return TensorProxy(shape=shape, dtype=a.thunder_dtype())
+    return TensorProxy(shape=shape, device=a.device, dtype=a.dtype)
 
 
 broadcast_in_dim = make_prim(
@@ -670,12 +699,13 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     """Meta function for single output reduction operations."""
 
     if output_dtype is None:
-        output_dtype = a.thunder_dtype()
+        output_dtype = a.dtype
 
     output_shape = _compute_reduction_output_shape(a.shape, dims)
 
     return TensorProxy(
         shape=output_shape,
+        device=a.device,
         dtype=output_dtype,
     )
 
@@ -685,10 +715,10 @@ sum = make_prim(Ops.SUM, "sum", sum_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
-    if utils.is_complex_dtype(a.thunder_dtype()):
-        output_dtype = utils.corresponding_real_dtype(a.thunder_dtype())
+    if utils.is_complex_dtype(a.dtype):
+        output_dtype = utils.corresponding_real_dtype(a.dtype)
     else:
-        output_dtype = a.thunder_dtype()
+        output_dtype = a.dtype
     return reduction_meta(a, dims, output_dtype=output_dtype)
 
 

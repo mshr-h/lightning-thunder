@@ -19,6 +19,7 @@ __all__ = [
     "maybe_convert_to_dtype",
     # Tensor creation operations
     "full",
+    "full_like",
     # Shape operations
     "expand",
     # Elemenwise unary operations
@@ -46,16 +47,15 @@ def maybe_convert_to_dtype(a, dtype):
     """Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified."""
 
     if isinstance(a, TensorProxy):
-        if a.thunder_dtype() != dtype:
+        utils.check(isinstance(dtype, dtypes.datatype), lambda: f"Unknown dtype {dtype}!")
+        if a.dtype != dtype:
             return prims.convert_element_type(a, dtype)
         return a
-    if isinstance(a, NumberProxy):
+    if isinstance(a, Number):
         typ = utils.dtype_to_type(dtype)
         if utils.get_numberlike_type(a) != typ:
             return prims.convert_element_type(a, dtype)
         return a
-    if isinstance(a, Number):
-        return utils.dtype_to_type(dtype)(a)
     if isinstance(a, Sequence):
         return tuple(maybe_convert_to_dtype(x, dtype) for x in a)
 
@@ -77,10 +77,6 @@ def full(shape, fill_value, *, device, dtype=None):
     fill_value_type = type(fill_value)
     dtype = dtype if dtype is not None else fill_value_type
 
-    # TODO: fixme
-    if device != "cuda":
-        raise NotImplementedError
-
     # Ensures the requested fill_value can be safely cast to the dtype
     # NOTE: this is always true if the dtype is inferred
     utils.check(
@@ -89,6 +85,13 @@ def full(shape, fill_value, *, device, dtype=None):
     )
 
     return prims.full(shape, fill_value, device=device, dtype=dtype)
+
+
+def full_like(tensor, fill_value, *, device=None, dtype=None):
+    device = device if device is not None else tensor.device
+    dtype = dtype if dtype is not None else tensor.dtype
+
+    return full(tensor.shape, fill_value, device=device, dtype=dtype)
 
 
 #
@@ -176,7 +179,6 @@ def _maybe_broadcast(*args):
 #
 def _elementwise_unary_helper(prim, type_promotion_kind, a, *, supported_dtypes=None):
     computation_dtype, result_dtype = utils.elementwise_type_promotion(a, type_promotion_kind=type_promotion_kind)
-
     if supported_dtypes is not None:
         utils.check(
             computation_dtype in supported_dtypes,
@@ -246,6 +248,24 @@ def exp(a):
     return _elementwise_unary_helper(prims.exp, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
+def expm1(a):
+    return _elementwise_unary_helper(prims.expm1, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def floor(a):
+    if utils.is_exact_dtype(a):
+        return a
+
+    return _elementwise_unary_helper(prims.floor, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
+
+
+def isfinite(a):
+    if utils.is_exact_dtype(a):
+        return full_like(a, True, dtype=dtypes.bool8)
+
+    return _elementwise_unary_helper(prims.isfinite, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a)
+
+
 #
 # Elementwise binary operations
 #
@@ -255,11 +275,12 @@ def exp(a):
 #   programmatically
 def _elementwise_binary_helper(prim, type_promotion_kind, a, b, *, supported_dtypes=None):
     computation_dtype, result_dtype = utils.elementwise_type_promotion(a, b, type_promotion_kind=type_promotion_kind)
+
     a, b = _maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
         utils.check(
-            computation_dtype in supported_dtypes,
+            computation_dtype in dtypes.resolve_dtypes(supported_dtypes),
             lambda: f"Unsupported dtype {computation_dtype}!",
         )
 
@@ -285,14 +306,7 @@ def bitwise_and(a, b):
         utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
         a,
         b,
-        supported_dtypes=(
-            bool,
-            dtypes.uint8,
-            dtypes.int8,
-            dtypes.int16,
-            dtypes.int32,
-            dtypes.int64,
-        ),
+        supported_dtypes=(dtypes.exact,),
     )
 
 
@@ -311,10 +325,6 @@ def true_divide(a, b):
 class CoreLangCtx:
     def __init__(self):
         pass
-
-    # Passthrough
-    def dtype(self, thunder_dtype):
-        return thunder_dtype
 
     def add(self, a, b):
         return add(a, b)

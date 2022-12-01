@@ -33,6 +33,16 @@ __all__ = [
     "complex128",
     "complex128_",
     "all_datatypes",
+    "integer_dtypes",
+    "low_precision_dtypes",
+    "float_dtypes",
+    "complex_dtypes",
+    "weak_dtypes",
+    "strong_dtypes",
+    "corresponding_real_dtype",
+    "corresponding_complex_dtype",
+    "corresponding_weak_dtype",
+    "corresponding_strong_dtype",
 ]
 
 # This file defines Thunder's datatypes. The class hierarchy of these datatypes follows
@@ -209,7 +219,7 @@ def _filter_dtypes(cls):
     return (dtype for dtype in all_datatypes if isinstance(dtype, cls) and not dtype.is_weak)
 
 
-# Translates a sequence of dtypes and dtype classes into a concrete set of corresponding dtypes
+# Translates a sequence of dtypes and dtype classes into a concrete set of corresponding (strong) dtypes
 def resolve_dtypes(args):
     dtypes = set()
     for arg in args:
@@ -221,3 +231,77 @@ def resolve_dtypes(args):
         dtypes.update(_filter_dtypes(arg))
 
     return dtypes
+
+
+integer_dtypes = tuple(d for d in all_datatypes if isinstance(d, exact))
+
+low_precision_dtypes = tuple(d for d in all_datatypes if isinstance(d, inexact) and d.bytes <= 2)
+
+float_dtypes = tuple(d for d in all_datatypes if isinstance(d, floating))
+
+complex_dtypes = tuple(d for d in all_datatypes if isinstance(d, complexfloating))
+
+weak_dtypes = tuple(d for d in all_datatypes if d.is_weak)
+
+strong_dtypes = tuple(d for d in all_datatypes if not d.is_weak)
+
+_complex_to_real_dtype_map = {
+    complex128_: float64_,
+    complex128: float64,
+    complex64_: float32_,
+    complex64: float32,
+    complex32_: float16_,
+    complex32: float16,
+    complex: float,
+}
+
+_real_to_complex_dtype_map = {
+    bfloat16_: complex64_,
+    bfloat16: complex64,
+    float16_: complex32_,
+    float16: complex32,
+    float32_: complex64_,
+    float32: complex64,
+    float64_: complex128_,
+    float64: complex128,
+    float: complex,
+}
+
+
+def corresponding_real_dtype(dtype):
+    return _complex_to_real_dtype_map[dtype]
+
+
+def corresponding_complex_dtype(dtype):
+    return _real_to_complex_dtype_map[dtype]
+
+
+_dtype_to_weak_dtype_map = {
+    bool8: bool8_,
+    uint8: uint8_,
+    int8: int8_,
+    int16: int16_,
+    int32: int32_,
+    int64: int64_,
+    bfloat16: bfloat16_,
+    float16: float16_,
+    float32: float32_,
+    float64: float64_,
+    complex32: complex32_,
+    complex64: complex64_,
+    complex128: complex128_,
+}
+
+_weak_dtype_to_dtype_map = {v: k for k, v in _dtype_to_weak_dtype_map.items()}
+
+
+def corresponding_weak_dtype(dtype):
+    if dtype.is_weak:
+        return dtype
+    return _dtype_to_weak_dtype_map[dtype]
+
+
+def corresponding_strong_dtype(dtype):
+    if not dtype.is_weak:
+        return dtype
+    return _weak_dtype_to_dtype_map[dtype]
