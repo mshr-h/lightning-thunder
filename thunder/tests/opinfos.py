@@ -12,6 +12,8 @@ import thunder.core.lang as tlang
 import thunder.core.dtypes as datatypes
 from thunder.langs.torch import torch_dtype
 
+from .framework import _all_device_types
+
 # Returns a noncontiguous (tensor with the same shape and values as t
 # The noncontiguous tensor is constructed such that elements in the innermost
 #   dimension are separated by zeros or (whenever possible) nans
@@ -138,8 +140,8 @@ class OpInfo:
         op,
         *,
         name=None,
-        device_types,
-        dtypes,
+        devicetypes=None,
+        dtypes=None,
         sample_input_generator,
         method_variant=None,
         operator_variant=None,
@@ -150,8 +152,8 @@ class OpInfo:
     ):
         self.op = op
         self.name = name if name is not None else op.__name__
-        self._device_types = device_types
-        self._dtypes = dtypes
+        self._devicetypes = devicetypes if devicetypes is not None else _all_device_types()
+        self._dtypes = dtypes if dtypes is not None else (datatypes.exact, datatypes.inexact)
         self.sample_input_generator = sample_input_generator
         self.method_variant = method_variant
         self.operator_variant = operator_variant
@@ -169,7 +171,7 @@ class OpInfo:
         return self.sample_input_generator(self, device_type, dtype, requires_grad, **kwargs)
 
     def device_types(self):
-        return set(self._device_types)
+        return set(self._devicetypes)
 
     def dtypes(self, device_type=None):
         if device_type is not None:
@@ -234,9 +236,6 @@ def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
 
 abs_opinfo = OpInfo(
     tlang.abs,
-    device_types=("cpu", "cuda"),
-    # TODO check types we support
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.abs,
     test_directives=(
@@ -251,8 +250,6 @@ elementwise_unary_ops.append(abs_opinfo)
 acos_opinfo = OpInfo(
     tlang.acos,
     domain=(-1, 1),
-    device_types=("cpu", "cuda"),
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.acos,
     test_directives=(
@@ -270,8 +267,6 @@ elementwise_unary_ops.append(acos_opinfo)
 acosh_opinfo = OpInfo(
     tlang.acosh,
     domain=(1, math.inf),
-    device_types=("cpu", "cuda"),
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.acosh,
     test_directives=(
@@ -282,16 +277,183 @@ acosh_opinfo = OpInfo(
             dtypes=(datatypes.float16, datatypes.complex32),
             devicetypes=("cpu",),
         ),
-        # TODO: investigate
+        DecorateInfo(pytest.mark.xfail, executors=("nvFuser,")),
+    ),
+)
+elementwise_unary_ops.append(acosh_opinfo)
+
+asin_opinfo = OpInfo(
+    tlang.asin,
+    domain=(-1, 1),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.asin,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 asin
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(asin_opinfo)
+
+atan_opinfo = OpInfo(
+    tlang.atan,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.atan,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 atan
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(atan_opinfo)
+
+atanh_opinfo = OpInfo(
+    tlang.atanh,
+    domain=(-1, 1),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.atanh,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 atanh
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(atanh_opinfo)
+
+bitwise_not_opinfo = OpInfo(
+    tlang.bitwise_not,
+    dtypes=(datatypes.exact,),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.bitwise_not,
+)
+elementwise_unary_ops.append(bitwise_not_opinfo)
+
+ceil_opinfo = OpInfo(
+    tlang.ceil,
+    dtypes=(datatypes.floating, datatypes.exact),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.ceil,
+    test_directives=(
+        # Torch doesn't support bool ceil
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.bool8,),
         ),
-        DecorateInfo(pytest.mark.xfail, executors=("nvFuser,")),
+        # Torch doesn't support cpu float16 ceil
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
     ),
 )
-elementwise_unary_ops.append(acosh_opinfo)
+elementwise_unary_ops.append(ceil_opinfo)
+
+cos_opinfo = OpInfo(
+    tlang.cos,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.cos,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 cos
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(cos_opinfo)
+
+cosh_opinfo = OpInfo(
+    tlang.cosh,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.cosh,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 cosh
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(cosh_opinfo)
+
+erf_opinfo = OpInfo(
+    tlang.erf,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.erf,
+    test_directives=(
+        # Torch doesn't support CPU float16 erf
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # Torch doesn't support complex erf
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complexfloating,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(erf_opinfo)
+
+erfc_opinfo = OpInfo(
+    tlang.erfc,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.erfc,
+    test_directives=(
+        # Torch doesn't support CPU float16 erfc
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # Torch doesn't support complex erfc
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complexfloating,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(erfc_opinfo)
+
+exp_opinfo = OpInfo(
+    tlang.exp,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.exp,
+    test_directives=(
+        # Torch doesn't support CPU float16 or complex32 exp
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(exp_opinfo)
 
 
 # Puts all opinfos into the "opinfos" list
@@ -321,8 +483,6 @@ def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
 # TODO: update dtypes with Thunder dtypes (when they exist)
 add_opinfo = OpInfo(
     tlang.add,
-    device_types=("cpu", "cuda"),
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.add,
 )
@@ -331,7 +491,6 @@ elementwise_binary_ops.append(add_opinfo)
 # NOTE: nvFuser does not currently support uint8, int8, or int16
 bitwise_and_opinfo = OpInfo(
     tlang.bitwise_and,
-    device_types=("cpu", "cuda"),
     dtypes=(datatypes.exact,),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.bitwise_and,
@@ -340,8 +499,6 @@ elementwise_binary_ops.append(bitwise_and_opinfo)
 
 mul_opinfo = OpInfo(
     tlang.mul,
-    device_types=("cpu", "cuda"),
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.mul,
 )
@@ -349,8 +506,6 @@ elementwise_binary_ops.append(mul_opinfo)
 
 sub_opinfo = OpInfo(
     tlang.sub,
-    device_types=("cpu", "cuda"),
-    dtypes=(datatypes.exact, datatypes.inexact),
     sample_input_generator=elementwise_binary_generator,
     torch_reference=torch.sub,
     test_directives=(

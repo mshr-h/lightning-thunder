@@ -203,6 +203,49 @@ def acosh(a):
     return _elementwise_unary_helper(prims.acosh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
+def asin(a):
+    return _elementwise_unary_helper(prims.asin, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def atan(a):
+    return _elementwise_unary_helper(prims.atan, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def atanh(a):
+    return _elementwise_unary_helper(prims.atanh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def bitwise_not(a):
+    return _elementwise_unary_helper(prims.bitwise_not, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
+
+
+def ceil(a):
+    if utils.is_exact_dtype(a):
+        return a
+
+    return _elementwise_unary_helper(prims.ceil, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
+
+
+def cos(a):
+    return _elementwise_unary_helper(prims.cos, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def cosh(a):
+    return _elementwise_unary_helper(prims.cosh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def erf(a):
+    return _elementwise_unary_helper(prims.erf, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def erfc(a):
+    return _elementwise_unary_helper(prims.erfc, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def exp(a):
+    return _elementwise_unary_helper(prims.exp, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
 #
 # Elementwise binary operations
 #

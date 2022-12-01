@@ -33,6 +33,16 @@ __all__ = [
     "abs",
     "acos",
     "acosh",
+    "asin",
+    "atan",
+    "atanh",
+    "bitwise_not",
+    "ceil",
+    "cos",
+    "cosh",
+    "erf",
+    "erfc",
+    "exp",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -58,6 +68,16 @@ class Ops(Enum):
     ABS = auto()
     ACOS = auto()
     ACOSH = auto()
+    ASIN = auto()
+    ATAN = auto()
+    ATANH = auto()
+    BITWISE_NOT = auto()
+    CEIL = auto()
+    COS = auto()
+    COSH = auto()
+    ERF = auto()
+    ERFC = auto()
+    EXP = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
@@ -222,19 +242,10 @@ def _prim_type_promotion(typ, type_promotion_kind):
 #
 
 # Elementwise unary prims to implement:
-# "asin",
 # "asinh",
-# "atan",
-# "atanh",
-# "cos",
-# "cosh",
-# "bitwise_not",
 # "cbrt",
-# "ceil",
 # "digamma",
-# "erf",
 # "erf_inv",
-# "erfc",
 # "erfcx",
 # "exp",
 # "expm1",
@@ -263,17 +274,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "trunc",
 
 # nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
-# "acos",
-# "asin",
-# "atan",
-# "atanh",
-# "cos",
-# "cosh",
-# "bitwise_not",
-# "ceil",
-# "erf",
-# "erfc",
-# "exp",
 # "expm1",
 # "floor",
 # "imag",
@@ -325,6 +325,17 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
     return proxy(result_type(value))
 
 
+abs = make_prim(
+    Ops.ABS,
+    "abs",
+    partial(
+        _elementwise_unary_meta,
+        name="abs",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT,
+        number_handler=builtins.abs,
+    ),
+)
+
 acos = make_prim(
     Ops.ACOS,
     "acos",
@@ -347,16 +358,116 @@ acosh = make_prim(
     ),
 )
 
-abs = make_prim(
-    Ops.ABS,
-    "abs",
+asin = make_prim(
+    Ops.ASIN,
+    "asin",
     partial(
         _elementwise_unary_meta,
-        name="abs",
-        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT,
-        number_handler=builtins.abs,
+        name="asin",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.asin,
     ),
 )
+
+atan = make_prim(
+    Ops.ATAN,
+    "atan",
+    partial(
+        _elementwise_unary_meta,
+        name="atan",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.atan,
+    ),
+)
+
+atanh = make_prim(
+    Ops.ATANH,
+    "atanh",
+    partial(
+        _elementwise_unary_meta,
+        name="atanh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.atanh,
+    ),
+)
+
+bitwise_not = make_prim(
+    Ops.BITWISE_NOT,
+    "bitwise_not",
+    partial(
+        _elementwise_unary_meta,
+        name="bitwise_not",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.invert,
+    ),
+)
+
+ceil = make_prim(
+    Ops.CEIL,
+    "ceil",
+    partial(
+        _elementwise_unary_meta,
+        name="ceil",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.ceil,
+    ),
+)
+
+cos = make_prim(
+    Ops.COS,
+    "cos",
+    partial(
+        _elementwise_unary_meta,
+        name="cos",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.cos,
+    ),
+)
+
+cosh = make_prim(
+    Ops.COSH,
+    "cosh",
+    partial(
+        _elementwise_unary_meta,
+        name="cosh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.cosh,
+    ),
+)
+
+erf = make_prim(
+    Ops.ERF,
+    "erf",
+    partial(
+        _elementwise_unary_meta,
+        name="erf",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.erf,
+    ),
+)
+
+erfc = make_prim(
+    Ops.ERFC,
+    "erfc",
+    partial(
+        _elementwise_unary_meta,
+        name="erfc",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.erfc,
+    ),
+)
+
+exp = make_prim(
+    Ops.EXP,
+    "exp",
+    partial(
+        _elementwise_unary_meta,
+        name="exp",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.exp,
+    ),
+)
+
 
 #
 # Elementwise binary prims

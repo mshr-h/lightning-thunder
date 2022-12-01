@@ -229,8 +229,7 @@ class TensorProxy(Proxy):
 
     @property
     def dtype(self):
-        ctx = get_language_context()
-        return ctx.dtype(self._dtype)
+        return self._dtype
 
     # TODO: see if we can get rid of this by running code from different files
     #   in their expected language context
