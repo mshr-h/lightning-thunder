@@ -276,8 +276,6 @@ def isfinite(a):
 def _elementwise_binary_helper(prim, type_promotion_kind, a, b, *, supported_dtypes=None):
     computation_dtype, result_dtype = utils.elementwise_type_promotion(a, b, type_promotion_kind=type_promotion_kind)
 
-    print(f"computation_dtype={computation_dtype}, result_dtype={result_dtype}")
-
     a, b = _maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
