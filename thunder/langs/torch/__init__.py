@@ -213,8 +213,8 @@ def get_computation_dtype(dtype: torch.dtype) -> torch.dtype:
 def _reduction_dtypes(
     arg,
     output_dtype_kind: REDUCTION_OUTPUT_TYPE_KIND,
-    dtype: Optional[torch.dtype] = None,
-) -> Tuple[torch.dtype, Optional[torch.dtype]]:
+    dtype=None,
+):
     # even though some reductions, like amin or amax, don't strictly require type promotion,
     # all the math ops (including comparisons) are still defined only for a computation type,
     # so promotion will still happen. We are doing it explicitly here
@@ -225,10 +225,8 @@ def _reduction_dtypes(
         or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
     ):
         result_dtype = dtype if dtype else arg.dtype
-        if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(
-            thunder_dtype(result_dtype)
-        ):
-            result_dtype = torch_dtype(utils.corresponding_real_dtype(thunder_dtype(result_dtype)))
+        if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(result_dtype):
+            result_dtype = torch_dtype(utils.corresponding_real_dtype(result_dtype))
     elif output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE:
         result_dtype = None
     else:  # ALWAYS_BOOL
@@ -282,7 +280,7 @@ def _reduction(
 
     computation_dtype, result_dtype = _reduction_dtypes(a, output_dtype_kind, dtype)
 
-    a = tlang.maybe_convert_to_dtype(a, thunder_dtype(computation_dtype))
+    a = tlang.maybe_convert_to_dtype(a, computation_dtype)
     result = prim(a, dims)
 
     if keepdims:
@@ -291,7 +289,7 @@ def _reduction(
         result = prims.broadcast_in_dim(result, output_shape, broadcast_dims)
 
     if result_dtype is not None:
-        tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
+        tlang.maybe_convert_to_dtype(result, result_dtype)
 
     return result
 
@@ -332,9 +330,11 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
         dim = (dim,)
 
     dtype = dtype if dtype is not None else a.dtype
+    print(f"a={a}")
+    print(f"dtype={dtype}")
     utils.check(
         not utils.is_integer_dtype(dtype) and not utils.is_boolean_dtype(dtype),
-        lambda: "Dtype should be floating point or complex",
+        lambda: "Datatype should be floating point or complex",
     )
 
     result = _reduction(
@@ -351,7 +351,7 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     # TODO: the conversion of nelem to float won't be needed once type promotion is supported
     result = tlang.true_divide(result, float(nelem))
     result_dtype = a.dtype if dtype is None else dtype
-    result = tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
+    result = tlang.maybe_convert_to_dtype(result, result_dtype)
     return result
 
 
