@@ -109,38 +109,62 @@ _complex_dtypes = (
 )
 
 
-def is_boolean_dtype(dtype) -> bool:
-    return dtype is bool
+def _extract_dtype(x):
+    if isinstance(x, dtypes.datatype):
+        return x
+
+    if isinstance(x, TensorProxy):
+        return x.thunder_dtype()
+
+    if isinstance(x, Number):
+        return get_numberlike_type(x)
+
+    if x in (bool, int, float, complex):
+        return x
+
+    raise AssertionError(f"Trying to extract dtype from object {x} of unknown type {type(x)}!")
 
 
-def is_unsigned_dtype(dtype):
-    return dtype in (bool, dtypes.uint8_, dtypes.uint8)
+def is_boolean_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in (bool, dtypes.bool8, dtypes.bool8_)
 
 
-def is_signed_integer_dtype(dtype):
+def is_unsigned_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
+    return dtype in (bool, dtypes.bool8, dtypes.bool8_, dtypes.uint8_, dtypes.uint8)
+
+
+def is_signed_integer_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
     return is_integer_dtype(dtype) and not is_unsigned_dtype(dtype)
 
 
-def is_integer_dtype(dtype) -> bool:
+def is_integer_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
     return dtype in _integer_dtypes or dtype in (bool, int)
 
 
 is_exact_dtype = is_integer_dtype
 
 
-def is_low_precision_dtype(dtype) -> bool:
+def is_low_precision_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
     return dtype in _low_precision_dtypes
 
 
-def is_float_dtype(dtype) -> bool:
+def is_float_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
     return dtype in _float_dtypes or dtype is float
 
 
-def is_complex_dtype(dtype) -> bool:
+def is_complex_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
     return dtype in _complex_dtypes or dtype is complex
 
 
-def is_inexact_dtype(dtype):
+def is_inexact_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
     return is_float_dtype(dtype) or is_complex_dtype(dtype)
 
 
@@ -288,15 +312,6 @@ def check_same_dtype(*args):
 
     if len(args) == 0:
         return None, None
-
-    def _extract_dtype(x):
-        if isinstance(x, dtypes.datatype):
-            return x
-
-        if isinstance(x, TensorProxy):
-            return x.thunder_dtype()
-
-        raise AssertionError(f"Trying to extract dtype from unknown type {x}!")
 
     number_type = None
     tensor_dtype = None
