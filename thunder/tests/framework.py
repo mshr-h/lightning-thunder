@@ -2,38 +2,118 @@ import inspect
 import os
 import sys
 
+from itertools import product
+from functools import wraps
+
+import thunder.core.dtypes as dtypes
+from thunder.core.trace import set_executor_context, reset_executor_context
+
 __all__ = [
     "ops",
 ]
 
 
 # TODO: Add device type functionality to an object in this list
-_all_device_types = ["cpu", "cuda"]
+def _all_device_types():
+    return ("cpu", "cuda")
 
-# _device_types_executor_support_map = {
-#     "torch": ("cpu", "cuda"),
-#     "nvfuser": ("cuda", )
-# }
+
+def _available_device_types():
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return ("cpu", "cuda")
+        return ("cpu",)
+    except ModuleNotFoundError:
+        ("cpu",)
+
+
+class Executor(object):
+    def supports_datatype(self, dtype):
+        return dtype in dtypes.resolve_dtypes(self.supported_datatypes)
+
+    def supports_devicetype(self, devicetype):
+        return devicetype in self.supported_devicetypes
+
+
+class nvFuser(Executor):
+    name = "nvFuser"
+    supported_devicetypes = ("cuda",)
+    supported_datatypes = (
+        dtypes.floating,
+        dtypes.bool8,
+        dtypes.int32,
+        dtypes.int64,
+        dtypes.complex64,
+        dtypes.complex128,
+    )
+
+    ctx = None
+
+    def get_executor_context(self):
+        if self.ctx is None:
+            from thunder.executors.nvfuser import nvFuserCtx
+
+            self.ctx = nvFuserCtx()
+
+        return self.ctx
+
+
+class TorchEx(Executor):
+    name = "TorchEx"
+    supported_devicetypes = ("cpu", "cuda")
+    supported_datatypes = (dtypes.datatype,)
+
+    ctx = None
+
+    def get_executor_context(self):
+        if self.ctx is None:
+            from thunder.executors.torch import torchCtx
+
+            self.ctx = torchCtx()
+
+        return self.ctx
+
+
+def _all_executors():
+    executors = []
+
+    try:
+        import torch
+
+        executors.append(TorchEx())
+    except ModuleNotFoundError:
+        pass
+
+    try:
+        import torch._C._nvfuser
+
+        executors.append(nvFuser())
+    except ModuleNotFoundError:
+        pass
+
+    return executors
 
 
 # TODO: add decorator support, support for test directives -- how would this control assert_close behavior?
-def _instantiate_test_template(template, scope, *, opinfo, device, dtype):
+def _instantiate_test_template(template, scope, *, opinfo, executor, device, dtype):
     """Instanties a test template for an operator."""
 
-    # TODO: make generic using Thunder dtypes
-    def _extract_dtype_string(dtype):
-        # Ex. torch.float32
-        s = str(dtype)
-        return s.split(".")[1]
-
     # Ex. test_foo_CUDA_float32
-    test_name = "_".join((template.__name__, opinfo.name, device.upper(), _extract_dtype_string(dtype)))
+    test_name = "_".join((template.__name__, opinfo.name, executor.name, device.upper(), str(dtype)))
 
     def test():
         # TODO: currently this passes the device type as a string, but actually a device or multiple devices
         #   should be passed to the test
+        tok = set_executor_context(executor.get_executor_context())
         result = template(opinfo, device, dtype)
+        reset_executor_context(tok)
         return result
+
+    # TODO: pass device type explicitly
+    for decorator in opinfo.test_decorators(template.__name__, executor, device, dtype):
+        test = decorator(test)
 
     # Mimics the instantiated test
     # TODO: review this mimicry -- are there other attributes to mimic?
@@ -47,12 +127,21 @@ def _instantiate_test_template(template, scope, *, opinfo, device, dtype):
 class ops:
 
     # TODO: support other kinds of dtype specifications
-    def __init__(self, opinfos, *, supported_device_types=None, supported_dtypes=None, scope=None):
+    def __init__(
+        self, opinfos, *, supported_executors=None, supported_device_types=None, supported_dtypes=None, scope=None
+    ):
         self.opinfos = opinfos
-        self.supported_device_types = (
-            set(supported_device_types) if supported_device_types is not None else set(_all_device_types)
+
+        self.supported_executors = (
+            set(supported_executors) if supported_executors is not None else set(_all_executors())
         )
-        self.supported_dtypes = set(supported_dtypes) if supported_dtypes is not None else None
+
+        self.supported_device_types = (
+            set(supported_device_types) if supported_device_types is not None else set(_all_device_types())
+        )
+        self.supported_dtypes = (
+            dtypes.resolve_dtypes(supported_dtypes) if supported_dtypes is not None else dtypes.all_datatypes
+        )
 
         # Acquires the caller's global scope
         if scope is None:
@@ -67,20 +156,30 @@ class ops:
         #   functions are directly assigned to the requested scope (the caller's global scope by default)
 
         for opinfo in self.opinfos:
-            device_types = opinfo.device_types().intersection(self.supported_device_types)
-            for device_type in device_types:
-                # TODO: pass device_type to dtypes()
+            device_types = (
+                opinfo.device_types()
+                .intersection(self.supported_device_types)
+                .intersection(set(_available_device_types()))
+            )
+            for executor, devicetype in product(self.supported_executors, device_types):
+                if not executor.supports_devicetype(devicetype):
+                    continue
 
+                # TODO: pass device_type to dtypes()
                 dtypes = opinfo.dtypes()
                 if self.supported_dtypes is not None:
                     dtypes = dtypes.intersection(self.supported_dtypes)
 
                 for dtype in dtypes:
+                    if not executor.supports_datatype(dtype):
+                        continue
+
                     test = _instantiate_test_template(
                         test_template,
                         self.scope,
                         opinfo=opinfo,
-                        device=device_type,
+                        executor=executor,
+                        device=devicetype,
                         dtype=dtype,
                     )
                     # Adds the instantiated test to the requested scope

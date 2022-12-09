@@ -1,10 +1,10 @@
 import os
 from collections import deque
 from functools import wraps
-from typing import Callable, Sequence
+from typing import Callable, Sequence, Optional
 
 import thunder.langs as langs
-from thunder.__about__ import *  # noqa: F401, F403
+from thunder.__about__ import *
 
 from .core.trace import (
     get_trace,
@@ -13,6 +13,7 @@ from .core.trace import (
     reset_language_context,
     reset_trace,
     set_executor_context,
+    get_executor_context,
     set_language_context,
 )
 
@@ -24,7 +25,7 @@ __all__ = [
 ]
 
 
-def make_traced(fn: Callable, executor: str) -> Callable:
+def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch) -> Callable:
     """Converts a callable in a callable that will be traced and then executed.
 
     Example usage:
@@ -40,9 +41,12 @@ def make_traced(fn: Callable, executor: str) -> Callable:
       result = traced_foo(a, b)
     """
 
-    if executor == "torch":
+    if executor is None:
+        exec_ctx = get_executor_context()
+        if exec_ctx is None:
+            raise RuntimeError("No executor specified!")
+    elif executor == "torch":
         try:
-            from .executors.torch import execute as torch_execute
             from .executors.torch import torchCtx
         except ModuleNotFoundError:
             raise RuntimeError(
@@ -52,7 +56,6 @@ def make_traced(fn: Callable, executor: str) -> Callable:
             )
     elif executor == "nvfuser":
         try:
-            from .executors.nvfuser import execute as nvfuser
             from .executors.nvfuser import nvFuserCtx
         except ModuleNotFoundError:
             raise RuntimeError(
@@ -61,22 +64,25 @@ def make_traced(fn: Callable, executor: str) -> Callable:
             )
 
     @wraps(fn)
-    def _fn(*args, lang=langs.torch, **kwargs):
+    def _fn(*args, **kwargs):
         # Acquires a new tracing context
         trace_token = new_trace()
 
-        ctx = None
-        executor_fn = None
+        executor_ctx = None
+        executor_token = None
         if executor == "nvfuser":
-            ctx = nvFuserCtx()
-            executor_fn = nvfuser
+            executor_ctx = nvFuserCtx()
+            executor_token = set_executor_context(executor_ctx)
+        elif executor == "torch":
+            executor_ctx = torchCtx()
+            executor_token = set_executor_context(executor_ctx)
+        else:
+            # Uses the existing executor context (if it exists)
+            executor_ctx = get_executor_context()
+            if executor_ctx is None:
+                raise RuntimeError("No executor specified and no existing executor context!")
 
-        if executor == "torch":
-            ctx = torchCtx()
-            executor_fn = torch_execute
-
-        executor_token = set_executor_context(ctx)
-        lang_ctx = lang.ctx()
+        lang_ctx = language_ctx.ctx()
         lang_token = set_language_context(lang_ctx)
 
         t = get_trace()
@@ -113,11 +119,12 @@ def make_traced(fn: Callable, executor: str) -> Callable:
 
         # print(t)
 
-        result, fusion = executor_fn(t, *args, **kwargs)
+        result, fusion = executor_ctx.execute(t, *args, **kwargs)
 
         reset_trace(trace_token)
         reset_language_context(lang_token)
-        reset_executor_context(executor_token)
+        if executor_token is not None:
+            reset_executor_context(executor_token)
 
         # TODO: convert nvFuser output to appropriate object based on language ctx
         # TODO: if the output is a datastructure it will be flattened before being handed to the executor

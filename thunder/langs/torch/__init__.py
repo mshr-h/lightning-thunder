@@ -2,18 +2,26 @@ import operator
 from enum import Enum
 from functools import partial, reduce
 from typing import Callable, Optional, Sequence, Tuple
+from numbers import Number
 
 import torch
 
+import thunder.core.trace as trace
+import thunder.core.utils as utils
+from thunder.core.utils import langctx
+import thunder.core.proxies as proxies
+from thunder.core.proxies import TensorProxy
 import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
-import thunder.core.proxies as proxies
-import thunder.core.trace as trace
-import thunder.core.utils as utils
 from thunder.core.proxies import TensorProxy
 
 __all__ = [
+    # Elementwise Unary Ops
+    "acos",
+    # Elementwise Binary Ops
+    "add",
+    "mul",
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
@@ -61,11 +69,11 @@ _thunder_to_torch_dtype_map = {
     dtypes.complex128: torch.complex128,
 }
 
-_torch_to_thunder_dtype_map = {v: k for k, v in _thunder_to_torch_dtype_map.items() if not utils.is_weak_dtype(k)}
-
-# NOTE: bool must be added explicitly because it's a weak dtype in Thunder
-#   (and so is filtered in the above construction)
-_torch_to_thunder_dtype_map[torch.bool] = bool
+_torch_to_thunder_dtype_map = {
+    v: k
+    for k, v in _thunder_to_torch_dtype_map.items()
+    if not utils.is_weak_dtype(k) and not (type(k) is type and issubclass(k, Number))
+}
 
 
 def thunder_dtype(torch_dtype):
@@ -74,6 +82,102 @@ def thunder_dtype(torch_dtype):
 
 def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
+
+
+class TorchLangCtx(object):
+
+    # NOTE: language context is a singleton
+    def __new__(cls):
+        if not hasattr(cls, "instance"):
+            cls.instance = super(TorchLangCtx, cls).__new__(cls)
+        return cls.instance
+
+    def __init__(self):
+        pass
+
+    def proxy(self, x):
+        # TODO: maybe make this pre-emption mandatory by always calling it
+        #  before calling the language context's proxy method?
+        try:
+            return proxies.proxy(x)
+        except ValueError:
+            pass
+
+        if isinstance(x, torch.Tensor):
+            name = trace.get_trace().tensor_name()
+            dtype = _torch_to_thunder_dtype_map[x.dtype]
+
+            return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=dtype)
+
+        raise ValueError(f"Torch doesn't know how to proxy {x}!")
+
+    def is_dtype(self, x):
+        return isinstance(x, torch.dtype)
+
+    def intercept(self, op, *args, **kwargs):
+        return None
+
+    #
+    # Elementwise Unary Methods
+    #
+    def acos(self, a):
+        return acos(a)
+
+    #
+    # Elementwise Binary Methods
+    #
+
+    # +
+    def add(self, a, b):
+        return tlang.add(a, b)
+
+    # *
+    def mul(self, a, b):
+        return tlang.mul(a, b)
+
+    # -
+    def sub(self, a, b):
+        return tlang.sub(a, b)
+
+    # /
+    def true_divide(self, a, b):
+        return tlang.true_divide(a, b)
+
+    #
+    # Reduction Methods
+    #
+
+    def var(self, *args, **kwargs):
+        return var(*args, **kwargs)
+
+
+def ctx():
+    return TorchLangCtx()
+
+
+#
+# Elementwise Unary Ops
+#
+
+
+def acos(a):
+    return tlang.acos(a)
+
+
+#
+# Elementwise Binary Ops
+#
+
+
+def add(a, b, *, alpha=None):
+    if alpha is not None:
+        b = b * alpha
+
+    return a + b
+
+
+def mul(a, b):
+    return a * b
 
 
 #
@@ -104,8 +208,8 @@ def get_computation_dtype(dtype: torch.dtype) -> torch.dtype:
 def _reduction_dtypes(
     arg,
     output_dtype_kind: REDUCTION_OUTPUT_TYPE_KIND,
-    dtype: Optional[torch.dtype] = None,
-) -> Tuple[torch.dtype, Optional[torch.dtype]]:
+    dtype=None,
+):
     # even though some reductions, like amin or amax, don't strictly require type promotion,
     # all the math ops (including comparisons) are still defined only for a computation type,
     # so promotion will still happen. We are doing it explicitly here
@@ -113,13 +217,11 @@ def _reduction_dtypes(
     computation_dtype = get_computation_dtype(inp_dtype)
     if (
         output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.SAME
-        or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT  # noqa: W503
+        or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
     ):
         result_dtype = dtype if dtype else arg.dtype
-        if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(
-            thunder_dtype(result_dtype)
-        ):
-            result_dtype = torch_dtype(utils.corresponding_real_dtype(thunder_dtype(result_dtype)))
+        if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(result_dtype):
+            result_dtype = torch_dtype(utils.corresponding_real_dtype(result_dtype))
     elif output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE:
         result_dtype = None
     else:  # ALWAYS_BOOL
@@ -173,7 +275,7 @@ def _reduction(
 
     computation_dtype, result_dtype = _reduction_dtypes(a, output_dtype_kind, dtype)
 
-    a = tlang.maybe_convert_to_dtype(a, thunder_dtype(computation_dtype))
+    a = tlang.maybe_convert_to_dtype(a, computation_dtype)
     result = prim(a, dims)
 
     if keepdims:
@@ -182,7 +284,7 @@ def _reduction(
         result = prims.broadcast_in_dim(result, output_shape, broadcast_dims)
 
     if result_dtype is not None:
-        tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
+        tlang.maybe_convert_to_dtype(result, result_dtype)
 
     return result
 
@@ -223,9 +325,11 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
         dim = (dim,)
 
     dtype = dtype if dtype is not None else a.dtype
+    print(f"a={a}")
+    print(f"dtype={dtype}")
     utils.check(
         not utils.is_integer_dtype(dtype) and not utils.is_boolean_dtype(dtype),
-        lambda: "Dtype should be floating point or complex",
+        lambda: "Datatype should be floating point or complex",
     )
 
     result = _reduction(
@@ -242,7 +346,7 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     # TODO: the conversion of nelem to float won't be needed once type promotion is supported
     result = tlang.true_divide(result, float(nelem))
     result_dtype = a.dtype if dtype is None else dtype
-    result = tlang.maybe_convert_to_dtype(result, thunder_dtype(result_dtype))
+    result = tlang.maybe_convert_to_dtype(result, result_dtype)
     return result
 
 
@@ -273,6 +377,9 @@ def var(
 
 
 # TODO: consider being more aggressive about kwarg-only
+# TODO: use of @langctx here is just for testing and could be removed
+#  (the method call to var below would need to be replaced with a function call)
+@langctx(ctx())
 def var_mean(
     a,
     dim=None,
@@ -288,53 +395,6 @@ def var_mean(
         return intercepted(a, dim, unbiased, keepdim, correction=correction)
 
     dim, unbiased = _dim_var_dispatch(dim, unbiased)
-    v = var(a, dim, unbiased, keepdim, correction=correction)
+    v = a.var(dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
-
-
-# TODO: make this a singleton?
-class TorchLangCtx:
-    def __init__(self):
-        pass
-
-    def proxy(self, x):
-        # TODO: maybe make this pre-emption mandatory by always calling it
-        #  before calling the language context's proxy method?
-        try:
-            return proxies.proxy(x)
-        except ValueError:
-            pass
-
-        if isinstance(x, torch.Tensor):
-            name = trace.get_trace().tensor_name()
-            dtype = self.thunder_dtype(x.dtype)
-
-            return TensorProxy(name=name, shape=x.shape, dtype=dtype)
-
-        raise ValueError(f"Torch doesn't know how to proxy {x}!")
-
-    def is_dtype(self, x):
-        return isinstance(x, torch.dtype)
-
-    def dtype(self, thunder_dtype):
-        return _thunder_to_torch_dtype_map[thunder_dtype]
-
-    def thunder_dtype(self, torch_dtype):
-        return _torch_to_thunder_dtype_map[torch_dtype]
-
-    def intercept(self, op, *args, **kwargs):
-        return None
-
-    def add(self, a, b):
-        return tlang.add(a, b)
-
-    def sub(self, a, b):
-        return tlang.sub(a, b)
-
-    def true_divide(self, a, b):
-        return tlang.true_divide(a, b)
-
-
-def ctx():
-    return TorchLangCtx()

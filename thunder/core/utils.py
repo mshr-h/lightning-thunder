@@ -1,11 +1,13 @@
-# flake8: noqa: E241
 from enum import Enum
+from itertools import product
+from functools import wraps
 from numbers import Number
 from typing import Callable, Sequence, Type
 
-import thunder.core.dtypes as dtypes
+import thunder.core.trace as trace
+import thunder.core.dtypes as datatypes
+from .proxies import TensorProxy, NumberProxy
 
-from .proxies import NumberProxy, TensorProxy
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -28,6 +30,7 @@ __all__ = [
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
     "corresponding_weak_dtype",
+    "corresponding_strong_dtype",
     "dtype_to_type",
     "check_same_dtype",
     "get_numberlike_type",
@@ -62,83 +65,63 @@ def check(cond: bool, s: Callable[[], str], exception_type: Type[Exception] = Ru
 # Datatype-related functions
 #
 
-# TODO: review these sequences after refactoring Thunder dtypes
-#   ... probably want to add metadata to singleton dtype objects
-_integer_dtypes = (
-    dtypes.uint8_,
-    dtypes.uint8,
-    dtypes.int8_,
-    dtypes.int8,
-    dtypes.int16_,
-    dtypes.int16,
-    dtypes.int32_,
-    dtypes.int32,
-    dtypes.int64_,
-    dtypes.int64,
-)
 
-_low_precision_dtypes = (
-    dtypes.float16_,
-    dtypes.float16,
-    dtypes.bfloat16_,
-    dtypes.bfloat16,
-    dtypes.complex32_,
-    dtypes.complex32,
-)
+def _extract_dtype(x):
+    if isinstance(x, datatypes.datatype):
+        return x
 
-_float_dtypes = (
-    dtypes.float16_,
-    dtypes.float16,
-    dtypes.bfloat16_,
-    dtypes.bfloat16,
-    dtypes.float32_,
-    dtypes.float32,
-    dtypes.float64_,
-    dtypes.float64,
-)
+    if isinstance(x, TensorProxy):
+        return x.dtype
 
-_complex_dtypes = (
-    dtypes.complex32_,
-    dtypes.complex32,
-    dtypes.complex64_,
-    dtypes.complex64,
-    dtypes.complex128_,
-    dtypes.complex128,
-)
+    if isinstance(x, Number):
+        return get_numberlike_type(x)
+
+    if x in (bool, int, float, complex):
+        return x
+
+    raise AssertionError(f"Trying to extract dtype from object {x} of unknown type {type(x)}!")
 
 
-def is_boolean_dtype(dtype) -> bool:
-    return dtype is bool
+def is_boolean_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in (bool, datatypes.bool8, datatypes.bool8_)
 
 
-def is_unsigned_dtype(dtype):
-    return dtype in (bool, dtypes.uint8_, dtypes.uint8)
+def is_unsigned_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
+    return dtype in (bool, datatypes.bool8, datatypes.bool8_, datatypes.uint8_, datatypes.uint8)
 
 
-def is_signed_integer_dtype(dtype):
+def is_signed_integer_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
     return is_integer_dtype(dtype) and not is_unsigned_dtype(dtype)
 
 
-def is_integer_dtype(dtype) -> bool:
-    return dtype in _integer_dtypes or dtype in (bool, int)
+def is_integer_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in datatypes.integer_dtypes or dtype in (bool, int)
 
 
 is_exact_dtype = is_integer_dtype
 
 
-def is_low_precision_dtype(dtype) -> bool:
-    return dtype in _low_precision_dtypes
+def is_low_precision_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in datatypes.low_precision_dtypes
 
 
-def is_float_dtype(dtype) -> bool:
-    return dtype in _float_dtypes or dtype is float
+def is_float_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in datatypes.float_dtypes or dtype is float
 
 
-def is_complex_dtype(dtype) -> bool:
-    return dtype in _complex_dtypes or dtype is complex
+def is_complex_dtype(dtype_) -> bool:
+    dtype = _extract_dtype(dtype_)
+    return dtype in datatypes.complex_dtypes or dtype is complex
 
 
-def is_inexact_dtype(dtype):
+def is_inexact_dtype(dtype_):
+    dtype = _extract_dtype(dtype_)
     return is_float_dtype(dtype) or is_complex_dtype(dtype)
 
 
@@ -147,24 +130,10 @@ def is_number_type(typ):
 
 
 def is_weak_dtype(dtype):
-    return dtype in (
-        bool,
-        int,
-        float,
-        complex,
-        dtypes.uint8_,
-        dtypes.int8_,
-        dtypes.int16_,
-        dtypes.int32_,
-        dtypes.int64_,
-        dtypes.bfloat16_,
-        dtypes.float16_,
-        dtypes.float32_,
-        dtypes.float64_,
-        dtypes.complex32_,
-        dtypes.complex64_,
-        dtypes.complex128_,
-    )
+    if isinstance(dtype, datatypes.datatype):
+        return dtype.is_weak
+
+    return issubclass(dtype, Number)
 
 
 def higher_dtype(a, b):
@@ -187,57 +156,13 @@ def can_safe_cast_to(*, cast_to, cast_from) -> bool:
     return higher_dtype(cast_to, cast_from) == cast_to
 
 
-_complex_to_real_dtype_map = {
-    dtypes.complex128_: dtypes.float64_,
-    dtypes.complex128: dtypes.float64,
-    dtypes.complex64_: dtypes.float32_,
-    dtypes.complex64: dtypes.float32,
-    dtypes.complex32_: dtypes.float16_,
-    dtypes.complex32: dtypes.float16,
-    complex: float,
-}
+corresponding_real_dtype = datatypes.corresponding_real_dtype
 
-_real_to_complex_dtype_map = {
-    dtypes.bfloat16_: dtypes.complex64_,
-    dtypes.bfloat16: dtypes.complex64,
-    dtypes.float16_: dtypes.complex32_,
-    dtypes.float16: dtypes.complex32,
-    dtypes.float32_: dtypes.complex64_,
-    dtypes.float32: dtypes.complex64,
-    dtypes.float64_: dtypes.complex128_,
-    dtypes.float64: dtypes.complex128,
-    float: complex,
-}
+corresponding_complex_dtype = datatypes.corresponding_complex_dtype
 
+corresponding_weak_dtype = datatypes.corresponding_weak_dtype
 
-def corresponding_real_dtype(dtype):
-    return _complex_to_real_dtype_map[dtype]
-
-
-def corresponding_complex_dtype(dtype):
-    return _real_to_complex_dtype_map[dtype]
-
-
-_dtype_to_weak_dtype_map = {
-    dtypes.uint8: dtypes.uint8_,
-    dtypes.int8: dtypes.int8_,
-    dtypes.int16: dtypes.int16_,
-    dtypes.int32: dtypes.int32_,
-    dtypes.int64: dtypes.int64_,
-    dtypes.bfloat16: dtypes.bfloat16_,
-    dtypes.float16: dtypes.float16_,
-    dtypes.float32: dtypes.float32_,
-    dtypes.float64: dtypes.float64_,
-    dtypes.complex32: dtypes.complex32_,
-    dtypes.complex64: dtypes.complex64_,
-    dtypes.complex128: dtypes.complex128_,
-}
-
-
-def corresponding_weak_dtype(dtype):
-    if is_weak_dtype(dtype):
-        return dtype
-    return _dtype_to_weak_dtype_map[dtype]
+corresponding_strong_dtype = datatypes.corresponding_strong_dtype
 
 
 def dtype_to_type(dtype):
@@ -252,6 +177,22 @@ def dtype_to_type(dtype):
         return complex
 
     check(False, lambda: f"Unknown dtype {dtype}!")
+
+
+def type_to_dtype(typ):
+    if isinstance(typ, datatypes.datatype):
+        return typ
+
+    if typ is bool:
+        return datatypes.bool8
+    if typ is int:
+        return datatypes.int64_
+    if typ is float:
+        return datatypes.float32_
+    if typ is complex:
+        return datatypes.complex64_
+
+    check(False, lambda: f"Unknown type {typ}!")
 
 
 def get_numberlike_type(x):
@@ -287,15 +228,6 @@ def check_same_dtype(*args):
     if len(args) == 0:
         return None, None
 
-    def _extract_dtype(x):
-        if isinstance(x, dtypes.datatype):
-            return x
-
-        if isinstance(x, TensorProxy):
-            return x.thunder_dtype()
-
-        raise AssertionError(f"Trying to extract dtype from unknown type {x}!")
-
     number_type = None
     tensor_dtype = None
     for a in args:
@@ -326,57 +258,63 @@ def check_same_dtype(*args):
     return number_type, tensor_dtype
 
 
-u8_, u8 = dtypes.uint8_, dtypes.uint8
-i8_, i8 = dtypes.int8_, dtypes.int8
-i16_, i16 = dtypes.int16_, dtypes.int16
-i32_, i32 = dtypes.int32_, dtypes.int32
-i64_, i64 = dtypes.int64_, dtypes.int64
+b8_, b8 = datatypes.bool8_, datatypes.bool8
+u8_, u8 = datatypes.uint8_, datatypes.uint8
+i8_, i8 = datatypes.int8_, datatypes.int8
+i16_, i16 = datatypes.int16_, datatypes.int16
+i32_, i32 = datatypes.int32_, datatypes.int32
+i64_, i64 = datatypes.int64_, datatypes.int64
 
 _exact_dtype_to_number_map = {
     bool: 0,
-    int: 1,
-    u8_: 2,
-    u8: 3,
-    i8_: 4,
-    i16_: 5,
-    i32_: 6,
-    i64_: 7,
-    i8: 8,
-    i16: 9,
-    i32: 10,
-    i64: 11,
+    b8_: 1,
+    b8: 2,
+    int: 3,
+    u8_: 4,
+    u8: 5,
+    i8_: 6,
+    i16_: 7,
+    i32_: 8,
+    i64_: 9,
+    i8: 10,
+    i16: 11,
+    i32: 12,
+    i64: 13,
 }
 
 # fmt: off
 # Exact type lattice
-# b -> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
-#       `-> u8_ -> u8 ----------------------------^
+#    b8_ -> b8 \
+# b /-> i -> i8_ -> i16_ -> i32_ -> i64_ -> i8 -> i16 -> i32 -> i64
+#                `-> u8_ -> u8 ----------------------------^
 # TODO REVIEW: it's a little odd that u8_ + i64_ -> i16
 _elementwise_exact_promotion_table = [
-    #    b      i   u8_     u8    i8_   i16_   i32_  i64_  i8  i16  i32  i64
-    [ bool,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # b
-    [  int,   int,  u8_,    u8,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i
-    [  u8_,   u8_,  u8_,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8_
-    [   u8,    u8,   u8,    u8,   i16,   i16,   i16,  i16, i16, i16, i32, i64], # u8
-    [  i8_,   i8_,  i16,   i16,   i8_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i8_
-    [ i16_,  i16_,  i16,   i16,  i16_,  i16_,  i32_, i64_,  i8, i16, i32, i64], # i16_
-    [ i32_,  i32_,  i16,   i16,  i32_,  i32_,  i32_, i64_,  i8, i16, i32, i64], # i32_
-    [ i64_,  i64_,  i16,   i16,  i64_,  i64_,  i64_, i64_,  i8, i16, i32, i64], # i64_
-    [   i8,    i8,  i16,   i16,    i8,   i8,     i8,   i8,  i8, i16, i32, i64], # i8
-    [  i16,   i16,  i16,   i16,   i16,  i16,    i16,  i16, i16, i16, i32, i64], # i16
-    [  i32,   i32,  i32,   i32,   i32,  i32,    i32,  i32, i32, i32, i32, i64], # i32
-    [  i64,   i64,  i64,   i64,   i64,  i64,    i64,  i64, i64, i64, i64, i64], # i64
+    #    b     b8_     b8      i    u8_    u8    i8_  i16_  i32_  i64_  i8   i16  i32  i64
+    [ bool,    b8_,   b8,    int,  u8_,   u8,   i8_, i16_, i32_, i64_,  i8, i16, i32, i64], # b
+    [  b8_,    b8_,   b8,    i8_,  u8_,   u8,   i8_, i16_, i32_, i64_,  i8, i16, i32, i64], # b8_
+    [   b8,     b8,   b8,    i8_,  u8_,   u8,   i8_, i16_, i32_, i64_,  i8, i16, i32, i64], # b8
+    [  int,    i8_,  i8_,    int,  u8_,   u8,   i8_, i16_, i32_, i64_,  i8, i16, i32, i64], # i
+    [  u8_,    u8_,  u8_,    u8_,  u8_,   u8,   i16,  i16,  i16,  i16, i16, i16, i32, i64], # u8_
+    [   u8,     u8,   u8,     u8,   u8,   u8,   i16,  i16,  i16,  i16, i16, i16, i32, i64], # u8
+    [  i8_,    i8_,  i8_,    i8_,  i16,   i16,  i8_, i16_, i32_, i64_,  i8, i16, i32, i64], # i8_
+    [ i16_,   i16_, i16_,   i16_,  i16,   i16, i16_, i16_, i32_, i64_,  i8, i16, i32, i64], # i16_
+    [ i32_,   i32_, i32_,   i32_,  i16,   i16, i32_, i32_, i32_, i64_,  i8, i16, i32, i64], # i32_
+    [ i64_,   i64_, i64_,   i64_,  i16,   i16, i64_, i64_, i64_, i64_,  i8, i16, i32, i64], # i64_
+    [   i8,     i8,   i8,     i8,  i16,   i16,   i8,   i8,   i8,   i8,  i8, i16, i32, i64], # i8
+    [  i16,    i16,  i16,    i16,  i16,   i16,  i16,  i16,  i16,  i16, i16, i16, i32, i64], # i16
+    [  i32,    i32,  i32,    i32,  i32,   i32,  i32,  i32,  i32,  i32, i32, i32, i32, i64], # i32
+    [  i64,    i64,  i64,    i64,  i64,   i64,  i64,  i64,  i64,  i64, i64, i64, i64, i64], # i64
 ]
 
 
 
-bf_,     bf =  dtypes.bfloat16_,   dtypes.bfloat16
-f16_,   f16 =  dtypes.float16_,    dtypes.float16
-f32_,   f32 =  dtypes.float32_,    dtypes.float32
-f64_,   f64 =  dtypes.float64_,    dtypes.float64
-c32_,   c32 =  dtypes.complex32_,  dtypes.complex32
-c64_,   c64 =  dtypes.complex64_,  dtypes.complex64
-c128_, c128 =  dtypes.complex128_, dtypes.complex128
+bf_,     bf =  datatypes.bfloat16_,   datatypes.bfloat16
+f16_,   f16 =  datatypes.float16_,    datatypes.float16
+f32_,   f32 =  datatypes.float32_,    datatypes.float32
+f64_,   f64 =  datatypes.float64_,    datatypes.float64
+c32_,   c32 =  datatypes.complex32_,  datatypes.complex32
+c64_,   c64 =  datatypes.complex64_,  datatypes.complex64
+c128_, c128 =  datatypes.complex128_, datatypes.complex128
 
 _inexact_dtype_to_number_map = {
     float   : 0,
@@ -452,12 +390,12 @@ def _elementwise_type_promotion(a, b):
 
 # Maps datatypes to their computation types for elementwise operations
 _computation_dtype_map = {
-    dtypes.float16_: dtypes.float32_,
-    dtypes.float16: dtypes.float32,
-    dtypes.bfloat16_: dtypes.float32_,
-    dtypes.bfloat16: dtypes.float32,
-    dtypes.complex32_: dtypes.complex64_,
-    dtypes.complex32: dtypes.complex64,
+    datatypes.float16_: datatypes.float32_,
+    datatypes.float16: datatypes.float32,
+    datatypes.bfloat16_: datatypes.float32_,
+    datatypes.bfloat16: datatypes.float32,
+    datatypes.complex32_: datatypes.complex64_,
+    datatypes.complex32: datatypes.complex64,
 }
 
 
@@ -532,31 +470,32 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
     assert len(args) > 0
 
     has_tensor_input = False
+    extracted = []
+    for a in args:
+        if isinstance(a, Number):
+            extracted.append(get_numberlike_type(a))
+        else:
+            # x is a TensorProxy
+            has_tensor_input = True
+            extracted.append(a.dtype)
 
-    def _extract_dtype(x):
-        if isinstance(x, Number):
-            return get_numberlike_type(x)
-
-        # x is a TensorProxy
-        has_tensor_input = True
-        if is_number_tensor(x):
-            return corresponding_weak_dtype(x.thunder_dtype())
-        return x.thunder_dtype()
-
-    extracted = tuple(_extract_dtype(a) for a in args)
     promotion_dtype = extracted[0]
     for dtype in extracted[1:]:
         promotion_dtype = _elementwise_type_promotion(promotion_dtype, dtype)
+        if has_tensor_input:
+            promotion_dtype = type_to_dtype(promotion_dtype)
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE:
         return promotion_dtype, promotion_dtype
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
+        if has_tensor_input:
+            return promotion_dtype, datatypes.bool8
         return promotion_dtype, bool
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT and is_integer_dtype(promotion_dtype):
-        if not has_tensor_input:
-            return dtypes.float32_, dtypes.float32_
+        if has_tensor_input:
+            return datatypes.float32_, datatypes.float32_
         return float, float
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT and is_complex_dtype(promotion_dtype):
@@ -567,7 +506,7 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG and is_boolean_dtype(promotion_dtype):
         if has_tensor_input:
-            return dtypes.int64_, dtypes.int64_
+            return datatypes.int64_, datatypes.int64_
         return int, int
 
     # Falls through to DEFAULT
@@ -660,4 +599,25 @@ def validate_idx(rank: int, idx: int):
 
 
 def check_no_duplicates(dims: Sequence):
-    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in {dims}!")
+    check(len(dims) == len(set(dims)), lambda: f"Duplicate value in list of dimensions {dims}!")
+
+
+# TODO: think about preserving the original function's signature
+class langctx(object):
+    """
+    A decorator that calls the decorated function in the given language context,
+    resetting to the caller's language context when the function is done.
+    """
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def __call__(self, fn_):
+        @wraps(fn_)
+        def fn(*args, **kwargs):
+            tok = trace.set_language_context(self.ctx)
+            result = fn_(*args, **kwargs)
+            trace.set_language_context(tok)
+            return result
+
+        return fn

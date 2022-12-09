@@ -55,6 +55,8 @@ _thunder_dtype_to_nvfuser_dtype_map = {
     dtypes.int64: DataType.Int,
     dtypes.int32_: DataType.Int32,
     dtypes.int32: DataType.Int32,
+    dtypes.bool8: DataType.Bool,
+    dtypes.bool8_: DataType.Bool,
     # Python scalars
     complex: DataType.ComplexDouble,
     float: DataType.Double,
@@ -94,11 +96,31 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
+    prims.Ops.ACOS: "acos",
+    # prims.Ops.ACOSH: "acosh",
+    prims.Ops.ASIN: "asin",
+    prims.Ops.ATAN: "atan",
+    prims.Ops.ATANH: "atanh",
+    prims.Ops.BITWISE_NOT: "bitwise_not",
+    prims.Ops.CEIL: "ceil",
+    prims.Ops.COS: "cos",
+    prims.Ops.COSH: "cosh",
+    prims.Ops.ERF: "erf",
+    prims.Ops.ERFC: "erfc",
+    prims.Ops.EXP: "exp",
+    prims.Ops.EXPM1: "expm1",
+    prims.Ops.FLOOR: "floor",
+    # The isfinite translation is incorrect, see https://github.com/csarofeen/pytorch/issues/2230
+    # nvFuser's isfinite returns its output in the same datatype as the input,
+    #   but prims.isfinite always expects a boolean return (consistent with
+    #   Python, NumPy, JAX, and PyTorch)
+    prims.Ops.ISFINITE: "isfinite",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
     prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
+    prims.Ops.MUL: "mul",
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
@@ -110,12 +132,12 @@ ops_to_nvfuser_ops_map = {
 
 
 def _var_mean_prim_meta(a, dim, *, correction, **kwargs):
-    output_dtype = a.thunder_dtype()
+    output_dtype = a.dtype
     if utils.is_complex_dtype(output_dtype):
         output_dtype = utils.corresponding_real_dtype(output_dtype)
 
     var = prims.reduction_meta(a, dim, output_dtype=output_dtype)
-    mean = prims.reduction_meta(a, dim, output_dtype=a.thunder_dtype())
+    mean = prims.reduction_meta(a, dim, output_dtype=a.dtype)
 
     return (var, mean)
 
@@ -135,7 +157,7 @@ def var_mean(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
     # the real and imaginary parts
     # TODO: Creating a complex tensor from real and imaginary parts is not supported
     utils.check(
-        not utils.is_complex_dtype(a.thunder_dtype()),
+        not utils.is_complex_dtype(a),
         lambda: "Complex tensors are not supported!",
     )
 
@@ -173,6 +195,9 @@ class nvFuserCtx:
             return var_mean
 
         return None
+
+    def execute(self, *args, **kwargs):
+        return execute(*args, **kwargs)
 
 
 def _convert(fd, m, v, p):

@@ -3,12 +3,11 @@ import operator
 from enum import auto, Enum
 from functools import partial
 from numbers import Number
+import math
 
-# TODO: get rid of requiring torch
-import torch
 
 import thunder.core.utils as utils
-
+import thunder.core.dtypes as datatypes
 from .proxies import NumberProxy, proxy, TensorProxy
 from .trace import get_trace
 from .utils import check, get_numberlike_value, same_shape
@@ -33,11 +32,27 @@ __all__ = [
     "broadcast_in_dim",
     # Elementwise unary prims
     "abs",
+    "acos",
+    "acosh",
+    "asin",
+    "atan",
+    "atanh",
+    "bitwise_not",
+    "ceil",
+    "cos",
+    "cosh",
+    "erf",
+    "erfc",
+    "exp",
+    "expm1",
+    "floor",
+    "isfinite",
     # Elementwise binary prims
     "add",
     "atan2",
     "bitwise_and",
     "div",
+    "mul",
     "sub",
     # Reduction prims
     "reduction_meta",
@@ -55,11 +70,27 @@ class Ops(Enum):
     FULL = auto()
     # Elementwise unary prims
     ABS = auto()
+    ACOS = auto()
+    ACOSH = auto()
+    ASIN = auto()
+    ATAN = auto()
+    ATANH = auto()
+    BITWISE_NOT = auto()
+    CEIL = auto()
+    COS = auto()
+    COSH = auto()
+    ERF = auto()
+    ERFC = auto()
+    EXP = auto()
+    EXPM1 = auto()
+    FLOOR = auto()
+    ISFINITE = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
     BITWISE_AND = auto()
     DIV = auto()
+    MUL = auto()
     SUB = auto()
     # Shape prims
     BROADCAST_IN_DIM = auto()
@@ -162,7 +193,7 @@ convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
 def _full_meta(shape, fill_value, *, dtype, device):
-    return TensorProxy(shape=shape, dtype=dtype)
+    return TensorProxy(shape=shape, device=device, dtype=dtype)
 
 
 full = make_prim(Ops.FULL, "full", _full_meta)
@@ -199,12 +230,9 @@ def _prim_type_promotion(typ, type_promotion_kind):
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
         if utils.is_number_type(type):
             return bool
-        return torch.bool
+        return datatypes.bool8
 
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
-        if typ is complex:
-            return float
-
         if utils.is_complex_dtype(typ):
             return utils.corresponding_real_dtype(typ)
 
@@ -218,29 +246,14 @@ def _prim_type_promotion(typ, type_promotion_kind):
 #
 
 # Elementwise unary prims to implement:
-# "acos",
-# "acosh",
-# "asin",
 # "asinh",
-# "atan",
-# "atanh",
-# "cos",
-# "cosh",
-# "bitwise_not",
 # "cbrt",
-# "ceil",
 # "digamma",
-# "erf",
 # "erf_inv",
-# "erfc",
 # "erfcx",
-# "exp",
-# "expm1",
 # "exp2",
 # "fill",
-# "floor",
 # "imag",
-# "isfinite",
 # "lgamma",
 # "log",
 # "log1p",
@@ -261,21 +274,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "trunc",
 
 # nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
-# "acos",
-# "asin",
-# "atan",
-# "atanh",
-# "cos",
-# "cosh",
-# "bitwise_not",
-# "ceil",
-# "erf",
-# "erfc",
-# "exp",
-# "expm1",
-# "floor",
 # "imag",
-# "isfinite",
 # "lgamma",
 # "log",
 # "log1p",
@@ -316,7 +315,6 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
         number_handler is not None,
         lambda: f"The elementwise unary primitive {name} doesn't support number inputs!",
     )
-
     # a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
     value = number_handler(va)
@@ -333,6 +331,172 @@ abs = make_prim(
         number_handler=builtins.abs,
     ),
 )
+
+acos = make_prim(
+    Ops.ACOS,
+    "acos",
+    partial(
+        _elementwise_unary_meta,
+        name="acos",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.acos,
+    ),
+)
+
+acosh = make_prim(
+    Ops.ACOSH,
+    "acosh",
+    partial(
+        _elementwise_unary_meta,
+        name="acosh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.acosh,
+    ),
+)
+
+asin = make_prim(
+    Ops.ASIN,
+    "asin",
+    partial(
+        _elementwise_unary_meta,
+        name="asin",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.asin,
+    ),
+)
+
+atan = make_prim(
+    Ops.ATAN,
+    "atan",
+    partial(
+        _elementwise_unary_meta,
+        name="atan",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.atan,
+    ),
+)
+
+atanh = make_prim(
+    Ops.ATANH,
+    "atanh",
+    partial(
+        _elementwise_unary_meta,
+        name="atanh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.atanh,
+    ),
+)
+
+bitwise_not = make_prim(
+    Ops.BITWISE_NOT,
+    "bitwise_not",
+    partial(
+        _elementwise_unary_meta,
+        name="bitwise_not",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.invert,
+    ),
+)
+
+ceil = make_prim(
+    Ops.CEIL,
+    "ceil",
+    partial(
+        _elementwise_unary_meta,
+        name="ceil",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.ceil,
+    ),
+)
+
+cos = make_prim(
+    Ops.COS,
+    "cos",
+    partial(
+        _elementwise_unary_meta,
+        name="cos",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.cos,
+    ),
+)
+
+cosh = make_prim(
+    Ops.COSH,
+    "cosh",
+    partial(
+        _elementwise_unary_meta,
+        name="cosh",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.cosh,
+    ),
+)
+
+erf = make_prim(
+    Ops.ERF,
+    "erf",
+    partial(
+        _elementwise_unary_meta,
+        name="erf",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.erf,
+    ),
+)
+
+erfc = make_prim(
+    Ops.ERFC,
+    "erfc",
+    partial(
+        _elementwise_unary_meta,
+        name="erfc",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.erfc,
+    ),
+)
+
+exp = make_prim(
+    Ops.EXP,
+    "exp",
+    partial(
+        _elementwise_unary_meta,
+        name="exp",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.exp,
+    ),
+)
+
+expm1 = make_prim(
+    Ops.EXPM1,
+    "expm1",
+    partial(
+        _elementwise_unary_meta,
+        name="expm1",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.expm1,
+    ),
+)
+
+floor = make_prim(
+    Ops.FLOOR,
+    "floor",
+    partial(
+        _elementwise_unary_meta,
+        name="floor",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.floor,
+    ),
+)
+
+isfinite = make_prim(
+    Ops.ISFINITE,
+    "isfinite",
+    partial(
+        _elementwise_unary_meta,
+        name="isfinite",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
+        number_handler=math.isfinite,
+    ),
+)
+
 
 #
 # Elementwise binary prims
@@ -475,6 +639,17 @@ div = make_prim(
     ),
 )
 
+mul = make_prim(
+    Ops.MUL,
+    "mul",
+    partial(
+        _elementwise_binary_meta,
+        name="mul",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.mul,
+    ),
+)
+
 sub = make_prim(
     Ops.SUB,
     "sub",
@@ -492,7 +667,7 @@ sub = make_prim(
 
 
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
-    return TensorProxy(shape=shape, dtype=a.thunder_dtype())
+    return TensorProxy(shape=shape, device=a.device, dtype=a.dtype)
 
 
 broadcast_in_dim = make_prim(
@@ -524,12 +699,13 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     """Meta function for single output reduction operations."""
 
     if output_dtype is None:
-        output_dtype = a.thunder_dtype()
+        output_dtype = a.dtype
 
     output_shape = _compute_reduction_output_shape(a.shape, dims)
 
     return TensorProxy(
         shape=output_shape,
+        device=a.device,
         dtype=output_dtype,
     )
 
@@ -539,10 +715,10 @@ sum = make_prim(Ops.SUM, "sum", sum_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
-    if utils.is_complex_dtype(a.thunder_dtype()):
-        output_dtype = utils.corresponding_real_dtype(a.thunder_dtype())
+    if utils.is_complex_dtype(a.dtype):
+        output_dtype = utils.corresponding_real_dtype(a.dtype)
     else:
-        output_dtype = a.thunder_dtype()
+        output_dtype = a.dtype
     return reduction_meta(a, dims, output_dtype=output_dtype)
 
 
