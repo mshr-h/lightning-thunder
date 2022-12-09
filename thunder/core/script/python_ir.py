@@ -210,7 +210,8 @@ def undo_ssa(gr):
             insert_before(new_n, n)
         elif v.parent is not None:
             get_value(v.parent, n)
-            if n.i.opname == "CALL_METHOD":
+            if n.i.opname == "CALL_METHOD" and inpidx == 0:
+                print("###inputs", n.inputs, v, v in n.inputs)
                 try:
                     idx = names.index(v.name)
                 except ValueError:
@@ -222,8 +223,27 @@ def undo_ssa(gr):
                     inputs=[v.parent],
                 )
                 insert_before(new_n, n)
+            elif n.i.opname == "LOAD_ATTR":
+                print("###load attr", n.outputs, n.i.argval)
+                pass
             else:
-                raise NotImplementedError()
+                try:
+                    idx = names.index(v.name)
+                except ValueError:
+                    idx = len(names)
+                    names.append(v.name)
+                new_n = Node(
+                    i=get_instruction(opname="LOAD_ATTR", arg=idx),
+                    outputs=[v],
+                    inputs=[v.parent],
+                )
+                insert_before(new_n, n)
+        elif v.is_global:  # make binding the globals optional?
+            if v.value not in consts:
+                consts.append(v.value)
+            idx = consts.index(v.value)
+            new_n = Node(i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[])
+            insert_before(new_n, n)
         else:
             idx = local_vars.index(v)
             # assert idx >= 0
@@ -236,6 +256,7 @@ def undo_ssa(gr):
 
     local_vars = [v for v in gr.local_variables_at_start if v is not None]
     consts = []
+    names = []
 
     # inputs in phi values
     for idx, i in enumerate(local_vars):
@@ -338,10 +359,12 @@ def generate_function(gr):
     bc = []
     linetable, linetable_update, linetable_end = linetable_writer(0)
     address_map = {}
+    ctr = 0
     for bl in gr.blocks:
         # assumes first block is function start
         for n in bl.nodes:
-            address_map[n] = len(address_map)
+            address_map[n] = ctr
+            ctr += 2 if len(n.jump_targets) == 2 else 1
 
     for bl in gr.blocks:
         for n in bl.nodes:
@@ -360,6 +383,11 @@ def generate_function(gr):
             assert arg < 256  # or signed?
             bc.append(n.i.opcode)
             bc.append(arg)
+            if len(n.jump_targets) > 1:
+                assert len(n.jump_targets) == 2
+                i = get_instruction(opname="JUMP_ABSOLUTE", arg=address_map[n.jump_targets[0][1].nodes[0]])
+                bc.append(i.opcode)
+                bc.append(i.arg)
 
     linetable_end(len(bc))
     linetable = bytes(linetable)

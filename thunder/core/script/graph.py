@@ -56,6 +56,7 @@ def unify_values(values, jump_sources, bl):
     raise Exception(f"unimplemnted {values}")
 
 
+# A node corresponds to one Python bytecode instruction
 class Node:
     def __init__(self, *, i=None, inputs=None, outputs=None, line_no=None):
         self.i = i
@@ -72,6 +73,12 @@ class Node:
         return f"{super().__repr__()[:-1]} {self}>"
 
 
+# Blocks have the first instruction (only) as the jump target
+# (or the function entry point)
+# Blocks always have a single final instruction that jumps (or RETURN)
+# conditional jumps (including e.g. FOR_ITER) always have the non-jumping
+# target first and then the jumping target.
+# The jump targets are other blocks and are atributes of the jump instruction.
 class Block:
     def __init__(self, is_ssa=False):
         # offset_start=0, stack_at_start=None, i=None, jump_source=None
@@ -84,7 +91,6 @@ class Block:
         self.jump_sources = []
         self.nodes = []  # if i is None else i
         # self.offset_start = offset_start
-        self.continue_at = None
 
     def __str__(self):
         return "\n".join([f"  Block (reached from {self.jump_sources})"] + ["    " + str(n) for n in self.nodes])
@@ -139,3 +145,30 @@ def insert_after(new_n, n):
     idx = n.block.nodes.index(n)
     n.block.nodes.insert(idx + 1, new_n)
     new_n.block = n.block
+
+
+def replace_values(gr, value_map):
+    ### Replacing a value:
+    # - as inputs/outputs of nodes
+    # - value.parent for other values
+    # - phi nodes
+    # - graph input (?) / initial vars
+
+    def map_values(v):
+        if v in value_map:
+            return value_map[v]
+        if v.parent is not None:
+            v.parent = map_values(v.parent)
+        if isinstance(v, UnionValue):
+            # print("###processing union value", v)
+            new_values = [map_values(vv) for vv in v.values]
+            for ov, nv in zip(v.values, new_values):
+                ov.phi_values.remove(v)
+                nv.phi_values.append(v)
+            v.values = new_values
+        return v
+
+    for bl in gr.blocks:
+        for n in bl.nodes:
+            n.inputs = [map_values(vv) for vv in n.inputs]
+            n.outputs = [map_values(vv) for vv in n.outputs]

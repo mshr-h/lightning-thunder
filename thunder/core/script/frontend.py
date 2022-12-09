@@ -152,6 +152,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                 done = True
     gr = Graph(list(blocks.values()))
     gr.local_variables_at_start = local_variables
+    gr.ismethod = inspect.ismethod(method)
     gr.method = method
     gr.module = module
     gr.mro_klass = mro_klass
@@ -178,10 +179,6 @@ def make_ssa(gr, verbose=False):
                 blocks_to_do.remove(bl)
 
                 jump_sources = bl.jump_sources
-                print(
-                    f"js {jump_sources} {[type(s) for s in bl.all_stacks_at_start]=}",
-                    bl,
-                )
                 # TODO: We cannot currently support loops. :/
                 stack = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_stacks_at_start)]
                 local_variables = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_local_variables_at_start)]
@@ -213,6 +210,10 @@ def make_ssa(gr, verbose=False):
                             outputs = [Value(name=gn, value=gv, is_global=True)]
                         else:
                             outputs = [Value(name="super", value=Super())]
+                    elif i.opname == "LOAD_ATTR":
+                        an = gr.method.__code__.co_names[i.arg]
+                        ap = inputs[0]
+                        outputs = [Value(name=an, parent=ap)]
                     elif i.opname == "CALL_FUNCTION" and i.arg == 0 and isinstance(inputs[0].value, Super):
                         outputs = [Value(value=MROAwareObjectRef(gr.module, start_klass=gr.mro_klass))]
                         # print("##super#", outputs)
@@ -233,7 +234,6 @@ def make_ssa(gr, verbose=False):
                     elif i.opname == "LOAD_CONST":
                         outputs = [Value(value=gr.method.__code__.co_consts[i.arg], is_const=True)]
                     elif i.opname == "CALL_METHOD":
-                        print(n.inputs[0])
                         outputs = [Value(n=n, nr=k) for k in range(push)]
                         new_nodes.append(n)
                     elif i.opname == "FOR_ITER":
@@ -272,15 +272,12 @@ def make_ssa(gr, verbose=False):
 
                     n.outputs = outputs
                     ol = len(stack)
-                    print(ol, pop, push, i.opname)
                     if pop > 0:
                         stack = stack[:-pop]
                     stack.extend(outputs)
                     assert (i.opname == "JUMP_ABSOLUTE" and i.arg is None and len(stack) == ol) or (
                         len(stack) - ol == opcode.stack_effect(i.opcode, i.arg)
                     )
-                if bl.continue_at is not None:
-                    bl.continue_at.all_local_variables_at_start.append((n, local_variables[:]))
                 bl.nodes = new_nodes
         assert one_block_done
     for bl in gr.blocks:
