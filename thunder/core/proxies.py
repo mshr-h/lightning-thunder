@@ -11,7 +11,7 @@ from .trace import Constraint, get_language_context, get_trace
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
 
-# This file depends on trace.py and dtypes.py.
+# This file depends on trace.py and the dtypes submodule.
 
 __all__ = [
     # Number proxies
@@ -206,7 +206,7 @@ class TensorProxy(Proxy):
         self.name = name
 
         if dtype is not None:
-            assert isinstance(dtype, dtypes.datatype), f"Unknown dtype={dtype}!"
+            assert dtypes.is_dtype(dtype), f"Unknown valuetype={dtype}!"
 
         if tensor is not None:
             # Pulls metadata from the tensor, but explicit kwargs take precedence
@@ -228,15 +228,24 @@ class TensorProxy(Proxy):
         # TODO: should ndim be an integer proxy, too?
         self.ndim = len(self.shape)
 
+        # Canonicalizes numbertypes to datatypes
+        if dtypes.is_numbertype(self._dtype):
+            self._dtype = dtypes.numbertype_to_dtype(self._dtype)
+
     def __repr__(self):
-        return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.dtype}]"
+        return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.dtype}, is_weak={dtypes.is_weak_dtype(self._dtype)}]"
 
-    @property
-    def dtype(self):
-        #  Special-cases number tensors, which always have weak dtypes
-        if len(self.shape) == 0:
-            return dtypes.corresponding_weak_dtype(self._dtype)
+    # .dtype, registered using __getattr__
+    def _get_dtype(self):
+        """
+        Returns the strong variant of the tensor's dtype.
 
+        To acquire the actual dtype use "true_dtype"
+        """
+        return dtypes.to_strong_dtype(self._dtype)
+
+    # .true_dtype, registered using __getattr__
+    def _get_true_dtype(self):
         return self._dtype
 
     # +
@@ -264,6 +273,12 @@ class TensorProxy(Proxy):
     #  since the TensorProxy, passed as self here, wouldn't be passed through to the
     #  actual method. That's why this partials the returned method.
     def __getattr__(self, name):
+        # Handles properties
+        if name == "dtype":
+            return self._get_dtype()
+        if name == "true_dtype":
+            return self._get_true_dtype()
+
         ctx = get_language_context()
         return partial(getattr(ctx, name), self)
 
@@ -274,7 +289,7 @@ def proxy(x):
 
     if isinstance(x, TensorProxy):
         name = get_trace().tensor_name()
-        return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=x.dtype)
+        return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=x.true_dtype)
     if isinstance(x, NumberProxy):
         return x
     if isinstance(x, int):

@@ -51,6 +51,11 @@ class SampleInput:
         self.args = args
         self.kwargs = kwargs
 
+    # TODO: print kwargs
+    def __repr__(self):
+        arg_string = ", ".join(tuple(str(a) for a in self.args))
+        return f"[SampleInput args=({arg_string})]"
+
     # Applies the transform f(t) -> t to each tensor and dtype in the SampleInput
     def transform(self, f):
         def tt(t):
@@ -510,7 +515,7 @@ isfinite_opinfo = OpInfo(
             pytest.mark.xfail,
             executors=("nvFuser",),
         ),
-        # Torch preserves the uint8 datatype
+        # Torch preserves the uint8 dtype
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",

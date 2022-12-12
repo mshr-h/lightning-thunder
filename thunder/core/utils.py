@@ -1,44 +1,49 @@
 from enum import Enum
 from itertools import product
-from functools import wraps
+from functools import wraps, reduce
 from numbers import Number
 from typing import Callable, Sequence, Type
 
 import thunder.core.trace as trace
-import thunder.core.dtypes as datatypes
+import thunder.core.dtypes as dtypes
 from .proxies import TensorProxy, NumberProxy
 
 
 # This file defines utilities that can be used when defining primitive operations.
 
-# This file depends on proxies.py.
+# This file depends on proxies.py and the dtypes submodule.
 
 __all__ = [
     # Error checking helpers
     "check",
-    # Datatype and Python type-related functions
+    # dtype and Python type-related functions
+    "to_dtype",
     "is_boolean_dtype",
+    "is_unsigned_dtype",
+    "is_signedinteger_dtype",
     "is_integer_dtype",
+    "is_exact_dtype",
     "is_low_precision_dtype",
     "is_float_dtype",
     "is_complex_dtype",
-    "is_exact_dtype",
     "is_inexact_dtype",
-    "is_number_type",
+    "is_numbertype",
+    "is_dtype",
     "is_weak_dtype",
-    "can_safe_cast_to",
     "corresponding_real_dtype",
     "corresponding_complex_dtype",
-    "corresponding_weak_dtype",
-    "corresponding_strong_dtype",
-    "dtype_to_type",
+    "dtype_to_numbertype",
+    "are_same_dtypes",
+    "corresponding_real_dtype",
+    "corresponding_complex_dtype",
+    "can_safe_cast_to",
     "check_same_dtype",
     "get_numberlike_type",
     "get_numberlike_value",
     "ELEMENTWISE_TYPE_PROMOTION_KIND",
     "elementwise_type_promotion",
     # Shape-related functions
-    "is_number_tensor",
+    "is_numbertensor",
     "same_shape",
     "canonicalize_dim",
     "check_valid_length",
@@ -62,86 +67,37 @@ def check(cond: bool, s: Callable[[], str], exception_type: Type[Exception] = Ru
 
 
 #
-# Datatype-related functions
+# dtype-related functions
 #
 
-
-def _extract_dtype(x):
-    if isinstance(x, datatypes.datatype):
-        return x
-
-    if isinstance(x, TensorProxy):
-        return x.dtype
-
-    if isinstance(x, Number):
-        return get_numberlike_type(x)
-
-    if x in (bool, int, float, complex):
-        return x
-
-    raise AssertionError(f"Trying to extract dtype from object {x} of unknown type {type(x)}!")
-
-
-def is_boolean_dtype(dtype_) -> bool:
-    dtype = _extract_dtype(dtype_)
-    return dtype in (bool, datatypes.bool8, datatypes.bool8_)
-
-
-def is_unsigned_dtype(dtype_):
-    dtype = _extract_dtype(dtype_)
-    return dtype in (bool, datatypes.bool8, datatypes.bool8_, datatypes.uint8_, datatypes.uint8)
-
-
-def is_signed_integer_dtype(dtype_):
-    dtype = _extract_dtype(dtype_)
-    return is_integer_dtype(dtype) and not is_unsigned_dtype(dtype)
-
-
-def is_integer_dtype(dtype_) -> bool:
-    dtype = _extract_dtype(dtype_)
-    return dtype in datatypes.integer_dtypes or dtype in (bool, int)
-
-
-is_exact_dtype = is_integer_dtype
-
-
-def is_low_precision_dtype(dtype_) -> bool:
-    dtype = _extract_dtype(dtype_)
-    return dtype in datatypes.low_precision_dtypes
-
-
-def is_float_dtype(dtype_) -> bool:
-    dtype = _extract_dtype(dtype_)
-    return dtype in datatypes.float_dtypes or dtype is float
-
-
-def is_complex_dtype(dtype_) -> bool:
-    dtype = _extract_dtype(dtype_)
-    return dtype in datatypes.complex_dtypes or dtype is complex
-
-
-def is_inexact_dtype(dtype_):
-    dtype = _extract_dtype(dtype_)
-    return is_float_dtype(dtype) or is_complex_dtype(dtype)
-
-
-def is_number_type(typ):
-    return typ in (bool, int, float, complex)
-
-
-def is_weak_dtype(dtype):
-    if isinstance(dtype, datatypes.datatype):
-        return dtype.is_weak
-
-    return issubclass(dtype, Number)
+to_dtype = dtypes.to_dtype
+is_boolean_dtype = dtypes.is_boolean_dtype
+is_unsigned_dtype = dtypes.is_unsigned_dtype
+is_signedinteger_dtype = dtypes.is_signedinteger_dtype
+is_integer_dtype = dtypes.is_integer_dtype
+is_exact_dtype = dtypes.is_exact_dtype
+is_low_precision_dtype = dtypes.is_low_precision_dtype
+is_float_dtype = dtypes.is_float_dtype
+is_complex_dtype = dtypes.is_complex_dtype
+is_inexact_dtype = dtypes.is_inexact_dtype
+is_numbertype = dtypes.is_numbertype
+is_dtype = dtypes.is_dtype
+is_weak_dtype = dtypes.is_weak_dtype
+dtype_to_numbertype = dtypes.dtype_to_numbertype
+are_same_dtypes = dtypes.are_same_dtypes
+corresponding_real_dtype = dtypes.corresponding_real_dtype
+corresponding_complex_dtype = dtypes.corresponding_complex_dtype
 
 
 def higher_dtype(a, b):
     for fn in (
         is_complex_dtype,
         is_float_dtype,
-        is_signed_integer_dtype,
-        is_unsigned_dtype,
+        is_signedinteger_dtype,
+        # NOTE: checking that x is not boolean here signifies that x is a non-boolean unsigned integer dtype
+        #   (checking for its being an unsigned integer dtype directly wouldn't work, because bools are an
+        #    unsigned integer dtype!)
+        lambda x: not is_boolean_dtype(x),
         is_boolean_dtype,
     ):
         if fn(a):
@@ -149,50 +105,11 @@ def higher_dtype(a, b):
         if fn(b):
             return b
 
-    raise ValueError(f"Unknown inputs {a} and {b}!")
+    raise ValueError(f"Trying to determine the higher dtype of unknown inputs {a} and {b}!")
 
 
 def can_safe_cast_to(*, cast_to, cast_from) -> bool:
     return higher_dtype(cast_to, cast_from) == cast_to
-
-
-corresponding_real_dtype = datatypes.corresponding_real_dtype
-
-corresponding_complex_dtype = datatypes.corresponding_complex_dtype
-
-corresponding_weak_dtype = datatypes.corresponding_weak_dtype
-
-corresponding_strong_dtype = datatypes.corresponding_strong_dtype
-
-
-def dtype_to_type(dtype):
-    """Computes the corresponding Python type (AKA "type kind") for the given dtype."""
-    if is_boolean_dtype(dtype):
-        return bool
-    if is_integer_dtype(dtype):
-        return int
-    if is_float_dtype(dtype):
-        return float
-    if is_complex_dtype(dtype):
-        return complex
-
-    check(False, lambda: f"Unknown dtype {dtype}!")
-
-
-def type_to_dtype(typ):
-    if isinstance(typ, datatypes.datatype):
-        return typ
-
-    if typ is bool:
-        return datatypes.bool8
-    if typ is int:
-        return datatypes.int64_
-    if typ is float:
-        return datatypes.float32_
-    if typ is complex:
-        return datatypes.complex64_
-
-    check(False, lambda: f"Unknown type {typ}!")
 
 
 def get_numberlike_type(x):
@@ -202,7 +119,7 @@ def get_numberlike_type(x):
     if isinstance(x, Number):
         return type(x)
 
-    check(True, lambda: f"Unexpected type {type(x)}!")
+    raise ValueError(f"Trying to extract the number type of unknown object {x} with type {type(x)}!")
 
 
 def get_numberlike_value(x):
@@ -212,58 +129,71 @@ def get_numberlike_value(x):
     if isinstance(x, Number):
         return x
 
-    check(True, lambda: f"Unexpected type {type(x)}!")
+    raise ValueError(f"Trying to acquire the value of unknown object {x} with type {type(x)}!")
 
 
-# TODO: maybe support numbers, too?
 def check_same_dtype(*args):
     """Accepts multiple dtypes, TensorProxies, and numbers.
 
-    Checks that all given dtypes and dtypes of TensorProxies are equivalent,
-    and that all numbers have the corresponding Python type.
+    Checks that ...
+        - all numbers have the same numbertype (bool, int, float or complex)
+        - all non-numbers convert to the same (strong) dtype
+        - if both a numbertype and dtype are identified,
+            that the dtype converts to the same numbertype as the numbertype
 
-    Raises a RuntimeError otherwise.
+    Returns the common dtype and numbertype, if any.
+
+    Raises a RuntimeError if the check fails.
     """
 
     if len(args) == 0:
         return None, None
 
-    number_type = None
-    tensor_dtype = None
+    numbertype = None
+    dtype = None
     for a in args:
         if isinstance(a, Number):
-            typ = get_numberlike_type(a)
-            check(
-                number_type is None or number_type is typ,
-                lambda: f"Expected type {number_type} but found {typ}!",
-            )
-            number_type = typ
-        else:
-            dtype = _extract_dtype(a)
-            check(
-                tensor_dtype is None or tensor_dtype is dtype,
-                lambda: f"Expected dtype {tensor_dtype} but found {dtype}!",
-            )
-            tensor_dtype = dtype
+            typ = to_dtype(a)
+            if numbertype is None:
+                numbertype = typ
 
-    if number_type is not None and tensor_dtype is not None:
-        expected = dtype_to_type(tensor_dtype)
+            check(
+                typ is numbertype,
+                lambda: f"Expected numbertype {numbertype} but found {typ}!",
+            )
+        else:
+            typ = to_dtype(a, true_dtype=True)
+            if dtype is None:
+                dtype = typ
+
+            check(
+                are_same_dtypes(dtype, typ),
+                lambda: f"Expected dtype {dtype} but found {typ}!",
+            )
+
+            # Biases towards strong dtypes
+            if is_weak_dtype(dtype):
+                dtype = typ
+
+    # Reconciles the numbertype and dtype
+    if numbertype is not None and dtype is not None:
+        expected_numbertype = dtype_to_numbertype(dtype)
         check(
-            number_type is expected,
+            numbertype is expected_numbertype,
             lambda: (
-                f"Expected the type {expected}, corresponding to the dtype {tensor_dtype}, " f"but found {number_type}!"
+                f"Expected the numbertype {expected_numbertype}, corresponding to the dtype {dtype}, but found the numbertype {numbertype}!"
             ),
         )
 
-    return number_type, tensor_dtype
+    return numbertype, dtype
 
 
-b8_, b8 = datatypes.bool8_, datatypes.bool8
-u8_, u8 = datatypes.uint8_, datatypes.uint8
-i8_, i8 = datatypes.int8_, datatypes.int8
-i16_, i16 = datatypes.int16_, datatypes.int16
-i32_, i32 = datatypes.int32_, datatypes.int32
-i64_, i64 = datatypes.int64_, datatypes.int64
+b8_, b8 = dtypes.bool8_, dtypes.bool8
+u8_, u8 = dtypes.uint8_, dtypes.uint8
+i8_, i8 = dtypes.int8_, dtypes.int8
+i16_, i16 = dtypes.int16_, dtypes.int16
+i32_, i32 = dtypes.int32_, dtypes.int32
+i64_, i64 = dtypes.int64_, dtypes.int64
 
 _exact_dtype_to_number_map = {
     bool: 0,
@@ -308,13 +238,13 @@ _elementwise_exact_promotion_table = [
 
 
 
-bf_,     bf =  datatypes.bfloat16_,   datatypes.bfloat16
-f16_,   f16 =  datatypes.float16_,    datatypes.float16
-f32_,   f32 =  datatypes.float32_,    datatypes.float32
-f64_,   f64 =  datatypes.float64_,    datatypes.float64
-c32_,   c32 =  datatypes.complex32_,  datatypes.complex32
-c64_,   c64 =  datatypes.complex64_,  datatypes.complex64
-c128_, c128 =  datatypes.complex128_, datatypes.complex128
+bf_,     bf =  dtypes.bfloat16_,   dtypes.bfloat16
+f16_,   f16 =  dtypes.float16_,    dtypes.float16
+f32_,   f32 =  dtypes.float32_,    dtypes.float32
+f64_,   f64 =  dtypes.float64_,    dtypes.float64
+c32_,   c32 =  dtypes.complex32_,  dtypes.complex32
+c64_,   c64 =  dtypes.complex64_,  dtypes.complex64
+c128_, c128 =  dtypes.complex128_, dtypes.complex128
 
 _inexact_dtype_to_number_map = {
     float   : 0,
@@ -360,7 +290,7 @@ _elementwise_inexact_promotion_table = [
     [     c64,   c64,   c64,   c64,   c64,  c64,  c64,  c64, c128,     c64,   c64,   c64,   c64,  c64,  c64, c128], # c64
     [    c128,  c128,  c128,  c128,  c128, c128, c128, c128, c128,    c128,  c128,  c128,  c128, c128, c128, c128], # c128
 ]
-# fmt: on
+
 
 
 def _elementwise_type_promotion(a, b):
@@ -388,23 +318,20 @@ def _elementwise_type_promotion(a, b):
     return _elementwise_inexact_promotion_table[a_idx][b_idx]
 
 
-# Maps datatypes to their computation types for elementwise operations
+# Maps dtypes to their computation types for elementwise operations
 _computation_dtype_map = {
-    datatypes.float16_: datatypes.float32_,
-    datatypes.float16: datatypes.float32,
-    datatypes.bfloat16_: datatypes.float32_,
-    datatypes.bfloat16: datatypes.float32,
-    datatypes.complex32_: datatypes.complex64_,
-    datatypes.complex32: datatypes.complex64,
+    dtypes.float16_   : dtypes.float32_,
+    dtypes.float16    : dtypes.float32,
+    dtypes.bfloat16_  : dtypes.float32_,
+    dtypes.bfloat16   : dtypes.float32,
+    dtypes.complex32_ : dtypes.complex64_,
+    dtypes.complex32  : dtypes.complex64,
 }
+# fmt: on
 
 
-def _computation_dtype(dtype):
-    return _computation_dtype_map.get(dtype, dtype)
-
-
-def _has_weak_dtype(x):
-    return x.weak_dtype or is_number_tensor(x)
+def _computation_dtype(typ):
+    return _computation_dtype_map.get(typ)
 
 
 class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
@@ -416,17 +343,19 @@ class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
     BOOL_TO_LONG = (5,)
 
 
-# TODO: generalize to varargs, allow numbers, dtypes, and tensors
+# TODO: allow dtypes as arguments, too
 def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND):
-    """Computes the computation and result dtypes for elementwise type promotion on the given arguments and with the
+    """Computes the computation and result types for elementwise type promotion on the given arguments and with the
     given elementwise type promotion kind.
 
-    Type promotion in Thunder conceptually corresponds with JAX's type promotion.
+    Type promotion in Thunder uses a lattice similar to JAX's.
     See https://jax.readthedocs.io/en/latest/type_promotion.html.
 
     Reviewing the inputs determines a "promotion dtype", but this function returns a
-    "computation dtype" and a "result dtype." The "type_promotion"kind" argument
-    determines how the promotion dtype is mapped to a computation and result dtype.
+    "computation dtype" and a "result dtype."
+
+    The "type_promotion_kind" argument determines how the promotion dtype is mapped to a
+    computation and result dtype.
 
     PRESERVE preserves the promotion dtype as the computation and result dtype.
     It's appropriate for kernels that perform no mathematical operations on their tensors.
@@ -450,7 +379,7 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
         complex64  -> float32
         complex128 -> float64
 
-    BOOL_TO_LONG is like DEFAULT, except boolean promotion types use int64 for their computation
+    BOOL_TO_LONG is like DEFAULT, except boolean promotion dtypes use int64 for their computation
     and result dtypes.
 
     ALWAYS_BOOL is like PRESERVE, except the result dtype is always bool.
@@ -460,57 +389,41 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
       DEFAULT                 : add
       PRESERVE                : where, nextafter, cat
       INT_TO_FLOAT            : sin
-      COMPLEX_TO_FLOAT        : abs
+      COMPLEX_TO_FLOAT        : abs (handled by prim)
       BOOL_TO_LONG            : pow
-      ALWAYS_BOOL             : eq
+      ALWAYS_BOOL             : eq  (handled by prim)
     """
 
     # Type checks inputs
     assert all(isinstance(a, (TensorProxy, Number)) for a in args)
     assert len(args) > 0
 
-    has_tensor_input = False
-    extracted = []
-    for a in args:
-        if isinstance(a, Number):
-            extracted.append(get_numberlike_type(a))
-        else:
-            # x is a TensorProxy
-            has_tensor_input = True
-            extracted.append(a.dtype)
+    # Computes the promotion type
+    extracted = (to_dtype(x, true_dtype=True) for x in args)
+    promotiontype = reduce(_elementwise_type_promotion, extracted, bool)
 
-    promotion_dtype = extracted[0]
-    for dtype in extracted[1:]:
-        promotion_dtype = _elementwise_type_promotion(promotion_dtype, dtype)
-        if has_tensor_input:
-            promotion_dtype = type_to_dtype(promotion_dtype)
-
+    # Applies the different kinds of type promotion
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE:
-        return promotion_dtype, promotion_dtype
+        return promotiontype, promotiontype
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
-        if has_tensor_input:
-            return promotion_dtype, datatypes.bool8
-        return promotion_dtype, bool
+        return promotiontype, bool
 
-    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT and is_integer_dtype(promotion_dtype):
-        if has_tensor_input:
-            return datatypes.float32_, datatypes.float32_
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT and is_integer_dtype(promotiontype):
         return float, float
 
-    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT and is_complex_dtype(promotion_dtype):
-        return (
-            _computation_dtype(promotion_dtype),
-            corresponding_real_dtype(promotion_dtype),
-        )
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT and is_complex_dtype(promotiontype):
+        if is_low_precision_dtype(promotiontype):
+            return _computation_dtype(promotiontype), dtypes.corresponding_real_dtype(promotiontype)
+        return promotiontype, dtypes.corresponding_real_dtype(promotiontype)
 
-    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG and is_boolean_dtype(promotion_dtype):
-        if has_tensor_input:
-            return datatypes.int64_, datatypes.int64_
+    if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG and is_boolean_dtype(promotiontype):
         return int, int
 
     # Falls through to DEFAULT
-    return _computation_dtype(promotion_dtype), promotion_dtype
+    if is_low_precision_dtype(promotiontype):
+        return _computation_dtype(promotiontype), promotiontype
+    return promotiontype, promotiontype
 
 
 #
@@ -518,7 +431,7 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
 #
 
 
-def is_number_tensor(t):
+def is_numbertensor(t):
     """True if the input is a "number tensor" -- a single element tensor with an empty shape.
 
     False otherwise.

@@ -221,7 +221,7 @@ def _reduction_dtypes(
     ):
         result_dtype = dtype if dtype else arg.dtype
         if output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT and utils.is_complex_dtype(result_dtype):
-            result_dtype = torch_dtype(utils.corresponding_real_dtype(result_dtype))
+            result_dtype = utils.corresponding_real_dtype(result_dtype)
     elif output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.KEEP_PROMOTED_TYPE:
         result_dtype = None
     else:  # ALWAYS_BOOL

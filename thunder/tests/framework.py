@@ -5,7 +5,7 @@ import sys
 from itertools import product
 from functools import wraps
 
-import thunder.core.dtypes as dtypes
+import thunder.core.dtypes as datatypes
 from thunder.core.trace import set_executor_context, reset_executor_context
 
 __all__ = [
@@ -30,8 +30,8 @@ def _available_device_types():
 
 
 class Executor(object):
-    def supports_datatype(self, dtype):
-        return dtype in dtypes.resolve_dtypes(self.supported_datatypes)
+    def supports_dtype(self, dtype):
+        return dtype in datatypes.resolve_dtypes(self.supported_dtypes)
 
     def supports_devicetype(self, devicetype):
         return devicetype in self.supported_devicetypes
@@ -40,13 +40,13 @@ class Executor(object):
 class nvFuser(Executor):
     name = "nvFuser"
     supported_devicetypes = ("cuda",)
-    supported_datatypes = (
-        dtypes.floating,
-        dtypes.bool8,
-        dtypes.int32,
-        dtypes.int64,
-        dtypes.complex64,
-        dtypes.complex128,
+    supported_dtypes = (
+        datatypes.floating,
+        datatypes.bool8,
+        datatypes.int32,
+        datatypes.int64,
+        datatypes.complex64,
+        datatypes.complex128,
     )
 
     ctx = None
@@ -63,7 +63,7 @@ class nvFuser(Executor):
 class TorchEx(Executor):
     name = "TorchEx"
     supported_devicetypes = ("cpu", "cuda")
-    supported_datatypes = (dtypes.datatype,)
+    supported_dtypes = (datatypes.dtype,)
 
     ctx = None
 
@@ -140,7 +140,7 @@ class ops:
             set(supported_device_types) if supported_device_types is not None else set(_all_device_types())
         )
         self.supported_dtypes = (
-            dtypes.resolve_dtypes(supported_dtypes) if supported_dtypes is not None else dtypes.all_datatypes
+            datatypes.resolve_dtypes(supported_dtypes) if supported_dtypes is not None else datatypes.all_dtypes
         )
 
         # Acquires the caller's global scope
@@ -171,7 +171,7 @@ class ops:
                     dtypes = dtypes.intersection(self.supported_dtypes)
 
                 for dtype in dtypes:
-                    if not executor.supports_datatype(dtype):
+                    if not executor.supports_dtype(dtype):
                         continue
 
                     test = _instantiate_test_template(
