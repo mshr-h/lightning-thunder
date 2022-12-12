@@ -38,6 +38,7 @@ _torch_dtype_to_nvfuser_dtype_map = {
     bool: DataType.Bool,
 }
 
+# TODO: can probably remove weak dtypes from this map
 _thunder_dtype_to_nvfuser_dtype_map = {
     dtypes.complex128_: DataType.ComplexDouble,
     dtypes.complex128: DataType.ComplexDouble,

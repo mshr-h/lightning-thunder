@@ -402,7 +402,7 @@ def test_type_promotion():
     result = traced_foo(2.0, i64)
     assert result.dtype is torch.float32
 
-    # b1 x int64 type promotion -- int64 result dypte
+    # b1 x int64 type promotion -- int64 result dtype
     result = traced_foo(b1, i64)
     assert result.dtype is torch.int64
 

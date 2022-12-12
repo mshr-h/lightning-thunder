@@ -4,19 +4,20 @@ from typing import Sequence
 
 import thunder.core.dtypes as dtypes
 
-from . import prims, utils
+# TODO: remove prims import
+from . import utils, prims
 from .proxies import NumberProxy, TensorProxy
 
-# This files defines Thunder's core operators.
-# These operators are distinct from Thunder's primitives, which are the building blocks to build languages
-# from. These operators are build using primitives, and are intended to make it easier to write
-# other language definitions using Thunder.
-
-# This file depends on prims.py.
+# This file defines Thunder's "core" language.
+#
+# These operators are intended to be used when defining user-facing languages, like the torch or NumPy
+# languages.
+#
+# This file depends on all other files in core.
 
 __all__ = [
     # Data movement and transformation operations
-    "maybe_convert_to_dtype",
+    "maybe_convert_data_to_type",
     # Tensor creation operations
     "full",
     "full_like",
@@ -44,44 +45,46 @@ __all__ = [
 
 # TODO: implement ref.cast with an option to enforce safe casting
 def maybe_convert_to_dtype(a, dtype):
-    """Converts a to the specified dtype if a has a distinct dtype, otherwise returns a unmodified."""
+    """
+    If a has the same dtype as the given dtype, returns a unmodified.
 
-    if isinstance(a, TensorProxy):
-        utils.check(isinstance(dtype, dtypes.datatype), lambda: f"Unknown dtype {dtype}!")
-        if a.dtype != dtype:
-            return prims.convert_element_type(a, dtype)
-        return a
-    if isinstance(a, Number):
-        typ = utils.dtype_to_type(dtype)
-        if utils.get_numberlike_type(a) != typ:
-            return prims.convert_element_type(a, dtype)
-        return a
+    Otherwise returns a converted to the given dtype.
+    """
+
+    utils.check(utils.is_dtype(dtype), lambda: f"Unknown dtype {dtype}!")
+
     if isinstance(a, Sequence):
         return tuple(maybe_convert_to_dtype(x, dtype) for x in a)
+    if isinstance(a, TensorProxy):
+        pass
+    elif isinstance(a, Number):
+        # NOTE: this allows conversions like (5, float32) -> 5., which is a little odd
+        dtype = utils.dtype_to_numbertype(dtype)
+    else:
+        raise ValueError(
+            f"Trying to convert the type of the data of an unknown object {a} of {type(a)} that is neither a tensor, number, or sequence!"
+        )
 
-    # Passthrough None because some functions wrapped with type promotion
-    # wrapper might have optional args
-    if a is None:
-        return None
+    if not utils.are_same_dtypes(a, dtype):
+        return prims.convert_element_type(a, dtype)
 
-    raise ValueError(f"Received type {type(a)} that is neither a tensor, number, or sequence!")
+    return a
 
 
 #
 # Tensor creation operations
 #
 
-# TODO: add check that dtype is a valid dtype? -- write error checking rules
-#   for ops and prims
+# TODO: add error checking
 def full(shape, fill_value, *, device, dtype=None):
-    fill_value_type = type(fill_value)
-    dtype = dtype if dtype is not None else fill_value_type
+    fill_value_dtype = dtypes.to_dtype(fill_value)
+    dtype = dtype if dtype is not None else fill_value_dtype
 
     # Ensures the requested fill_value can be safely cast to the dtype
     # NOTE: this is always true if the dtype is inferred
     utils.check(
-        utils.can_safe_cast_to(cast_to=dtype, cast_from=fill_value_type),
-        lambda: f"Can't safely cast fill_value of type {fill_value_type} to datatype {dtype}!",
+        utils.can_safe_cast_to(cast_to=dtype, cast_from=fill_value_dtype),
+        lambda: f"Can't safely cast fill_value of numbertype {fill_value_dtype} to dtype {dtype}!",
     )
 
     return prims.full(shape, fill_value, device=device, dtype=dtype)
@@ -89,7 +92,7 @@ def full(shape, fill_value, *, device, dtype=None):
 
 def full_like(tensor, fill_value, *, device=None, dtype=None):
     device = device if device is not None else tensor.device
-    dtype = dtype if dtype is not None else tensor.dtype
+    dtype = dtype if dtype is not None else tensor.true_dtype
 
     return full(tensor.shape, fill_value, device=device, dtype=dtype)
 
@@ -222,7 +225,7 @@ def bitwise_not(a):
 
 
 def ceil(a):
-    if utils.is_exact_dtype(a):
+    if utils.is_exact_dtype(utils.to_dtype(a)):
         return a
 
     return _elementwise_unary_helper(prims.ceil, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
@@ -253,14 +256,14 @@ def expm1(a):
 
 
 def floor(a):
-    if utils.is_exact_dtype(a):
+    if utils.is_exact_dtype(utils.to_dtype(a)):
         return a
 
     return _elementwise_unary_helper(prims.floor, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a)
 
 
 def isfinite(a):
-    if utils.is_exact_dtype(a):
+    if utils.is_exact_dtype(utils.to_dtype(a)):
         return full_like(a, True, dtype=dtypes.bool8)
 
     return _elementwise_unary_helper(prims.isfinite, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a)
