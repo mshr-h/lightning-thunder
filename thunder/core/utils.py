@@ -389,9 +389,9 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
       DEFAULT                 : add
       PRESERVE                : where, nextafter, cat
       INT_TO_FLOAT            : sin
-      COMPLEX_TO_FLOAT        : abs (handled by prim)
+      COMPLEX_TO_FLOAT        : abs
       BOOL_TO_LONG            : pow
-      ALWAYS_BOOL             : eq  (handled by prim)
+      ALWAYS_BOOL             : eq
     """
 
     # Type checks inputs
