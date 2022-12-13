@@ -148,6 +148,7 @@ class OpInfo:
         devicetypes=None,
         dtypes=None,
         sample_input_generator,
+        benchmark_generator=None,
         method_variant=None,
         operator_variant=None,
         torch_reference=None,
@@ -160,6 +161,7 @@ class OpInfo:
         self._devicetypes = devicetypes if devicetypes is not None else _all_device_types()
         self._dtypes = dtypes if dtypes is not None else (datatypes.exact, datatypes.inexact)
         self.sample_input_generator = sample_input_generator
+        self.benchmark_generator = benchmark_generator
         self.method_variant = method_variant
         self.operator_variant = operator_variant
         self.torch_reference = torch_reference
@@ -171,9 +173,18 @@ class OpInfo:
         """Calls the function variant of the operator."""
         return self.op(*args, **kwargs)
 
-    # TODO: different sample inputs must be generated depending on the language context
+    # TODO: maybe allow sample input generation not using torch
+    # NOTE: Today all sample inputs are generated with PyTorch, so Thunder objects,
+    #   like dtypes, need to be translated into PyTorch objects
     def sample_inputs(self, device_type, dtype, *, requires_grad=False, **kwargs):
+        dtype = torch_dtype(dtype)
         return self.sample_input_generator(self, device_type, dtype, requires_grad, **kwargs)
+
+    # NOTE: Today all benchmarks are generated with PyTorch, so Thunder objects,
+    #   like dtypes, need to be translated into PyTorch objects
+    def benchmarks(self, device_type, dtype, *, requires_grad=False, **kwargs):
+        dtype = torch_dtype(dtype)
+        return self.benchmark_generator(self, device_type, dtype, requires_grad, **kwargs)
 
     def device_types(self):
         return set(self._devicetypes)
@@ -200,7 +211,7 @@ elementwise_unary_ops = []
 # TODO: add numbers
 # TODO: add small value, large value, and extremal-valued samples
 def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
-    make_arg = partial(make_tensor, device=device, dtype=torch_dtype(dtype), low=op.domain.low, high=op.domain.high)
+    make_arg = partial(make_tensor, device=device, dtype=dtype, low=op.domain.low, high=op.domain.high)
 
     shapes = (
         # TODO: restore size zero cases
@@ -239,9 +250,45 @@ def elementwise_unary_generator(op, device, dtype, requires_grad, **kwargs):
         yield SampleInput(a)
 
 
-abs_opinfo = OpInfo(
+def elementwise_unary_benchmarks(op, device, dtype, requires_grad, **kwargs):
+    make_arg = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # name x shape
+    cases = (
+        ("8x8", (8, 8)),
+        ("64x64", (64, 64)),
+        ("1024x1024", (1024, 1024)),
+    )
+
+    for name, shape in cases:
+        yield name, SampleInput(make_arg(shape))
+
+
+class ElementwiseOpInfo(OpInfo):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class ElementwiseUnaryOpInfo(ElementwiseOpInfo):
+    def __init__(
+        self,
+        *args,
+        sample_input_generator=elementwise_unary_generator,
+        benchmark_generator=elementwise_unary_benchmarks,
+        **kwargs,
+    ):
+        super().__init__(
+            *args,
+            sample_input_generator=sample_input_generator,
+            benchmark_generator=elementwise_unary_benchmarks,
+            **kwargs,
+        )
+
+        elementwise_unary_ops.append(self)
+
+
+abs_opinfo = ElementwiseUnaryOpInfo(
     tlang.abs,
-    sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.abs,
     test_directives=(
         # Torch doesn't support CPU bool abs
@@ -250,7 +297,6 @@ abs_opinfo = OpInfo(
         ),
     ),
 )
-elementwise_unary_ops.append(abs_opinfo)
 
 acos_opinfo = OpInfo(
     tlang.acos,
@@ -540,13 +586,13 @@ elementwise_binary_ops = []
 
 # TODO: extend this generator
 def elementwise_binary_generator(op, device, dtype, requires_grad, **kwargs):
-    a = make_tensor((4, 4), device=device, dtype=torch_dtype(dtype))
-    b = make_tensor((4, 4), device=device, dtype=torch_dtype(dtype))
+    a = make_tensor((4, 4), device=device, dtype=dtype)
+    b = make_tensor((4, 4), device=device, dtype=dtype)
 
     yield SampleInput(a, b)
 
     # Tests broadcasting
-    c = make_tensor((4, 1), device=device, dtype=torch_dtype(dtype))
+    c = make_tensor((4, 1), device=device, dtype=dtype)
     yield SampleInput(a, c)
 
 

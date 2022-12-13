@@ -14,9 +14,7 @@ from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 # Snippets run a single test using a single sample
 # TODO: should snippets be able to access the original opinfo? -- No
 def snippet_torch_consistency(op, torch_op, sample):
-    traced_op = thunder.make_traced(op)
-    thunder_result = traced_op(*sample.args, **sample.kwargs)
-
+    thunder_result = op(*sample.args, **sample.kwargs)
     torch_result = torch_op(*sample.args, **sample.kwargs)
 
     assert_close(thunder_result, torch_result, equal_nan=True)
@@ -27,14 +25,14 @@ def snippet_torch_consistency(op, torch_op, sample):
 @ops(
     elementwise_unary_ops + elementwise_binary_ops,
 )
-def test_core_vs_torch_consistency(op, device, dtype):
+def test_core_vs_torch_consistency(op, device, dtype, executor):
     for sample in op.sample_inputs(device, dtype):
         result = run_snippet(
             snippet_torch_consistency,
             op,
             device,
             dtype,
-            op.op,
+            executor.make_callable(op.op),
             op.torch_reference,
             sample,
         )
