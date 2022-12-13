@@ -5,10 +5,12 @@ import sys
 from itertools import product
 from functools import wraps
 
+from thunder import make_traced
 import thunder.core.dtypes as datatypes
 from thunder.core.trace import set_executor_context, reset_executor_context
 
 __all__ = [
+    "available_device_types",
     "ops",
 ]
 
@@ -18,7 +20,7 @@ def _all_device_types():
     return ("cpu", "cuda")
 
 
-def _available_device_types():
+def available_device_types():
     try:
         import torch
 
@@ -37,6 +39,7 @@ class Executor(object):
         return devicetype in self.supported_devicetypes
 
 
+# TODO: extend with the ability to convert sample inputs to be appropriate for the executor
 class nvFuser(Executor):
     name = "nvFuser"
     supported_devicetypes = ("cuda",)
@@ -59,6 +62,9 @@ class nvFuser(Executor):
 
         return self.ctx
 
+    def make_callable(self, fn, **kwargs):
+        return make_traced(fn, executor="nvfuser", **kwargs)
+
 
 class TorchEx(Executor):
     name = "TorchEx"
@@ -75,8 +81,14 @@ class TorchEx(Executor):
 
         return self.ctx
 
+    def make_callable(self, fn, **kwargs):
+        return make_traced(fn, executor="torch", **kwargs)
+
 
 def _all_executors():
+    """
+    Constructs a list of all Thunder executors to be used when generating tests.
+    """
     executors = []
 
     try:
@@ -85,6 +97,25 @@ def _all_executors():
         executors.append(TorchEx())
     except ModuleNotFoundError:
         pass
+
+    try:
+        import torch._C._nvfuser
+
+        executors.append(nvFuser())
+    except ModuleNotFoundError:
+        pass
+
+    return executors
+
+
+def benchmark_executors():
+    """
+    Constructs a list of executors to use when benchmarking.
+
+    These executors should define "get_callable", which returns a callable version of a
+    given function.
+    """
+    executors = []
 
     try:
         import torch._C._nvfuser
@@ -106,9 +137,7 @@ def _instantiate_test_template(template, scope, *, opinfo, executor, device, dty
     def test():
         # TODO: currently this passes the device type as a string, but actually a device or multiple devices
         #   should be passed to the test
-        tok = set_executor_context(executor.get_executor_context())
-        result = template(opinfo, device, dtype)
-        reset_executor_context(tok)
+        result = template(opinfo, device, dtype, executor)
         return result
 
     # TODO: pass device type explicitly
@@ -159,7 +188,7 @@ class ops:
             device_types = (
                 opinfo.device_types()
                 .intersection(self.supported_device_types)
-                .intersection(set(_available_device_types()))
+                .intersection(set(available_device_types()))
             )
             for executor, devicetype in product(self.supported_executors, device_types):
                 if not executor.supports_devicetype(devicetype):

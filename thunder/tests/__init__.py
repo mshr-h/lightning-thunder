@@ -1,5 +1,16 @@
 import os
 
+from .framework import available_device_types, benchmark_executors
+from .opinfos import opinfos
+
+__all__ = [
+    "available_device_types",
+    "benchmark_executors",
+    "opinfos",
+]
+
+# available_device_types = available_device_types
+
 # get value of environment variable, so that the executor
 # can be forced when running tests
 # THUNDER_EXECUTOR=nvfuser pytest
