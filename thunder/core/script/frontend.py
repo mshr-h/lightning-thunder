@@ -179,9 +179,16 @@ def make_ssa(gr, verbose=False):
                 blocks_to_do.remove(bl)
 
                 jump_sources = bl.jump_sources
-                # TODO: We cannot currently support loops. :/
-                stack = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_stacks_at_start)]
-                local_variables = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_local_variables_at_start)]
+
+                all_stacks_at_start = bl.all_stacks_at_start
+                all_local_variables_at_start = bl.all_local_variables_at_start
+                if None in all_stacks_at_start:
+                    # TODO: Check what is going on with loops w.r.t. types
+                    all_stacks_at_start = [s for s in bl.all_stacks_at_start if s is not None]
+                    all_local_variables_at_start = [lv for lv in bl.all_local_variables_at_start if lv is not None]
+
+                stack = [unify_values(v, jump_sources, bl) for v in zip(*all_stacks_at_start)]
+                local_variables = [unify_values(v, jump_sources, bl) for v in zip(*all_local_variables_at_start)]
                 # print("###lv1", local_variables)
 
                 new_nodes = []
@@ -206,7 +213,10 @@ def make_ssa(gr, verbose=False):
                             else:
                                 func = gr.method
                             gn = gr.method.__code__.co_names[i.arg]
-                            gv = func.__globals__[gn]
+                            NOT = object()
+                            gv = func.__globals__.get(gn, NOT)
+                            if gv is NOT:
+                                gv = func.__builtins__[gn]
                             outputs = [Value(name=gn, value=gv, is_global=True)]
                         else:
                             outputs = [Value(name="super", value=Super())]
@@ -216,7 +226,7 @@ def make_ssa(gr, verbose=False):
                         outputs = [Value(name=an, parent=ap)]
                     elif i.opname == "CALL_FUNCTION" and i.arg == 0 and isinstance(inputs[0].value, Super):
                         outputs = [Value(value=MROAwareObjectRef(gr.module, start_klass=gr.mro_klass))]
-                        # print("##super#", outputs)
+                        print("##super#", outputs)
                     elif i.opname == "LOAD_METHOD":  # also used for modules (callables)
                         (obj,) = inputs
                         mn = gr.method.__code__.co_names[i.arg]

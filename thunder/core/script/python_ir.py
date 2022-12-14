@@ -24,6 +24,7 @@ fixed_stack_effects_detail = {
     "DUP_TOP_TWO": (2, 4),
     # Unary operators
     "UNARY_POSITIVE": (1, 1),
+    "UNARY_NEGATIVE": (1, 1),
     "UNARY_NOT": (1, 1),
     "UNARY_INVERT": (1, 1),
     "SET_ADD": (2, 1),  # these leave the container on the stack

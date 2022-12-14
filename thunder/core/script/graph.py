@@ -25,7 +25,20 @@ class Value:
         self.phi_values = []
 
     def __str__(self):
-        return f"""Value(name={self.name}, typ={self.typ or type(self.value)})"""
+        parts = []
+        if self.name:
+            parts.append(f"name={self.name}")
+        if self.typ is not None:
+            parts.append(f"typ={self.typ}")
+        if self.value:
+            parts.append(f"value of type {type(self.value)}")
+        if self.is_const:
+            parts.append("const")
+        if self.is_global:
+            parts.append("global")
+        if self.parent is not None:
+            parts.append(f"parent={self.parent}")
+        return f"""Value({' '.join(parts)})"""
 
     def __repr__(self):
         return f"{super().__repr__()[:-1]} {self}>"

@@ -9,6 +9,7 @@ import torch  ## aehem.
 
 def specify_inputs(gr, inps):
     inp_map = {p: v for p, v in zip(gr.local_variables_at_start, inps)}
+    print("###inp_map#", inp_map)
     replace_values(gr, inp_map)
 
 
@@ -67,7 +68,7 @@ def inline_method_calls(gr):  # criterion?
                 ):  # when inlining works really well, we might switch to using __call__
                     mod1 = meth1
                     meth1 = meth1.forward
-                gr1 = acquire_method(meth1, module=mod1, mro_klass=gr.mro_klass)
+                gr1 = acquire_method(meth1, module=mod1, mro_klass=gr.mro_klass if mod1 == gr.module else None)
                 make_ssa(gr1)
                 make_single_return(gr1)
 
@@ -75,7 +76,7 @@ def inline_method_calls(gr):  # criterion?
                 (ret_bl,) = (bl for bl in gr1.blocks if len(bl.nodes) > 0 and bl.nodes[-1].i.opname == "RETURN_VALUE")
 
                 if gr1.ismethod:
-                    specify_inputs(gr1, [n.inputs[0], *n.inputs[2:]])
+                    specify_inputs(gr1, [n.inputs[1], *n.inputs[2:]])
                 else:
                     specify_inputs(gr1, n.inputs[2:])
 
