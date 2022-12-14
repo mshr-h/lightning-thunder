@@ -20,6 +20,7 @@ def parse_args():
     parser.add_argument("--dtypes", action="append", help="float32, int64, ...")
     return parser.parse_args()
 
+
 def _resolve_op(name):
     """
     Tries to extract the operator name from the thunder namespace directly, and if that fails
@@ -29,6 +30,7 @@ def _resolve_op(name):
         getattr(thunder, name)
     except AttributeError:
         return getattr(thunder.core.lang, name)
+
 
 def _timer_helper(fn, args, kwargs=None, iters=10):
     """
@@ -44,6 +46,7 @@ def _timer_helper(fn, args, kwargs=None, iters=10):
 
     return tt
 
+
 # TODO: make whether using cached or non-cached executors a flag
 # TODO: what statistics do we want to return here, and in what return format?
 def _benchmark_op_helper(opinfo, devicetype, dtype, executor):
@@ -53,7 +56,7 @@ def _benchmark_op_helper(opinfo, devicetype, dtype, executor):
         tt = _timer_helper(op, args=benchmark.args, kwargs=benchmark.kwargs)
         print(f"{name}, {tt.median}")
 
-        
+
 # TODO: make a return format so this is independently callable
 def benchmark_op(*, opinfo, devicetypes, dtypes, executors):
     print(f"op={opinfo.name}")
@@ -65,14 +68,15 @@ def benchmark_op(*, opinfo, devicetypes, dtypes, executors):
 
         _benchmark_op_helper(opinfo, devicetype, dtype, executor)
 
+
 if __name__ == "__main__":
     args = parse_args()
 
     # Acquires ops and their opinfos
     ops = tuple(_resolve_op(op) for op in args.ops)
-    opinfos =  tuple(opinfo for opinfo in testing.opinfos if opinfo.op in ops)
+    opinfos = tuple(opinfo for opinfo in testing.opinfos if opinfo.op in ops)
 
-    for opinfo in opinfos: 
+    for opinfo in opinfos:
         if opinfo.benchmark_generator is None:
             raise ValueError(f"Op {opinfo.name} doesn't have a benchmark generator!")
 
@@ -81,10 +85,10 @@ if __name__ == "__main__":
     if args.devicetypes is not None:
         devicetypes = devicetypes.intersection(set(args.devicetypes))
 
-    # Acquires dtypes    
+    # Acquires dtypes
     if args.dtypes is None or len(args.dtypes) == 0:
         raise ValueError("Expected at least one dtype, specified with --dtypes ")
-    
+
     dtypes = tuple(getattr(thunder, dtype) for dtype in args.dtypes)
     for dtype in dtypes:
         if not thunder.dtypes.is_dtype(dtype):
@@ -95,10 +99,3 @@ if __name__ == "__main__":
 
     for opinfo in opinfos:
         benchmark_op(opinfo=opinfo, devicetypes=devicetypes, dtypes=dtypes, executors=executors)
-
-
-
-    
-
-    
-    
