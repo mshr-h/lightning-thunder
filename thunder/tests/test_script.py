@@ -58,8 +58,8 @@ def test_torch_to_thunder():
     thunder_fn = thunder.core.script.python_ir.generate_function(gr)
 
     traced_fn = thunder.make_traced(thunder_fn, executor="torch")
-    a = torch.testing.make_tensor((2, 2), device="cpu", dtype=torch.float32)
-    b = torch.testing.make_tensor((2, 2), device="cpu", dtype=torch.float32)
+    a = torch.randn((2, 2), device="cpu", dtype=torch.float32)
+    b = torch.randn((2, 2), device="cpu", dtype=torch.float32)
 
     res = traced_fn(a, b)
     expected = sample_add_fn(a, b)
