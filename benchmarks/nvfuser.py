@@ -89,7 +89,7 @@ def _timer(fn, *args, iters=10, **kwargs):
 
 
 def make_traced(fn):
-    return thunder.make_traced(fn, executor="nvfuser", _info=True, _use_cache=True)
+    return thunder.make_traced(fn, executor="nvfuser", _info=True)
 
 
 def percent(numerator, denominator):
@@ -294,9 +294,9 @@ benchmarks = {
     "add_4096x4": add_4096x4,
     "add_4x4096": add_4x4096,
     "add_1024x1024_contiguous_transposed": add_1024x1024_contiguous_transposed,
-    # # Elementise Unary benchmarks
+    # Elementise Unary benchmarks
     "abs_64x64": abs_64x64,
-    # # Reduction benchmarks
+    # Reduction benchmarks
     "var_1024x1024_all_reduce": var_1024x1024_all_reduce,
 }
 
