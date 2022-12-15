@@ -7,7 +7,7 @@ import math
 
 
 import thunder.core.utils as utils
-import thunder.core.dtypes as datatypes
+import thunder.core.dtypes as dtypes
 from .proxies import NumberProxy, proxy, TensorProxy
 from .trace import get_trace
 from .utils import check, get_numberlike_value, same_shape
@@ -18,7 +18,7 @@ from .utils import check, get_numberlike_value, same_shape
 # Transforms and analysis defined on the primitive operations should
 #   be inherited by the operation's they're composed of.
 
-# This file depends on trace.py, dtypes.py, proxies.py, and utils.py.
+# This file depends on trace.py, the dtypes submodule, proxies.py, and utils.py.
 
 __all__ = [
     # Methods and datastructures for constructing primitive operations
@@ -174,10 +174,11 @@ def make_prim(id, name, meta):
 #
 
 
+# TODO: consider supporting number subclasses
 def _convert_element_type_meta(a, dtype):
     if isinstance(a, Number):
-        typ = utils.dtype_to_type(dtype)
-        return proxy(typ(utils.get_numberlike_value(a)))
+        utils.check(utils.is_numbertype(dtype), lambda: f"Trying to convert a number to non-numbertype object {dtype}!")
+        return proxy(dtype(utils.get_numberlike_value(a)))
 
     # a is a Tensor
     return TensorProxy(tensor=a, dtype=dtype)
@@ -228,9 +229,7 @@ def _prim_type_promotion(typ, type_promotion_kind):
         return typ
 
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL:
-        if utils.is_number_type(type):
-            return bool
-        return datatypes.bool8
+        return bool
 
     if type_promotion_kind is ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT:
         if utils.is_complex_dtype(typ):
@@ -296,14 +295,13 @@ def _prim_type_promotion(typ, type_promotion_kind):
 
 def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None, **kwargs):
     # TODO: break fn into two, one for returning types, one for checking for equality?
-    number_type, tensor_dtype = utils.check_same_dtype(a)
-    input_type = tensor_dtype if tensor_dtype is not None else number_type
+    input_dtype = utils.to_dtype(a, true_dtype=True)
 
-    result_type = _prim_type_promotion(input_type, type_promotion_kind=type_promotion_kind)
+    result_dtype = _prim_type_promotion(input_dtype, type_promotion_kind=type_promotion_kind)
 
     # Tensor case
     if isinstance(a, TensorProxy):
-        return TensorProxy(tensor=a, dtype=result_type)
+        return TensorProxy(tensor=a, dtype=result_dtype)
 
     # Number case
     check(
@@ -315,10 +313,11 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
         number_handler is not None,
         lambda: f"The elementwise unary primitive {name} doesn't support number inputs!",
     )
+
     # a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
     value = number_handler(va)
-    return proxy(result_type(value))
+    return proxy(result_dtype(value))
 
 
 abs = make_prim(
@@ -546,7 +545,10 @@ isfinite = make_prim(
 
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
-def _elementwise_binary_meta(a, b, *, name, type_promotion_kind, number_handler=None, **kwargs):
+# TODO: use supported_dtypes
+def _elementwise_binary_meta(
+    a, b, *, name, type_promotion_kind, number_handler=None, supported_dtypes=(dtypes.dtype,), **kwargs
+):
     # Tensors or Number inputs only
     if not isinstance(a, (TensorProxy, Number)):
         raise ValueError(f"Unexpected type {type(a)}!")
@@ -554,8 +556,8 @@ def _elementwise_binary_meta(a, b, *, name, type_promotion_kind, number_handler=
         raise ValueError(f"Unexpected type {type(b)}!")
 
     # Inputs must have the same dtype
-    number_type, tensor_dtype = utils.check_same_dtype(a, b)
-    input_type = tensor_dtype if tensor_dtype is not None else number_type
+    numbertype, dtype = utils.check_same_dtype(a, b)
+    input_type = dtype if dtype is not None else numbertype
 
     result_type = _prim_type_promotion(input_type, type_promotion_kind=type_promotion_kind)
 
@@ -616,6 +618,7 @@ bitwise_and = make_prim(
         _elementwise_binary_meta,
         name="bitwise_and",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        supported_dtypes=(dtypes.exact,),
     ),
 )
 
@@ -667,7 +670,7 @@ sub = make_prim(
 
 
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
-    return TensorProxy(shape=shape, device=a.device, dtype=a.dtype)
+    return TensorProxy(shape=shape, device=a.device, dtype=a.true_dtype)
 
 
 broadcast_in_dim = make_prim(
@@ -699,7 +702,7 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     """Meta function for single output reduction operations."""
 
     if output_dtype is None:
-        output_dtype = a.dtype
+        output_dtype = a.true_dtype
 
     output_shape = _compute_reduction_output_shape(a.shape, dims)
 
@@ -715,10 +718,11 @@ sum = make_prim(Ops.SUM, "sum", sum_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
+    output_dtype = None
     if utils.is_complex_dtype(a.dtype):
-        output_dtype = utils.corresponding_real_dtype(a.dtype)
+        output_dtype = utils.corresponding_real_dtype(a.true_dtype)
     else:
-        output_dtype = a.dtype
+        output_dtype = a.true_dtype
     return reduction_meta(a, dims, output_dtype=output_dtype)
 
 

@@ -2,7 +2,7 @@ from typing import Sequence
 
 import torch
 
-import thunder.core.dtypes as datatypes
+import thunder.core.dtypes as dtypes
 import thunder.langs.torch as ttorch
 from thunder.core import prims
 from thunder.core.proxies import NumberProxy, TensorProxy
@@ -11,9 +11,44 @@ __all__ = [
     "torch",
 ]
 
+# TODO: can probably remove weak dtypes from this map
+_thunder_to_torch_dtype_map = {
+    bool: torch.bool,
+    int: torch.int32,
+    float: torch.float32,
+    complex: torch.complex64,
+    dtypes.bool8_: torch.bool,
+    dtypes.bool8: torch.bool,
+    dtypes.uint8_: torch.uint8,
+    dtypes.uint8: torch.uint8,
+    dtypes.int8_: torch.int8,
+    dtypes.int8: torch.int8,
+    dtypes.int16_: torch.int16,
+    dtypes.int16: torch.int16,
+    dtypes.int32_: torch.int32,
+    dtypes.int32: torch.int32,
+    dtypes.int64_: torch.int64,
+    dtypes.int64: torch.int64,
+    dtypes.bfloat16_: torch.bfloat16,
+    dtypes.bfloat16: torch.bfloat16,
+    dtypes.float16_: torch.float16,
+    dtypes.float16: torch.float16,
+    dtypes.float32_: torch.float32,
+    dtypes.float32: torch.float32,
+    dtypes.float64_: torch.float64,
+    dtypes.float64: torch.float64,
+    dtypes.complex32_: torch.complex32,
+    dtypes.complex32: torch.complex32,
+    dtypes.complex64_: torch.complex64,
+    dtypes.complex64: torch.complex64,
+    dtypes.complex128_: torch.complex128,
+    dtypes.complex128: torch.complex128,
+}
+
 
 def _convert_element_type_translation():
     def _fn(a, dtype):
+        dtype = _thunder_to_torch_dtype_map.get(dtype, dtype)
         return a.to(dtype)
 
     return _fn
@@ -131,7 +166,7 @@ def execute(t, *args, **kwargs):
             return x
 
         def _proxy_to_torch(x):
-            if isinstance(x, datatypes.datatype):
+            if isinstance(x, dtypes.dtype):
                 return ttorch.torch_dtype(x)
             if isinstance(x, str):
                 return x

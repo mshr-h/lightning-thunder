@@ -1,5 +1,6 @@
 from enum import auto, Enum
 from typing import Sequence
+import time
 
 import torch
 import torch._C._nvfuser as nvfuser
@@ -38,6 +39,7 @@ _torch_dtype_to_nvfuser_dtype_map = {
     bool: DataType.Bool,
 }
 
+# TODO: can probably remove weak dtypes from this map
 _thunder_dtype_to_nvfuser_dtype_map = {
     dtypes.complex128_: DataType.ComplexDouble,
     dtypes.complex128: DataType.ComplexDouble,
@@ -218,8 +220,9 @@ def _convert(fd, m, v, p):
         raise AssertionError(f"execute(): Received unknown input type: {v}")
 
 
-# TODO: add kwarg support
 def execute(t, *args, **kwargs):
+    translation_start = time.time_ns()
+
     # Constructs a fusion from a trace
     proxy_to_nv_map = {}
     fs = Fusion()
@@ -313,5 +316,16 @@ def execute(t, *args, **kwargs):
 
     args_and_kwargs = filtered_args + tuple(flattened_kwargs)
 
+    translation_end = time.time_ns()
+
+    ex_start = time.time_ns()
     nvf_out = fs.execute(args_and_kwargs)
-    return nvf_out, fs
+    ex_end = time.time_ns()
+
+    meta = {
+        "translation_time": translation_end - translation_start,
+        "execution_time": ex_end - ex_start,
+        "fusion": fs,
+    }
+
+    return nvf_out, meta
