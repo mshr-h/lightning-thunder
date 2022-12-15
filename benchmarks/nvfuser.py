@@ -89,7 +89,11 @@ def _timer(fn, *args, iters=10, **kwargs):
 
 
 def make_traced(fn):
-    return thunder.make_traced(fn, executor="nvfuser", _info=True)
+    return thunder.make_traced(fn, executor="nvfuser", _info=True, _use_cache=True)
+
+
+def percent(numerator, denominator):
+    return f"{round(numerator / denominator * 100, 2)}%"
 
 
 def _prettyprint_thunder_nvfuser_stats(stats):
@@ -103,16 +107,16 @@ def _prettyprint_thunder_nvfuser_stats(stats):
         a_time = meta["acquisition_time"]
         t_time = meta["translation_time"]
         e_time = meta["execution_time"]
-        print(f"{a_time}, {round(a_time / ns, 2)}% of the time, was spent in program acquisition")
+        print(f"{a_time}ns, {percent(a_time, ns)} of the time, was spent in program acquisition")
         print(
-            f"{t_time}ns, {round(t_time / ns, 2)}% of the time, was spent translating the program to a fusion definition"
+            f"{t_time}ns, {percent(t_time, ns)} of the time, was spent translating the program to a fusion definition"
         )
-        print(f"{e_time}ns, {round(e_time / ns, 2)}% of the time, was spent asking nvFuser to start executing")
+        print(f"{e_time}ns, {percent(e_time, ns)} of the time, was spent asking nvFuser to start executing")
 
         accounted_time = a_time + t_time + e_time
         unaccounted_time = ns - accounted_time
         print(
-            f"{unaccounted_time}ns, {round(unaccounted_time / ns, 2)}% of the time, is unaccounted for, but is probably how long the kernels took to execute."
+            f"{unaccounted_time}ns, {percent(unaccounted_time, ns)} of the time, is unaccounted for, but is probably how long the kernels took to execute."
         )
 
     print("Thunder+nvFuser results:")
@@ -133,17 +137,17 @@ def _compare_stats(name_a, stats_a, name_b, stats_b):
     b_initial = stats_b["initial"]
 
     if a_initial < b_initial:
-        print(f"{name_a} was initially faster than {name_b}, taking only {round(a_initial/b_initial, 2)}% of the time")
+        print(f"{name_a} was initially faster than {name_b}, taking only {percent(a_initial, b_initial)} of the time")
     else:
-        print(f"{name_b} was initially faster than {name_a}, taking only {round(b_initial/a_initial, 2)}% of the time")
+        print(f"{name_b} was initially faster than {name_a}, taking only {percent(b_initial, a_initial)} of the time")
 
     a_final = stats_a["final"]
     b_final = stats_b["final"]
 
     if a_final < b_final:
-        print(f"{name_a} was finally faster than {name_b}, taking only {round(a_final/b_final, 2)}% of the time")
+        print(f"{name_a} was finally faster than {name_b}, taking only {percent(a_final, b_final)} of the time")
     else:
-        print(f"{name_b} was finally faster than {name_a}, taking only {round(b_final/a_final, 2)}% of the time")
+        print(f"{name_b} was finally faster than {name_a}, taking only {percent(b_final, a_final)} of the time")
 
 
 def _benchmark(name, *, gen, iters, thunder_fn, other_name, other_fn):
@@ -153,6 +157,7 @@ def _benchmark(name, *, gen, iters, thunder_fn, other_name, other_fn):
 
     other_stats = time_ns(other_fn, gen)
     _prettyprint_stats(other_name, other_stats)
+
     _compare_stats("Thunder + nvFuser", thunder_stats, other_name, other_stats)
 
 
@@ -161,13 +166,11 @@ def _benchmark(name, *, gen, iters, thunder_fn, other_name, other_fn):
 #
 
 
-def _add_nvfuser_vs_dynamo_factory(shape, *, iters, make_arg, gen=None):
-    if gen is None:
-
-        def gen():
-            a = make_arg(shape)
-            b = make_arg(shape)
-            return (a, b), {}
+def _add_nvfuser_vs_dynamo_factory(shape, *, iters, make_arg):
+    def gen():
+        a = make_arg(shape)
+        b = make_arg(shape)
+        return (a, b), {}
 
     # LABEL: Thunder
     thunder_fn = make_traced(tlang.add)
@@ -197,7 +200,7 @@ def add_4x4096(iters, make_arg):
     _add_nvfuser_vs_dynamo_factory((4, 4096), iters=iters, make_arg=make_arg)
 
 
-def _add_contiguous_tranposed_nvfuser_vs_dynamo_factory(shape, *, iters, make_arg):
+def _add_contiguous_transposed_nvfuser_vs_dynamo_factory(shape, *, iters, make_arg):
     def gen():
         a = make_arg(shape)
         b = make_arg(shape).T
@@ -213,7 +216,7 @@ def _add_contiguous_tranposed_nvfuser_vs_dynamo_factory(shape, *, iters, make_ar
     shape_str = "x".join(str(l) for l in shape)
     dynamo_fn = torch.compile(_add)
     _benchmark(
-        f"add_{shape_str}_contiguous_tranposed",
+        f"add_{shape_str}_contiguous_transposed",
         gen=gen,
         iters=iters,
         thunder_fn=thunder_fn,
@@ -223,7 +226,7 @@ def _add_contiguous_tranposed_nvfuser_vs_dynamo_factory(shape, *, iters, make_ar
 
 
 def add_1024x1024_contiguous_transposed(iters, make_arg):
-    _add_contiguous_tranposed_nvfuser_vs_dynamo_factory((1024, 1024), iters=iters, make_arg=make_arg)
+    _add_contiguous_transposed_nvfuser_vs_dynamo_factory((1024, 1024), iters=iters, make_arg=make_arg)
 
 
 #
@@ -291,9 +294,9 @@ benchmarks = {
     "add_4096x4": add_4096x4,
     "add_4x4096": add_4x4096,
     "add_1024x1024_contiguous_transposed": add_1024x1024_contiguous_transposed,
-    # Elementise Unary benchmarks
+    # # Elementise Unary benchmarks
     "abs_64x64": abs_64x64,
-    # Reduction benchmarks
+    # # Reduction benchmarks
     "var_1024x1024_all_reduce": var_1024x1024_all_reduce,
 }
 
@@ -332,6 +335,8 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
 
     # Ignores warnings during benchmarks
+    # NOTE: setting this environment variable effective sets
+    #   warnings.simplewarningsfilter('ignore') in each (sub)process
     # NOTE: dynamo will throw extraneous warnings
     os.environ["PYTHONWARNINGS"] = "ignore"
     for k, v in benchmarks.items():
