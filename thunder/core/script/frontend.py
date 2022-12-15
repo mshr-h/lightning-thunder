@@ -51,7 +51,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
             p.name == method.__code__.co_varnames[len(local_variables)]
         ), f"mismatch {p.name} {method.__code__.co_varnames[len(local_variables)]}"
         local_variables.append(Value(typ=p.annotation, name=p.name))
-    ## KWARGS?!
+    # KWARGS?!
     for i in enumerate(method.__code__.co_varnames, start=len(local_variables)):
         local_variables.append(None)
 
@@ -68,11 +68,11 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
     def append_if_needed(offset_start, bl, jump_source):
         for other_offset_start, other_bl in itertools.chain(blocks_to_process.items(), blocks.items()):
             if other_offset_start == offset_start:
-                ### take anything?
-                print("#oldbl##", offset_start, jump_source, other_bl.jump_sources)
+                # take anything?
+                # print("#oldbl##", offset_start, jump_source, other_bl.jump_sources)
                 other_bl.jump_sources.append(jump_source)
                 return other_bl
-        print("#newbl##", offset_start, jump_source, other_bl.jump_sources)
+        # print("#newbl##", offset_start, jump_source, other_bl.jump_sources)
         blocks_to_process[offset_start] = bl
         bl.jump_sources.append(jump_source)
         return bl
@@ -120,7 +120,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
             bl.nodes.append(n)
             ic += 1
             if ic < len(bc) and bc[ic].is_jump_target:
-                ### check if needed?
+                # check if needed?
                 if i.opname not in {
                     "RETURN_VALUE",
                     "JUMP_FORWARD",
@@ -152,6 +152,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                 done = True
     gr = Graph(list(blocks.values()))
     gr.local_variables_at_start = local_variables
+    gr.ismethod = inspect.ismethod(method)
     gr.method = method
     gr.module = module
     gr.mro_klass = mro_klass
@@ -178,19 +179,22 @@ def make_ssa(gr, verbose=False):
                 blocks_to_do.remove(bl)
 
                 jump_sources = bl.jump_sources
-                print(
-                    f"js {jump_sources} {[type(s) for s in bl.all_stacks_at_start]=}",
-                    bl,
-                )
-                # TODO: We cannot currently support loops. :/
-                stack = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_stacks_at_start)]
-                local_variables = [unify_values(v, jump_sources, bl) for v in zip(*bl.all_local_variables_at_start)]
-                print("###lv1", local_variables)
+
+                all_stacks_at_start = bl.all_stacks_at_start
+                all_local_variables_at_start = bl.all_local_variables_at_start
+                if None in all_stacks_at_start:
+                    # TODO: Check what is going on with loops w.r.t. types
+                    all_stacks_at_start = [s for s in bl.all_stacks_at_start if s is not None]
+                    all_local_variables_at_start = [lv for lv in bl.all_local_variables_at_start if lv is not None]
+
+                stack = [unify_values(v, jump_sources, bl) for v in zip(*all_stacks_at_start)]
+                local_variables = [unify_values(v, jump_sources, bl) for v in zip(*all_local_variables_at_start)]
+                # print("###lv1", local_variables)
 
                 new_nodes = []
                 for n_idx, n in enumerate(bl.nodes):
                     i = n.i
-                    pop, push = stack_effect_detail(i.opname, i.arg)  ## jump?
+                    pop, push = stack_effect_detail(i.opname, i.arg)  # jump?
                     inputs = stack[-pop:] if pop > 0 else []
                     n.inputs = inputs[:]
                     assert len(inputs) == pop
@@ -209,10 +213,17 @@ def make_ssa(gr, verbose=False):
                             else:
                                 func = gr.method
                             gn = gr.method.__code__.co_names[i.arg]
-                            gv = func.__globals__[gn]
+                            NOT = object()
+                            gv = func.__globals__.get(gn, NOT)
+                            if gv is NOT:
+                                gv = func.__builtins__[gn]
                             outputs = [Value(name=gn, value=gv, is_global=True)]
                         else:
                             outputs = [Value(name="super", value=Super())]
+                    elif i.opname == "LOAD_ATTR":
+                        an = gr.method.__code__.co_names[i.arg]
+                        ap = inputs[0]
+                        outputs = [Value(name=an, parent=ap)]
                     elif i.opname == "CALL_FUNCTION" and i.arg == 0 and isinstance(inputs[0].value, Super):
                         outputs = [Value(value=MROAwareObjectRef(gr.module, start_klass=gr.mro_klass))]
                         print("##super#", outputs)
@@ -226,18 +237,18 @@ def make_ssa(gr, verbose=False):
                         # error case
                         # print("#lm###", type(m), type(obj), str(obj.value)[:100], m.value)
                         if isinstance(obj.value, MROAwareObjectRef):
-                            print("...###", obj.value.start_klass)
+                            pass
+                            # print("...###", obj.value.start_klass)
                         #    obj = obj.obj
                         outputs = [m, obj]
                     elif i.opname == "LOAD_CONST":
                         outputs = [Value(value=gr.method.__code__.co_consts[i.arg], is_const=True)]
                     elif i.opname == "CALL_METHOD":
-                        print(n.inputs[0])
                         outputs = [Value(n=n, nr=k) for k in range(push)]
                         new_nodes.append(n)
                     elif i.opname == "FOR_ITER":
                         # JUMP TARGETS
-                        outputs = [Value(n=cur_instruction, name=".for_iter_item")]
+                        outputs = [Value(n=n, name=".for_iter_item")]
                         new_nodes.append(n)
                     elif i.opname in {
                         "POP_JUMP_IF_FALSE",
@@ -271,15 +282,12 @@ def make_ssa(gr, verbose=False):
 
                     n.outputs = outputs
                     ol = len(stack)
-                    print(ol, pop, push, i.opname)
                     if pop > 0:
                         stack = stack[:-pop]
                     stack.extend(outputs)
-                    assert (i.opname == "JUMP_ABSOLUTE" and i.arg == None and len(stack) == ol) or (
+                    assert (i.opname == "JUMP_ABSOLUTE" and i.arg is None and len(stack) == ol) or (
                         len(stack) - ol == opcode.stack_effect(i.opcode, i.arg)
                     )
-                if bl.continue_at is not None:
-                    bl.continue_at.all_local_variables_at_start.append((n, local_variables[:]))
                 bl.nodes = new_nodes
         assert one_block_done
     for bl in gr.blocks:
@@ -302,7 +310,7 @@ def make_single_return(gr):
         all_return_values = []
         for b in bls:
             if b != ret_bl:
-                ## jump sources + unify!!!
+                # jump sources + unify!!!
                 last_node_i = b.nodes[-1].i
                 jump_ins = dis.Instruction(
                     opname="JUMP_ABSOLUTE",
