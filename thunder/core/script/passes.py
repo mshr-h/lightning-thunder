@@ -5,11 +5,11 @@ import opcode
 from .frontend import acquire_method, make_single_return, make_ssa
 from .graph import Block, Node, replace_values
 import torch  ## aehem.
+import thunder
 
 
 def specify_inputs(gr, inps):
     inp_map = {p: v for p, v in zip(gr.local_variables_at_start, inps)}
-    print("###inp_map#", inp_map)
     replace_values(gr, inp_map)
 
 
@@ -102,3 +102,26 @@ def inline_method_calls(gr):  # criterion?
             i_n += 1
 
         i_bl += 1
+
+
+def torch_to_thunder(gr):
+    """replaces calls to torch.foo functions with calls into thunder's torch language"""
+    for bl in gr.blocks:
+        for n in bl.nodes:
+            for i in n.inputs:
+                # todo: change name?, deeper nesting?
+                if i.value == torch:
+                    i.value = thunder.langs.torch
+                if i.parent is not None and i.parent.value == torch:
+                    i.parent.value = thunder.langs.torch
+                    i.value = getattr(thunder.langs.torch, i.name)
+
+                # replace other things by checking against torch module (make dict at startup?)
+                n = getattr(i.value, "__name__", None)
+                tf = None
+                if n is not None:
+                    tf = getattr(torch, n, None)
+                if tf is not None and i.value == tf:
+                    i.value = getattr(thunder.langs.torch, n)
+                    i.is_global = False
+                    i.is_const = True
