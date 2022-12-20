@@ -48,6 +48,8 @@ _thunder_to_torch_dtype_map = {
 
 def _convert_element_type_translation():
     def _fn(a, dtype):
+        if not isinstance(a, torch.Tensor):
+            return dtype(a)
         dtype = _thunder_to_torch_dtype_map.get(dtype, dtype)
         return a.to(dtype)
 
