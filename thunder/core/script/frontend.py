@@ -60,12 +60,12 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
     if verbose:
         print(dis.dis(method))
     # Map offset_start -> Block
-    block_0 = Block()
+    block_0 = Block(is_ssa=False)
     block_0.jump_sources.append(None)
     blocks_to_process = collections.OrderedDict({0: block_0})
     blocks = {}
 
-    def append_if_needed(offset_start, bl, jump_source):
+    def get_or_make_block(offset_start, jump_source):
         for other_offset_start, other_bl in itertools.chain(blocks_to_process.items(), blocks.items()):
             if other_offset_start == offset_start:
                 # take anything?
@@ -73,6 +73,7 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                 other_bl.jump_sources.append(jump_source)
                 return other_bl
         # print("#newbl##", offset_start, jump_source, other_bl.jump_sources)
+        bl = Block(is_ssa=False)
         blocks_to_process[offset_start] = bl
         bl.jump_sources.append(jump_source)
         return bl
@@ -93,31 +94,32 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
 
             # need to handle branching instructions here
             if i.opname == "FOR_ITER":
-                b1 = append_if_needed(offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n)
+                b1 = get_or_make_block(offset_start=ic + 1 + i.arg, jump_source=n)
                 # try to do values here?
                 n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
             elif i.opname in {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"}:
                 done = True
-                b1 = append_if_needed(offset_start=ic + 1, bl=Block(), jump_source=n)
-                b2 = append_if_needed(offset_start=i.arg, bl=Block(), jump_source=n)
+                b1 = get_or_make_block(offset_start=ic + 1, jump_source=n)
+                b2 = get_or_make_block(offset_start=i.arg, jump_source=n)
                 n.jump_targets = [
                     (stack_effect_detail(i.opname, i.arg, jump=False), b1),
                     (stack_effect_detail(i.opname, i.arg, jump=True), b2),
                 ]
             elif i.opname == "JUMP_FORWARD":
                 done = True
-                b1 = append_if_needed(offset_start=ic + 1 + i.arg, bl=Block(), jump_source=n)
+                b1 = get_or_make_block(offset_start=ic + 1 + i.arg, jump_source=n)
                 n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
             elif i.opname == "JUMP_ABSOLUTE":
                 done = True
-                b1 = append_if_needed(offset_start=i.arg, bl=Block(), jump_source=n)
+                b1 = get_or_make_block(offset_start=i.arg, jump_source=n)
                 n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
             elif i.opname == "RETURN_VALUE":
                 done = True
             else:
                 if verbose:
                     print(i)
-            bl.nodes.append(n)
+
+            bl.insert_node(n)
             ic += 1
             if ic < len(bc) and bc[ic].is_jump_target:
                 # check if needed?
@@ -141,8 +143,8 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
                         is_jump_target=False,
                     )
                     jump_node = Node(i=jump_ins, inputs=[], outputs=[])
-                    bl.nodes.append(jump_node)
-                    b1 = append_if_needed(offset_start=ic, bl=Block(), jump_source=jump_node)
+                    bl.insert_node(jump_node)
+                    b1 = get_or_make_block(offset_start=ic, jump_source=jump_node)
                     jump_node.jump_targets = [
                         (
                             stack_effect_detail(jump_ins.opname, jump_ins.arg, jump=True),

@@ -1,6 +1,14 @@
 # This is a "TorchScript-like" graph representation of Python IR.
 # The idea is that blocks are "simple blocks" in terms of the code flow graph,
 # i.e. without branches
+
+
+def _make_set(s):
+    if isinstance(s, set):
+        return s
+    return set(s)
+
+
 class Value:
     def __init__(
         self,
@@ -77,6 +85,7 @@ class Node:
         self.outputs = outputs
         self.jump_targets = []
         self.line_no = line_no
+        self.block = None
 
     def __str__(self):
         # i.i.offset // 2, i.i.opname, i.i.arg, "(", i.i.argval, ")"
@@ -93,7 +102,7 @@ class Node:
 # target first and then the jumping target.
 # The jump targets are other blocks and are atributes of the jump instruction.
 class Block:
-    def __init__(self, is_ssa=False):
+    def __init__(self, is_ssa=True):
         # offset_start=0, stack_at_start=None, i=None, jump_source=None
         self.is_ssa = is_ssa
         # if not is_ssa:
@@ -111,6 +120,47 @@ class Block:
     def __repr__(self):
         return f"{super().__repr__()[:-1]} {self}>"
 
+    def computed_values(self):
+        """gives all values computed in the block, i.e. outputs of nodes"""
+        # or return iterator?
+        return {o for n in self.nodes for o in n.outputs}
+
+    def block_inputs(self):
+        """computes block inputs, i.e. inputs to nodes not computed in the block"""
+        cv = _make_set(computed_values)
+        inps = {i for n in self.nodes for i in n.inputs}
+        return inps - cv
+
+    def insert_node(self, n, insert_after=None, insert_before=None):
+        assert n.block is None
+        if insert_after is None and insert_before is None:
+            if self.is_ssa:
+                raise ValueError("need to supply insert_after or insert_before")
+            else:
+                self.nodes.append(n)
+                # validity checks? (also below)
+                n.block = self
+                return
+        elif insert_after is not None and insert_before is not None:
+            raise ValueError("only one of insert_after or insert_before can be supplied")
+            # this is the usual case.
+            # in the pre-ssa graph, both None mean to insert at the end.
+            assert insert_after is not None or insert_before is not None
+
+        to_find = insert_after or insert_before
+        for idx, n2 in enumerate(self.nodes):
+            if n2 is to_find:
+                break
+        if n2 is not to_find:
+            raise ValueError(f"could not find node {n}")
+
+        # validity checks? (also above)
+        n.block = self
+        if insert_after:
+            self.nodes.insert(idx + 1, n)
+        else:
+            self.nodes.insert(idx, n)
+
 
 class Graph:
     def __init__(self, blocks=None):
@@ -124,7 +174,8 @@ class Graph:
 
     def nodes(self):
         for b in self.blocks:
-            pass
+            for n in self.nodes:
+                yield n
 
     def print(self):
         value_counter = 1
