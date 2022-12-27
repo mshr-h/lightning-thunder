@@ -52,7 +52,7 @@ class Value:
         return f"{super().__repr__()[:-1]} {self}>"
 
 
-class UnionValue(Value):
+class PhiValue(Value):
     # node?
     def __init__(self, values, jump_sources, bl):
         super().__init__()
@@ -73,7 +73,7 @@ def unify_values(values, jump_sources, bl):
     if all(v is val for v in values[1:]):
         return val
     # different values
-    return UnionValue(values, jump_sources, bl)
+    return PhiValue(values, jump_sources, bl)
     raise Exception(f"unimplemnted {values}")
 
 
@@ -127,7 +127,7 @@ class Block:
 
     def block_inputs(self):
         """computes block inputs, i.e. inputs to nodes not computed in the block"""
-        cv = _make_set(computed_values)
+        cv = _make_set(self.computed_values())
         inps = {i for n in self.nodes for i in n.inputs}
         return inps - cv
 

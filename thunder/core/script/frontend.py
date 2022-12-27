@@ -6,7 +6,7 @@ import sys
 
 import opcode
 
-from .graph import Block, Graph, Node, unify_values, Value
+from .graph import Block, Graph, Node, unify_values, Value, PhiValue
 from .python_ir import stack_effect_detail
 
 
@@ -296,6 +296,27 @@ def make_ssa(gr, verbose=False):
         del bl.all_local_variables_at_start
         del bl.all_stacks_at_start
         bl.is_ssa = True
+    annotate_block_inputs_outputs(gr)
+
+
+def annotate_block_inputs_outputs(gr):
+    # this is for SSA form.
+    # block inputs = anything used in a block node's inputs not originated there
+    #                the block inputs typically can be PhiValues
+    # block outputs = any value used outside of the block it originates
+
+    # TODO:
+    # - block_inputs() vs. block_outputs (function call vs. attribute)
+    # - how to keep block_outputs up to date?
+
+    all_block_inputs = set()
+    for bl in gr.blocks:
+        assert bl.is_ssa
+        all_block_inputs.update(
+            itertools.chain.from_iterable(v.values if isinstance(v, PhiValue) else [v] for v in bl.block_inputs())
+        )
+    for bl in gr.blocks:
+        bl.block_outputs = set(bl.computed_values()) & all_block_inputs
 
 
 def make_single_return(gr):
