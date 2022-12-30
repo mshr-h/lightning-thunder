@@ -14,6 +14,11 @@ class Super:
     pass
 
 
+jump_instructions = set(dis.hasjabs) | set(dis.hasjrel)
+
+unconditional_jump_names = {"JUMP_ABSOLUTE", "JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT"}
+
+
 class MROAwareObjectRef:
     def __init__(self, obj, start_klass=None):
         self.obj = obj
@@ -93,26 +98,23 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
             n = Node(i=i, line_no=line_no)
 
             # need to handle branching instructions here
-            if i.opname == "FOR_ITER":
-                b1 = get_or_make_block(offset_start=ic + 1 + i.arg, jump_source=n)
-                # try to do values here?
-                n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
-            elif i.opname in {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"}:
+            if i.opcode in jump_instructions:
                 done = True
-                b1 = get_or_make_block(offset_start=ic + 1, jump_source=n)
-                b2 = get_or_make_block(offset_start=i.arg, jump_source=n)
-                n.jump_targets = [
-                    (stack_effect_detail(i.opname, i.arg, jump=False), b1),
-                    (stack_effect_detail(i.opname, i.arg, jump=True), b2),
-                ]
-            elif i.opname == "JUMP_FORWARD":
-                done = True
-                b1 = get_or_make_block(offset_start=ic + 1 + i.arg, jump_source=n)
-                n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
-            elif i.opname == "JUMP_ABSOLUTE":
-                done = True
-                b1 = get_or_make_block(offset_start=i.arg, jump_source=n)
-                n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=True), b1)]
+                if i.opcode in dis.hasjabs:
+                    ic_target = i.arg
+                elif "BACKWARD" not in i.opname:
+                    ic_target = ic + 1 - i.arg  # ?
+                else:
+                    ic_target = ic + 1 + i.arg
+
+                if i.opname in unconditional_jump_names:
+                    n.jump_targets = []
+                else:
+                    b1 = get_or_make_block(offset_start=ic + 1, jump_source=n)
+                    n.jump_targets = [(stack_effect_detail(i.opname, i.arg, jump=False), b1)]
+
+                b1 = get_or_make_block(offset_start=ic_target, jump_source=n)
+                n.jump_targets.append((stack_effect_detail(i.opname, i.arg, jump=True), b1))
             elif i.opname == "RETURN_VALUE":
                 done = True
             else:
@@ -123,18 +125,11 @@ def acquire_method(method, module=None, mro_klass=None, verbose=False):
             ic += 1
             if ic < len(bc) and bc[ic].is_jump_target:
                 # check if needed?
-                if i.opname not in {
-                    "RETURN_VALUE",
-                    "JUMP_FORWARD",
-                    "JUMP_ABSOLUTE",
-                    "RAISE_VARARGS",
-                    "POP_JUMP_IF_FALSE",
-                    "POP_JUMP_IF_TRUE",
-                }:
+                if i.opname not in {"RETURN_VALUE"} and i.opcode not in jump_instructions:
                     # should insert jump absolute instead...
                     jump_ins = dis.Instruction(
                         opname="JUMP_ABSOLUTE",
-                        opcode=opcode.opmap["JUMP_ABSOLUTE"],
+                        opcode=None,  # the JUMP_ABSOLUTE is not in Python 3.11
                         arg=None,
                         argval=None,
                         argrepr=None,
