@@ -2,7 +2,7 @@ import dis
 import sys
 import types
 
-from .graph import Node
+from .graph import Node, MROAwareObjectRef
 
 # this is Python 3.10 specific for the time being.
 
@@ -169,7 +169,7 @@ def stack_effect_detail(opname: str, oparg: int, *, jump: bool = False):
     elif opname == "UNPACK_EX":
         return (1, (oparg & 0xFF) + (oparg >> 8) + 1)
     elif opname == "FOR_ITER":
-        return (1, 0) if jump else (0, 1)
+        return (1, 0) if jump else (1, 2)
     else:
         raise ValueError(f"Invalid opname {opname}")
 
@@ -209,6 +209,9 @@ def undo_ssa(gr):
             consts.append(v.value)
             new_n = Node(i=get_instruction(opname="LOAD_CONST", arg=idx), outputs=[v], inputs=[])
             insert_before(new_n, n)
+        elif isinstance(v.value, MROAwareObjectRef):
+            # this works for attribs, but for methods? maybe have a pass eliminating/making explicit the super...
+            get_value(v.value.obj, n)
         elif v.parent is not None:
             get_value(v.parent, n)
             if n.i.opname == "CALL_METHOD" and inpidx == 0:

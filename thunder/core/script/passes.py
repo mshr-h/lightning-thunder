@@ -43,9 +43,9 @@ def split_block(gr, bl, n):
     return nbl
 
 
-def inline_methode_call(gr, n):  # criterion?
+def inline_method_call(gr, n):  # criterion?
     found_block = False
-    for bl in gr.blocks:
+    for i_bl, bl in enumerate(gr.blocks):
         if n in bl.nodes:
             found_block = True
             break
