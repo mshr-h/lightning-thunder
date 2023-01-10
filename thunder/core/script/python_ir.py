@@ -258,68 +258,69 @@ def undo_ssa(gr):
         for n in bl.nodes:
             n.block = bl
 
-    local_vars = [v for v in gr.local_variables_at_start if v is not None]
+    local_vars = []
+    lv_names = []
+
+    def get_or_add_lv(v, name=None):
+        try:
+            idx = local_vars.index(v)
+        except ValueError:
+            idx = len(local_vars)
+            local_vars.append(v)
+            # handle name collisions...
+            if name is None:
+                name = v.name
+            if name is None:
+                name = f"_tmp_{idx}"
+            lv_names.append(name)
+            if v.name is None:
+                v.name = name
+        return idx
+
+    for v in gr.local_variables_at_start:
+        if v is not None:
+            get_or_add_lv(v)
+
     consts = []
     names = []
 
-    # inputs in phi values
-    for idx, i in enumerate(local_vars):
-        last_n = None
-        for v in i.phi_values:
-            try:
-                idx2 = local_vars.index(v)
-            except ValueError:
-                idx2 = len(local_vars)
-                local_vars.append(v)
-            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=idx), outputs=[i], inputs=[])
+    def store_phi_values(o, o_idx, last_n):
+        for v in o.phi_values:
+            last_n = store_phi_values(v, o_idx, last_n)
+            idx2 = get_or_add_lv(v)
+            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=o_idx), outputs=[o], inputs=[])
             if last_n is None:
                 insert_before(new_n, gr.blocks[0].nodes[0])
             else:
                 insert_after(new_n, last_n)
             last_n = new_n
-            new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[i], inputs=[])
+            new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o])
             insert_after(new_n, last_n)
             last_n = new_n
+        return last_n
+
+    # inputs in phi values
+    last_n = None
+    for idx, i in enumerate(local_vars):
+        last_n = store_phi_values(i, idx, last_n)
 
     names = []
 
     for bl in gr.blocks:
         for n in bl.nodes[:]:
-            print(n)
             for inpidx, i in enumerate(n.inputs):
                 get_value(i, n=n, inpidx=inpidx)
             for o in n.outputs[::-1]:
-                # what about values that are UnionValue?
-                idx = len(local_vars)
-                local_vars.append(o)
+                idx = get_or_add_lv(o)
                 new_n = Node(
                     i=get_instruction(opname="STORE_FAST", arg=idx),
                     outputs=[],
                     inputs=[o],
                 )
                 insert_after(new_n, n)
-                last_n = new_n
-                for v in o.phi_values:
-                    try:
-                        idx2 = local_vars.index(v)
-                    except ValueError:
-                        idx2 = len(local_vars)
-                        local_vars.append(v)
-                    new_n = Node(
-                        i=get_instruction(opname="LOAD_FAST", arg=idx),
-                        outputs=[o],
-                        inputs=[],
-                    )
-                    insert_after(new_n, last_n)
-                    last_n = new_n
-                    new_n = Node(
-                        i=get_instruction(opname="STORE_FAST", arg=idx2),
-                        outputs=[],
-                        inputs=[o],
-                    )
-                    insert_after(new_n, last_n)
-                    last_n = new_n
-    return local_vars, names, consts
+                last_n = store_phi_values(o, idx, new_n)
+
+    return local_vars, lv_names, names, consts
 
 
 # this function is taken from PyTorch Dynamo (c) 2022 by Facebook/Meta licensed
@@ -358,7 +359,8 @@ def linetable_writer(first_lineno):
 
 
 def generate_function(gr):
-    local_vars, names, consts = undo_ssa(gr)
+    local_vars, lv_names, names, consts = undo_ssa(gr)
+    assert len(local_vars) == len(lv_names)
 
     bc = []
     linetable, linetable_update, linetable_end = linetable_writer(0)
@@ -407,9 +409,7 @@ def generate_function(gr):
     co_codestring = bc_bytes
     co_consts = tuple(consts)
     co_names = tuple(names)
-    co_varnames = tuple(v.name for v in lv_at_start) + tuple(
-        f"_tmp_{i}" for i in range(len(local_vars) - len(lv_at_start))
-    )
+    co_varnames = tuple(lv_names)
     co_filename = "__none__"
     co_name = "__none__"
     co_firstlineno = 0

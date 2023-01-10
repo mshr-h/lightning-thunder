@@ -78,7 +78,7 @@ class Value:
             parts.append("global")
         if self.parent is not None:
             parts.append(f"parent={self.parent}")
-        return f"""Value({' '.join(parts)})"""
+        return f"""{type(self).__name__}({' '.join(parts)})"""
 
     def __repr__(self):
         return f"{super().__repr__()[:-1]} {self}>"
@@ -157,17 +157,6 @@ class Block:
 
     def __repr__(self):
         return f"{super().__repr__()[:-1]} {self}>"
-
-    def computed_values(self):
-        """gives all values computed in the block, i.e. outputs of nodes"""
-        # or return iterator?
-        return {o for n in self.nodes for o in n.outputs}
-
-    def XXX_block_inputs(self):
-        """computes block inputs, i.e. inputs to nodes not computed in the block"""
-        cv = _make_set(self.computed_values())
-        inps = {i for n in self.nodes for i in n.inputs}
-        return inps - cv
 
     def insert_node(self, n, insert_after=None, insert_before=None):
         assert n.block is None
