@@ -66,6 +66,10 @@ def test_torch_to_thunder():
     assert_close(res, expected)
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
 def test_sequential():
     model = torch.nn.Sequential(
         torch.nn.Linear(3, 5),
