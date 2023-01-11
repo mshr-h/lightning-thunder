@@ -302,6 +302,8 @@ def make_dot(gr, format="png"):
                         o_name = o.name or f"%{o_nr}"
                         v_color = "black" if o not in bl.block_outputs else "red"
                         sub_dot.node(f"v {o_nr}", label=o_name, color=v_color)
+                    else:
+                        o_nr = value_idxes[o]
                     sub_dot.edge(f"i {i_bl} {i_n}", f"v {o_nr}", color="blue")
                 if i_n > 0:
                     sub_dot.edge(f"i {i_bl} {i_n - 1}", f"i {i_bl} {i_n}")

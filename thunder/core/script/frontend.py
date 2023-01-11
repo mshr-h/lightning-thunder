@@ -355,6 +355,8 @@ def make_single_return(gr):
         else:
             ret_bl = Block(is_ssa=True)
             ret_bl.nodes = [ret_node]
+            ret_bl.block_outputs = {}
+            ret_bl.block_inputs = ret_node.inputs[:]
             gr.blocks.append(ret_bl)
         all_return_values = []
         for b in bls:

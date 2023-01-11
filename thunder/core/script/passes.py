@@ -14,6 +14,7 @@ def specify_inputs(gr, inps):
 
 
 def split_block(gr, bl, n):
+    # TODO: this needs to be fixed to also update block_inputs, block_outputs
     i = 0
     while i < len(gr.blocks) and gr.blocks[i] is not bl:
         i += 1
