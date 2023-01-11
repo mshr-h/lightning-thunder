@@ -64,3 +64,19 @@ def test_torch_to_thunder():
     res = traced_fn(a, b)
     expected = sample_add_fn(a, b)
     assert_close(res, expected)
+
+
+def test_sequential():
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 5),
+        torch.nn.Tanh(),
+        torch.nn.Linear(5, 3),
+    )
+
+    gr = thunder.core.script.frontend.acquire_method(model.forward)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    a = torch.randn(2, 3)
+    assert_close(model(a), fn(model, a))

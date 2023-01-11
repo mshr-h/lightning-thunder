@@ -215,7 +215,7 @@ def undo_ssa(gr):
         elif v.parent is not None:
             get_value(v.parent, n)
             if n.i.opname == "CALL_METHOD" and inpidx == 0:
-                print("###inputs", n.inputs, v, v in n.inputs)
+                # print("###inputs", n.inputs, v, v in n.inputs)
                 try:
                     idx = names.index(v.name)
                 except ValueError:
@@ -228,7 +228,7 @@ def undo_ssa(gr):
                 )
                 insert_before(new_n, n)
             elif n.i.opname == "LOAD_ATTR":
-                print("###load attr", n.outputs, n.i.argval)
+                # print("###load attr", n.outputs, n.i.argval)
                 pass
             else:
                 try:
@@ -436,7 +436,6 @@ def generate_function(gr):
                 # if n.line_no is not None:
                 #    linetable_update(n.line_no, address_map[n])
                 if opcode in dis.hasjabs:
-                    print("JUMP!", n)
                     arg = address_map[n.jump_targets[-1][1].nodes[0]]
                 elif opcode in dis.hasjrel:
                     # TODO forward, backward
