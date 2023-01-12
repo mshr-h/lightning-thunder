@@ -271,7 +271,7 @@ def replace_values(gr, value_map):
 
 
 ## TODO: our should this be a method?
-def make_dot(gr, format="png"):
+def make_dot(gr, format="png", add_names=False):
     import graphviz
 
     dot = graphviz.Digraph(name="thunder_graph", format=format)
@@ -287,6 +287,8 @@ def make_dot(gr, format="png"):
                 i_nr = len(value_idxes)
                 value_idxes[i] = i_nr
                 i_name = f"bi %{i_nr}"
+                if add_names:
+                    i.name = i_name
                 v_color = "black" if i not in bl.block_outputs else "red"
                 sub_dot.node(f"v {i_nr}", label=i_name, color=v_color)
 
@@ -300,6 +302,8 @@ def make_dot(gr, format="png"):
                         o_nr = len(value_idxes)
                         value_idxes[o] = o_nr
                         o_name = o.name or f"%{o_nr}"
+                        if add_names:
+                            o.name = o_name
                         v_color = "black" if o not in bl.block_outputs else "red"
                         sub_dot.node(f"v {o_nr}", label=o_name, color=v_color)
                     else:

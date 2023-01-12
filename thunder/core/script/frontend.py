@@ -343,6 +343,15 @@ def remove_unused_values(gr):
     for bl in gr.blocks:
         bl.block_inputs = [i for i in bl.block_inputs if i in values_used]
         bl.block_outputs = {o for o in bl.block_outputs if o in values_used}
+        for i in bl.block_inputs:
+            i.phi_values = [pv for pv in i.phi_values if pv in values_used]
+        for o in bl.block_outputs:
+            o.phi_values = [pv for pv in o.phi_values if pv in values_used]
+
+    for bl in gr.blocks:
+        for n in bl.nodes:
+            for o in n.outputs:
+                o.phi_values = [pv for pv in o.phi_values if pv in values_used]
 
 
 def make_single_return(gr):
