@@ -1,11 +1,13 @@
 import dis
 import inspect
+
 import opcode
+import torch  # # aehem.
+
+import thunder
 
 from .frontend import acquire_method, make_single_return, make_ssa
 from .graph import Block, Node, replace_values
-import torch  ## aehem.
-import thunder
 
 
 def specify_inputs(gr, inps):
@@ -14,6 +16,7 @@ def specify_inputs(gr, inps):
 
 
 def split_block(gr, bl, n):
+    # TODO: this needs to be fixed to also update block_inputs, block_outputs
     i = 0
     while i < len(gr.blocks) and gr.blocks[i] is not bl:
         i += 1
@@ -94,7 +97,8 @@ def inline_method_call(gr, n):  # criterion?
 
 
 def torch_to_thunder(gr):
-    """replaces calls to torch.foo functions with calls into thunder's torch language"""
+    """replaces calls to torch.foo functions with calls into thunder's torch
+    language."""
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:

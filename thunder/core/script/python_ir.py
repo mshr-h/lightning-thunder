@@ -2,7 +2,7 @@ import dis
 import sys
 import types
 
-from .graph import Node, MROAwareObjectRef
+from .graph import MROAwareObjectRef, Node
 
 # this is Python 3.10 specific for the time being.
 
@@ -215,7 +215,7 @@ def undo_ssa(gr):
         elif v.parent is not None:
             get_value(v.parent, n)
             if n.i.opname == "CALL_METHOD" and inpidx == 0:
-                print("###inputs", n.inputs, v, v in n.inputs)
+                # print("###inputs", n.inputs, v, v in n.inputs)
                 try:
                     idx = names.index(v.name)
                 except ValueError:
@@ -228,7 +228,7 @@ def undo_ssa(gr):
                 )
                 insert_before(new_n, n)
             elif n.i.opname == "LOAD_ATTR":
-                print("###load attr", n.outputs, n.i.argval)
+                # print("###load attr", n.outputs, n.i.argval)
                 pass
             else:
                 try:
@@ -285,19 +285,28 @@ def undo_ssa(gr):
     names = []
 
     def store_phi_values(o, o_idx, last_n):
-        for v in o.phi_values:
-            last_n = store_phi_values(v, o_idx, last_n)
-            idx2 = get_or_add_lv(v)
-            new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=o_idx), outputs=[o], inputs=[])
-            if last_n is None:
-                insert_before(new_n, gr.blocks[0].nodes[0])
-            else:
+        phi_values_in_processing = set()
+
+        def store_phi_values_inner(o, o_idx, last_n):
+            if o in phi_values_in_processing:
+                # avoid loops
+                return last_n
+            phi_values_in_processing.add(o)
+            for v in o.phi_values:
+                idx2 = get_or_add_lv(v)
+                last_n = store_phi_values_inner(v, o_idx, last_n)
+                new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=o_idx), outputs=[o], inputs=[])
+                if last_n is None:
+                    insert_before(new_n, gr.blocks[0].nodes[0])
+                else:
+                    insert_after(new_n, last_n)
+                last_n = new_n
+                new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o])
                 insert_after(new_n, last_n)
-            last_n = new_n
-            new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o])
-            insert_after(new_n, last_n)
-            last_n = new_n
-        return last_n
+                last_n = new_n
+            return last_n
+
+        return store_phi_values_inner(o, o_idx, last_n)
 
     # inputs in phi values
     last_n = None
@@ -319,6 +328,17 @@ def undo_ssa(gr):
                 )
                 insert_after(new_n, n)
                 last_n = store_phi_values(o, idx, new_n)
+        for o in bl.block_outputs:
+            if o not in local_vars:
+                get_value(o, n=bl.nodes[-1])  # before the jump
+                idx = get_or_add_lv(o)
+                new_n = Node(
+                    i=get_instruction(opname="STORE_FAST", arg=idx),
+                    outputs=[],
+                    inputs=[o],
+                )
+                insert_before(new_n, n=bl.nodes[-1])
+                last_n = store_phi_values(o, idx, new_n)
 
     return local_vars, lv_names, names, consts
 
@@ -327,8 +347,8 @@ def undo_ssa(gr):
 # as per https://github.com/pytorch/pytorch/blob/master/LICENSE
 def linetable_writer(first_lineno):
     """Used to create typing.CodeType.co_linetable See
-    https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt This is the internal format of the line number
-    table if Python >= 3.10."""
+    https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt This
+    is the internal format of the line number table if Python >= 3.10."""
     assert sys.version_info >= (3, 10)
     linetable = []
     lineno = first_lineno
@@ -362,38 +382,86 @@ def generate_function(gr):
     local_vars, lv_names, names, consts = undo_ssa(gr)
     assert len(local_vars) == len(lv_names)
 
-    bc = []
     linetable, linetable_update, linetable_end = linetable_writer(0)
-    address_map = {}
-    ctr = 0
-    for bl in gr.blocks:
-        # assumes first block is function start
-        for n in bl.nodes:
-            address_map[n] = ctr
-            ctr += 2 if len(n.jump_targets) == 2 else 1
 
-    for bl in gr.blocks:
-        for n in bl.nodes:
-            if n.line_no is not None:
-                linetable_update(n.line_no, address_map[n])
-            if n.i.opcode in dis.hasjabs:
-                # print(len(n.jump_targets), address_map[n], [address_map[t[1].nodes[0]] for t in n.jump_targets])
-                # print(n.jump_targets)
-                arg = address_map[n.jump_targets[-1][1].nodes[0]]
-            elif n.i.opcode in dis.hasjrel:
-                arg = address_map[n] - address_map[n]
+    instruction_sizes = {}
+
+    def build_address_map():
+        # Key either <Node> (for jump nodes and jump=True)
+        #     or (<Node>, False) for non-jump in conditional jump
+        address_map = {}
+        ctr = 0
+        for bl in gr.blocks:
+            # assumes first block is function start
+            for n in bl.nodes:
+                address_map[n] = ctr
+                ctr += instruction_sizes.get(n, 1)
+                if len(n.jump_targets) == 2:  # implicit unconditional jump
+                    ctr += instruction_sizes.get((n, False), 1)
+        return address_map
+
+    def make_bc():
+        bc = []
+
+        def write_extended_args(node_key, arg):
+            # returns if instruction size has changed
+            instruction_size = instruction_sizes.get(node_key, 1)
+            if arg > 0x_FF_FF_FF or instruction_size == 4:
+                instruction_size = 4
+                bc.append(dis.opmap["EXTENDED_ARG"])
+                bc.append(arg >> 24)
+            if arg > 0x_FF_FF or instruction_size >= 3:
+                instruction_size = max(instruction_size, 3)
+                bc.append(dis.opmap["EXTENDED_ARG"])
+                bc.append((arg >> 16) & 0xFF)
+            if arg > 0x_FF or instruction_size >= 2:
+                instruction_size = max(instruction_size, 2)
+                bc.append(dis.opmap["EXTENDED_ARG"])
+                bc.append((arg >> 8) & 0xFF)
             else:
-                arg = n.i.arg
-                if arg is None:
-                    arg = 0
-            assert arg < 256  # or signed?
-            bc.append(n.i.opcode)
-            bc.append(arg)
-            if len(n.jump_targets) > 1:
-                assert len(n.jump_targets) == 2
-                i = get_instruction(opname="JUMP_ABSOLUTE", arg=address_map[n.jump_targets[0][1].nodes[0]])
-                bc.append(i.opcode)
-                bc.append(i.arg)
+                instruction_size = 1
+
+            if instruction_size != instruction_sizes.get(node_key, 1):
+                instruction_sizes[node_key] = instruction_size
+                return True
+            return False
+
+        changed_size = False
+        for bl in gr.blocks:
+            for n in bl.nodes:
+                opcode = n.i.opcode
+                if opcode is None:
+                    opcode = dis.opmap[n.i.opname]
+                assert opcode is not None, f"{n} has invalid opcode"
+                # if n.line_no is not None:
+                #    linetable_update(n.line_no, address_map[n])
+                if opcode in dis.hasjabs:
+                    arg = address_map[n.jump_targets[-1][1].nodes[0]]
+                elif opcode in dis.hasjrel:
+                    # TODO forward, backward
+                    arg = address_map[n.jump_targets[-1][1].nodes[0]] - address_map[n]  # +1?
+                else:
+                    arg = n.i.arg
+                    if arg is None:
+                        arg = 0
+
+                changed_size = write_extended_args(n, arg)
+
+                bc.append(opcode)
+                bc.append(arg & 0x_FF)
+                if len(n.jump_targets) > 1:
+                    assert len(n.jump_targets) == 2
+                    jarg = address_map[n.jump_targets[0][1].nodes[0]]
+                    instruction_size = write_extended_args((n, False), jarg)
+                    i = get_instruction(opname="JUMP_ABSOLUTE", arg=jarg & 0xFF)
+                    bc.append(i.opcode)
+                    bc.append(i.arg)
+        return bc, not changed_size
+
+    done = False
+    while not done:
+        address_map = build_address_map()
+        bc, done = make_bc()
 
     linetable_end(len(bc))
     linetable = bytes(linetable)
