@@ -6,7 +6,7 @@ import sys
 
 import opcode
 
-from .graph import Block, Graph, Node, unify_values, Value, PhiValue, NULL, MROAwareObjectRef
+from .graph import Block, Graph, MROAwareObjectRef, Node, NULL, PhiValue, unify_values, Value
 from .python_ir import stack_effect_detail
 
 
@@ -342,7 +342,7 @@ def remove_unused_values(gr):
 
     for bl in gr.blocks:
         bl.block_inputs = [i for i in bl.block_inputs if i in values_used]
-        bl.block_outputs = set(o for o in bl.block_outputs if o in values_used)
+        bl.block_outputs = {o for o in bl.block_outputs if o in values_used}
 
 
 def make_single_return(gr):

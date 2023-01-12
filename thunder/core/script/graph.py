@@ -5,7 +5,7 @@ import inspect
 
 
 class NULL:
-    """marker for non-existant object"""
+    """marker for non-existant object."""
 
     pass
 
