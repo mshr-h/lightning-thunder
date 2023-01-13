@@ -272,17 +272,20 @@ def undo_ssa(gr):
                 name = v.name
             if name is None:
                 name = f"_tmp_{idx}"
-            lv_names.append(name)
-            if v.name is None:
-                v.name = name
+            fullname = name
+            suffix = 0
+            while fullname in lv_names:
+                suffix += 1
+                fullname = f"{name}_{suffix}"
+            lv_names.append(fullname)
+            if v.name is None:  # TODO: or do this always?
+                v.name = fullname
         return idx
-
-    for v in gr.local_variables_at_start:
-        if v is not None:
-            get_or_add_lv(v)
 
     consts = []
     names = []
+
+    nodes_to_skip = set()
 
     def store_phi_values(o, o_idx, last_n):
         phi_values_in_processing = set()
@@ -294,51 +297,66 @@ def undo_ssa(gr):
             phi_values_in_processing.add(o)
             for v in o.phi_values:
                 idx2 = get_or_add_lv(v)
-                last_n = store_phi_values_inner(v, o_idx, last_n)
+                # last_n = store_phi_values_inner(v, o_idx, last_n)
                 new_n = Node(i=get_instruction(opname="LOAD_FAST", arg=o_idx), outputs=[o], inputs=[])
+                nodes_to_skip.add(new_n)
                 if last_n is None:
                     insert_before(new_n, gr.blocks[0].nodes[0])
                 else:
                     insert_after(new_n, last_n)
                 last_n = new_n
                 new_n = Node(i=get_instruction(opname="STORE_FAST", arg=idx2), outputs=[], inputs=[o])
+                nodes_to_skip.add(new_n)
                 insert_after(new_n, last_n)
                 last_n = new_n
             return last_n
 
         return store_phi_values_inner(o, o_idx, last_n)
 
+    for v in gr.local_variables_at_start:
+        if v is not None:
+            get_or_add_lv(v)
+
     # inputs in phi values
     last_n = None
-    for idx, i in enumerate(local_vars):
+    # need to make a copy of the list because we're adding items to the list
+    for idx, i in enumerate(local_vars[:]):
         last_n = store_phi_values(i, idx, last_n)
 
     names = []
 
     for bl in gr.blocks:
+        jump_node = bl.nodes[-1]
         for n in bl.nodes[:]:
-            for inpidx, i in enumerate(n.inputs):
-                get_value(i, n=n, inpidx=inpidx)
-            for o in n.outputs[::-1]:
-                idx = get_or_add_lv(o)
-                new_n = Node(
-                    i=get_instruction(opname="STORE_FAST", arg=idx),
-                    outputs=[],
-                    inputs=[o],
-                )
-                insert_after(new_n, n)
-                last_n = store_phi_values(o, idx, new_n)
-        for o in bl.block_outputs:
-            if o not in local_vars:
-                get_value(o, n=bl.nodes[-1])  # before the jump
-                idx = get_or_add_lv(o)
-                new_n = Node(
-                    i=get_instruction(opname="STORE_FAST", arg=idx),
-                    outputs=[],
-                    inputs=[o],
-                )
-                insert_before(new_n, n=bl.nodes[-1])
-                last_n = store_phi_values(o, idx, new_n)
+            processed_block_outputs = set()
+            if n not in nodes_to_skip:
+                for inpidx, i in enumerate(n.inputs):
+                    get_value(i, n=n, inpidx=inpidx)
+                last_n = n
+                for o in n.outputs[::-1]:
+                    idx = get_or_add_lv(o)
+                    new_n = Node(
+                        i=get_instruction(opname="STORE_FAST", arg=idx),
+                        outputs=[],
+                        inputs=[o],
+                    )
+                    insert_after(new_n, last_n)
+                    last_n = new_n
+                    if o in bl.block_outputs:
+                        processed_block_outputs.add(o)
+                        last_n = store_phi_values(o, idx, last_n)
+        if bl.nodes[-1].i.opname != "RETURN_VALUE":  # TODO Should the return block have outputs (probably not)
+            for o in bl.block_outputs:
+                if o not in processed_block_outputs:
+                    get_value(o, n=jump_node)  # before the jump
+                    idx = get_or_add_lv(o, name="bo")
+                    new_n = Node(
+                        i=get_instruction(opname="STORE_FAST", arg=idx),
+                        outputs=[],
+                        inputs=[o],
+                    )
+                    insert_before(new_n, n=jump_node)
+                    store_phi_values(o, idx, new_n)
 
     return local_vars, lv_names, names, consts
 
@@ -428,6 +446,7 @@ def generate_function(gr):
 
         changed_size = False
         for bl in gr.blocks:
+            jump_node = None
             for n in bl.nodes:
                 opcode = n.i.opcode
                 if opcode is None:
@@ -439,7 +458,7 @@ def generate_function(gr):
                     arg = address_map[n.jump_targets[-1][1].nodes[0]]
                 elif opcode in dis.hasjrel:
                     # TODO forward, backward
-                    arg = address_map[n.jump_targets[-1][1].nodes[0]] - address_map[n]  # +1?
+                    arg = address_map[n.jump_targets[-1][1].nodes[0]] - address_map[n] - 1
                 else:
                     arg = n.i.arg
                     if arg is None:
@@ -450,12 +469,14 @@ def generate_function(gr):
                 bc.append(opcode)
                 bc.append(arg & 0x_FF)
                 if len(n.jump_targets) > 1:
-                    assert len(n.jump_targets) == 2
-                    jarg = address_map[n.jump_targets[0][1].nodes[0]]
-                    instruction_size = write_extended_args((n, False), jarg)
-                    i = get_instruction(opname="JUMP_ABSOLUTE", arg=jarg & 0xFF)
-                    bc.append(i.opcode)
-                    bc.append(i.arg)
+                    jump_node = n
+            if jump_node is not None:
+                assert len(jump_node.jump_targets) == 2
+                jarg = address_map[jump_node.jump_targets[0][1].nodes[0]]
+                instruction_size = write_extended_args((jump_node, False), jarg)
+                i = get_instruction(opname="JUMP_ABSOLUTE", arg=jarg & 0xFF)
+                bc.append(i.opcode)
+                bc.append(i.arg)
         return bc, not changed_size
 
     done = False

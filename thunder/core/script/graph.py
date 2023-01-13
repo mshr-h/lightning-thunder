@@ -271,7 +271,7 @@ def replace_values(gr, value_map):
 
 
 ## TODO: our should this be a method?
-def make_dot(gr, format="png"):
+def make_dot(gr, format="png", add_names=False):
     import graphviz
 
     dot = graphviz.Digraph(name="thunder_graph", format=format)
@@ -287,6 +287,8 @@ def make_dot(gr, format="png"):
                 i_nr = len(value_idxes)
                 value_idxes[i] = i_nr
                 i_name = f"bi %{i_nr}"
+                if add_names:
+                    i.name = i_name
                 v_color = "black" if i not in bl.block_outputs else "red"
                 sub_dot.node(f"v {i_nr}", label=i_name, color=v_color)
 
@@ -300,6 +302,8 @@ def make_dot(gr, format="png"):
                         o_nr = len(value_idxes)
                         value_idxes[o] = o_nr
                         o_name = o.name or f"%{o_nr}"
+                        if add_names:
+                            o.name = o_name
                         v_color = "black" if o not in bl.block_outputs else "red"
                         sub_dot.node(f"v {o_nr}", label=o_name, color=v_color)
                     else:
@@ -313,9 +317,10 @@ def make_dot(gr, format="png"):
             dot.edge(f"i {i_bl} {len(bl.nodes) - 1}", f"i {block_idxes[jt_bl]} {0}")
         for i in bl.block_inputs:
             i_idx = value_idxes[i]
-            for v in i.values:
-                if v in value_idxes:
-                    dot.edge(f"v {value_idxes[v]}", f"v {i_idx}", color="green")
+            if isinstance(i, PhiValue):
+                for v in i.values:
+                    if v in value_idxes:
+                        dot.edge(f"v {value_idxes[v]}", f"v {i_idx}", color="green")
 
         for i_n, n in enumerate(bl.nodes):
             for i in n.inputs:

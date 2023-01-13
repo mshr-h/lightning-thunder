@@ -343,42 +343,75 @@ def remove_unused_values(gr):
     for bl in gr.blocks:
         bl.block_inputs = [i for i in bl.block_inputs if i in values_used]
         bl.block_outputs = {o for o in bl.block_outputs if o in values_used}
+        for i in bl.block_inputs:
+            i.phi_values = [pv for pv in i.phi_values if pv in values_used]
+        for o in bl.block_outputs:
+            o.phi_values = [pv for pv in o.phi_values if pv in values_used]
+
+    for bl in gr.blocks:
+        for n in bl.nodes:
+            for o in n.outputs:
+                o.phi_values = [pv for pv in o.phi_values if pv in values_used]
+
+    # remove things only used in current block (and not in own phi) from outputs
+    # TODO: think if this would obsolete the above
+    outputs_used = set()
+    for bl in gr.blocks:
+        for i in bl.block_inputs:
+            assert isinstance(i, PhiValue)
+            for v in i.values:
+                outputs_used.add(v)
+    for bl in gr.blocks:
+        bl.block_outputs = {o for o in bl.block_outputs if o in outputs_used}
 
 
 def make_single_return(gr):
     bls = [b for b in gr.blocks if b.nodes[-1].i.opname == "RETURN_VALUE"]
     if len(bls) > 1:
-        assert bls[-1].is_ssa
-        ret_node = bls[-1].nodes[-1]
-        if len(bls[-1].nodes) == 1:
-            ret_bl = bls[-1]
-        else:
-            ret_bl = Block(is_ssa=True)
-            ret_bl.nodes = [ret_node]
-            ret_bl.block_outputs = {}
-            ret_bl.block_inputs = ret_node.inputs[:]
-            gr.blocks.append(ret_bl)
-        all_return_values = []
+        ret_bl = Block(is_ssa=True)
+        ret_ins = dis.Instruction(
+            opname="RETURN_VALUE",
+            opcode=opcode.opmap["RETURN_VALUE"],
+            arg=None,
+            argval=None,
+            argrepr=None,
+            offset=None,
+            starts_line=None,
+            is_jump_target=False,
+        )
+        ret_input = PhiValue([], [], ret_bl)
+        ret_node = Node(i=ret_ins, inputs=[ret_input], outputs=[])
+        ret_bl.nodes = [ret_node]
+        ret_bl.jump_sources = []
+        ret_node.inputs = [ret_input]
+        gr.blocks.append(ret_bl)
+        ret_bl.block_outputs = {}
+        ret_bl.block_inputs = [ret_input]
+
         for b in bls:
-            if b != ret_bl:
-                # jump sources + unify!!!
-                last_node_i = b.nodes[-1].i
-                assert last_node_i.opname == "RETURN_VALUE"
-                jump_ins = dis.Instruction(
-                    opname="JUMP_ABSOLUTE",
-                    opcode=opcode.opmap["JUMP_ABSOLUTE"],
-                    arg=None,
-                    argval=None,
-                    argrepr=None,
-                    offset=last_node_i.offset,
-                    starts_line=None,
-                    is_jump_target=last_node_i.is_jump_target,
-                )
-                jump_node = Node(i=jump_ins, inputs=[], outputs=[])
-                jump_node.jump_targets = [((0, 0), ret_bl)]
-                ret_bl.jump_sources.append(jump_node)
-                all_return_values.append(b.nodes[-1].inputs)
-                del b.nodes[-1]
-                b.nodes.append(jump_node)
-        ret_node.inputs = [unify_values(values, ret_bl.jump_sources, ret_bl) for values in zip(*all_return_values)]
+            # jump sources + unify!!!
+            last_node_i = b.nodes[-1].i
+            assert last_node_i.opname == "RETURN_VALUE"
+            jump_ins = dis.Instruction(
+                opname="JUMP_ABSOLUTE",
+                opcode=opcode.opmap["JUMP_ABSOLUTE"],
+                arg=None,
+                argval=None,
+                argrepr=None,
+                offset=last_node_i.offset,
+                starts_line=None,
+                is_jump_target=last_node_i.is_jump_target,
+            )
+            jump_node = Node(i=jump_ins, inputs=[], outputs=[])
+            jump_node.jump_targets = [((0, 0), ret_bl)]
+            ret_bl.jump_sources.append(jump_node)
+            # TODO: this should really be a method of PhiValue!
+            ret_input.jump_sources.append(jump_node)
+            assert len(b.nodes[-1].inputs) == 1
+            ret_input.values.append(b.nodes[-1].inputs[0])
+            b.nodes[-1].inputs[0].phi_values.append(ret_input)
+            assert len(b.block_outputs) == 0
+            b.block_outputs = {b.nodes[-1].inputs[0]}
+            del b.nodes[-1]
+            b.nodes.append(jump_node)
     return gr
