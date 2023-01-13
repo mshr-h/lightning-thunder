@@ -288,7 +288,6 @@ def undo_ssa(gr):
     nodes_to_skip = set()
 
     def store_phi_values(o, o_idx, last_n):
-        print("###processing", o)
         phi_values_in_processing = set()
 
         def store_phi_values_inner(o, o_idx, last_n):
@@ -310,7 +309,6 @@ def undo_ssa(gr):
                 nodes_to_skip.add(new_n)
                 insert_after(new_n, last_n)
                 last_n = new_n
-                print("###added copy", lv_names[o_idx], "to", lv_names[idx2])
             return last_n
 
         return store_phi_values_inner(o, o_idx, last_n)
@@ -319,36 +317,29 @@ def undo_ssa(gr):
         if v is not None:
             get_or_add_lv(v)
 
-    print("###before phi#", gr)
-    print("####lv: ", local_vars)
     # inputs in phi values
     last_n = None
     # need to make a copy of the list because we're adding items to the list
     for idx, i in enumerate(local_vars[:]):
         last_n = store_phi_values(i, idx, last_n)
-    print("###after phi#", gr)
 
     names = []
 
-    print("##before enum##", gr)
     for bl in gr.blocks:
         jump_node = bl.nodes[-1]
         for n in bl.nodes[:]:
             processed_block_outputs = set()
             if n not in nodes_to_skip:
-                print("# emitting code for", n)
                 for inpidx, i in enumerate(n.inputs):
                     get_value(i, n=n, inpidx=inpidx)
                 last_n = n
                 for o in n.outputs[::-1]:
                     idx = get_or_add_lv(o)
-                    print("###storing node", n, "output", o, "to", idx)
                     new_n = Node(
                         i=get_instruction(opname="STORE_FAST", arg=idx),
                         outputs=[],
                         inputs=[o],
                     )
-                    print("###insert output", new_n, "after", last_n)
                     insert_after(new_n, last_n)
                     last_n = new_n
                     if o in bl.block_outputs:
@@ -364,9 +355,7 @@ def undo_ssa(gr):
                         outputs=[],
                         inputs=[o],
                     )
-                    print("###insert", new_n, "before", jump_node)  # what with conditional jumps?
                     insert_before(new_n, n=jump_node)
-                    # last_n = bl.nodes[-2] if len(bl.nodes) > 1 else None
                     store_phi_values(o, idx, new_n)
 
     return local_vars, lv_names, names, consts
