@@ -332,11 +332,14 @@ def undo_ssa(gr):
 
     print("##before enum##", gr)
     for bl in gr.blocks:
+        jump_node = bl.nodes[-1]
         for n in bl.nodes[:]:
             processed_block_outputs = set()
             if n not in nodes_to_skip:
+                print("# emitting code for", n)
                 for inpidx, i in enumerate(n.inputs):
                     get_value(i, n=n, inpidx=inpidx)
+                last_n = n
                 for o in n.outputs[::-1]:
                     idx = get_or_add_lv(o)
                     print("###storing node", n, "output", o, "to", idx)
@@ -345,24 +348,26 @@ def undo_ssa(gr):
                         outputs=[],
                         inputs=[o],
                     )
-                    print("###insert output", new_n, "after", n)
-                    insert_after(new_n, n)
+                    print("###insert output", new_n, "after", last_n)
+                    insert_after(new_n, last_n)
+                    last_n = new_n
                     if o in bl.block_outputs:
                         processed_block_outputs.add(o)
-                        last_n = store_phi_values(o, idx, new_n)
-        for o in bl.block_outputs:
-            if o not in processed_block_outputs:
-                get_value(o, n=bl.nodes[-1])  # before the jump
-                idx = get_or_add_lv(o, name="bo")
-                new_n = Node(
-                    i=get_instruction(opname="STORE_FAST", arg=idx),
-                    outputs=[],
-                    inputs=[o],
-                )
-                print("###insert", new_n, "before", bl.nodes[-1])  # what with conditional jumps?
-                insert_before(new_n, n=bl.nodes[-1])
-                # last_n = bl.nodes[-2] if len(bl.nodes) > 1 else None
-                last_n = store_phi_values(o, idx, new_n)
+                        last_n = store_phi_values(o, idx, last_n)
+        if bl.nodes[-1].i.opname != "RETURN_VALUE":  # TODO Should the return block have outputs (probably not)
+            for o in bl.block_outputs:
+                if o not in processed_block_outputs:
+                    get_value(o, n=jump_node)  # before the jump
+                    idx = get_or_add_lv(o, name="bo")
+                    new_n = Node(
+                        i=get_instruction(opname="STORE_FAST", arg=idx),
+                        outputs=[],
+                        inputs=[o],
+                    )
+                    print("###insert", new_n, "before", jump_node)  # what with conditional jumps?
+                    insert_before(new_n, n=jump_node)
+                    # last_n = bl.nodes[-2] if len(bl.nodes) > 1 else None
+                    store_phi_values(o, idx, new_n)
 
     return local_vars, lv_names, names, consts
 
@@ -464,7 +469,7 @@ def generate_function(gr):
                     arg = address_map[n.jump_targets[-1][1].nodes[0]]
                 elif opcode in dis.hasjrel:
                     # TODO forward, backward
-                    arg = address_map[n.jump_targets[-1][1].nodes[0]] - address_map[n]  # +1?
+                    arg = address_map[n.jump_targets[-1][1].nodes[0]] - address_map[n] - 1
                 else:
                     arg = n.i.arg
                     if arg is None:
