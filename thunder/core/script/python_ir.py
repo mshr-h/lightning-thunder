@@ -464,7 +464,7 @@ def generate_function(gr):
                     if arg is None:
                         arg = 0
 
-                changed_size = write_extended_args(n, arg)
+                changed_size |= write_extended_args(n, arg)
 
                 bc.append(opcode)
                 bc.append(arg & 0x_FF)
