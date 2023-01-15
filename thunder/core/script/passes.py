@@ -7,7 +7,7 @@ import torch  # # aehem.
 import thunder
 
 from .frontend import acquire_method, make_single_return, make_ssa
-from .graph import Block, Node, replace_values
+from .graph import Block, Node, PhiValue, replace_values
 
 
 def specify_inputs(gr, inps):
@@ -16,7 +16,18 @@ def specify_inputs(gr, inps):
 
 
 def split_block(gr, bl, n):
-    # TODO: this needs to be fixed to also update block_inputs, block_outputs
+    # The admin involved:
+    # - create a new "bottom block", the input block is the "top block"
+    # - split the .nodes
+    # - block_inputs of the top block and block_outputs of the bottom are the original
+    #   block_inputs and block_outputs
+    # - scan all the node inputs and block_outputs of the lower part to see
+    #   which need to be block_inputs of the lower block and thus outputs of the top one
+    # - define outputs of the "top block" to be the required inputs
+    # - add the input PhiValues and replace the outputs of the top block with them in the
+    #   uses in the bottom block
+    # - add unconditional jump from top to bottom part
+
     i = 0
     while i < len(gr.blocks) and gr.blocks[i] is not bl:
         i += 1
@@ -28,6 +39,10 @@ def split_block(gr, bl, n):
     nbl = Block(is_ssa=True)
     nbl.nodes = bl.nodes[j:]
     del bl.nodes[j:]
+    nbl.block_outputs = bl.block_outputs
+    bl.block_outputs = set()
+    nbl.block_inputs = []
+
     jump_ins = dis.Instruction(
         opname="JUMP_ABSOLUTE",
         opcode=opcode.opmap["JUMP_ABSOLUTE"],
@@ -38,11 +53,41 @@ def split_block(gr, bl, n):
         starts_line=None,
         is_jump_target=False,
     )
-    jump_node = Node(i=jump_ins, inputs=[], outputs=[])
-    jump_node.jump_targets = [((0, 0), nbl)]
-    bl.nodes.append(jump_node)
-    nbl.jump_sources.append(jump_node)
+    bl_jump_node = Node(i=jump_ins, inputs=[], outputs=[])
+    bl_jump_node.jump_targets = [((0, 0), nbl)]
+    bl.nodes.append(bl_jump_node)
+    nbl.jump_sources.append(bl_jump_node)
     gr.blocks.insert(i + 1, nbl)
+
+    nbl_block_inputs = {}
+    potential_bl_outputs = {i for i in bl.block_inputs}
+    for n in bl.nodes:
+        for o in n.outputs:
+            potential_bl_outputs.add(o)
+    for i in bl.block_inputs:
+        potential_bl_outputs.add(i)
+
+    def get_or_create_phi(v):
+        phi_value = nbl_block_inputs.get(v)
+        if phi_value is None:
+            phi_value = PhiValue([v], [bl_jump_node], nbl)
+            nbl.block_inputs.append(phi_value)
+        return phi_value
+
+    for n in nbl.nodes:
+        for idx_i, i in enumerate(n.inputs):
+            if i in potential_bl_outputs:
+                n.inputs[idx_i] = get_or_create_phi(i)
+                bl.block_outputs.add(i)
+        # for inplace ops, we also check the outputs (e.g. FOR_ITER)
+        for idx_o, o in enumerate(n.outputs):
+            if o in potential_bl_outputs:
+                o.outputs[idx_o] = get_or_create_phi(o)
+                bl.block_outputs.add(o)
+
+    bl.block_outputs.update(nbl.block_outputs & potential_bl_outputs)
+    nbl.block_outputs = {(get_or_create_phi(o) if o in potential_bl_outputs else o) for o in nbl.block_outputs}
+
     return nbl
 
 

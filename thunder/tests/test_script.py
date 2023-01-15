@@ -106,3 +106,25 @@ def test_nanogpt_basic():
     expected, _ = model.forward(x)
 
     assert_close(res, expected)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
+def test_split_block():
+    def foo(a, b):
+        c = a + b
+        d = a + c
+        return d
+
+    gr = thunder.core.script.frontend.acquire_method(foo, verbose=False)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+    thunder.core.script.passes.split_block(gr, gr.blocks[0], gr.blocks[0].nodes[1])
+    dot = thunder.core.script.graph.make_dot(gr, add_names=True)
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    a = torch.randn(5)
+    b = torch.randn(5)
+    assert_close(fn(a, b), foo(a, b))
