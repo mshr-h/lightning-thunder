@@ -8,6 +8,7 @@ import thunder.core.script.frontend
 import thunder.core.script.python_ir
 import thunder.core.script.passes
 from torch import add as tadd
+from . import nanogpt_model
 
 
 def sample_add_fn(x, y):
@@ -84,3 +85,24 @@ def test_sequential():
 
     a = torch.randn(2, 3)
     assert_close(model(a), fn(model, a))
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
+def test_nanogpt_basic():
+    model = nanogpt_model.GPT(nanogpt_model.GPTConfig)
+
+    gr = thunder.core.script.frontend.acquire_method(model.forward)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    x = torch.randint(0, 255, (5, 5))
+    torch.manual_seed(5)
+    res, _ = fn(model, x, None)
+    torch.manual_seed(5)
+    expected, _ = model.forward(x)
+
+    assert_close(res, expected)
