@@ -238,7 +238,7 @@ def insert_after(new_n, n):
     new_n.block = n.block
 
 
-def replace_values(gr, value_map):
+def replace_values(gr_or_bl, value_map):
     ### Replacing a value:
     # - as inputs/outputs of nodes
     # - value.parent for other values
@@ -247,27 +247,31 @@ def replace_values(gr, value_map):
 
     def map_values(v):
         if v in value_map:
-            print(f"mapping {v} to {value_map[v]}")
             return value_map[v]
-        print(f"mapping {v}...")
         if isinstance(v.value, MROAwareObjectRef):
             v.value.obj = map_values(v.value.obj)
         if v.parent is not None:
             v.parent = map_values(v.parent)
         if isinstance(v, PhiValue):
-            # print("###processing union value", v)
             new_values = [map_values(vv) for vv in v.values]
             for ov, nv in zip(v.values, new_values):
                 ov.phi_values.remove(v)
                 nv.phi_values.append(v)
             v.values = new_values
-        print(f"...mapping to {v}")
         return v
 
-    for bl in gr.blocks:
+    def process_block(bl):
         for n in bl.nodes:
             n.inputs = [map_values(vv) for vv in n.inputs]
             n.outputs = [map_values(vv) for vv in n.outputs]
+
+    if isinstance(gr_or_bl, Graph):
+        for bl in gr_or_bl.blocks:
+            process_block(bl)
+    elif isinstance(gr_or_bl, Block):
+        process_block(gr_or_bl)
+    else:
+        raise TypeError("replace_values works on Graph or Block objects")
 
 
 ## TODO: our should this be a method?
