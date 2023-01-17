@@ -247,21 +247,17 @@ def replace_values(gr, value_map):
 
     def map_values(v):
         if v in value_map:
-            print(f"mapping {v} to {value_map[v]}")
             return value_map[v]
-        print(f"mapping {v}...")
         if isinstance(v.value, MROAwareObjectRef):
             v.value.obj = map_values(v.value.obj)
         if v.parent is not None:
             v.parent = map_values(v.parent)
         if isinstance(v, PhiValue):
-            # print("###processing union value", v)
             new_values = [map_values(vv) for vv in v.values]
             for ov, nv in zip(v.values, new_values):
                 ov.phi_values.remove(v)
                 nv.phi_values.append(v)
             v.values = new_values
-        print(f"...mapping to {v}")
         return v
 
     for bl in gr.blocks:

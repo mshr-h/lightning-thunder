@@ -128,3 +128,32 @@ def test_split_block():
     a = torch.randn(5)
     b = torch.randn(5)
     assert_close(fn(a, b), foo(a, b))
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
+def test_inline_submodule():
+    class MLP(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.l1 = torch.nn.Linear(5, 10)
+            self.l2 = torch.nn.Linear(10, 5)
+
+        def forward(self, x):
+            return self.l2(torch.tanh(self.l1(x)))
+
+    m = MLP()
+    gr = thunder.core.script.frontend.acquire_method(m.forward, verbose=False)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+
+    nodes_to_inline = [gr.blocks[0].nodes[0], gr.blocks[0].nodes[2]]
+    for n in nodes_to_inline:
+        thunder.core.script.passes.inline_method_call(gr, n)
+
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    x = torch.randn(5, 5)
+    assert_close(fn(m, x), m(x))
