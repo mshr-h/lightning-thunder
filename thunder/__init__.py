@@ -160,6 +160,8 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
         executor_token = set_executor_context(ex)
         lang_token = set_language_context(lang_ctx)
 
+        proxyargs, proxykwargs = _make_proxies(fn, langctx, *args, **kwargs)
+
         trace = _construct_trace(*args, fn=fn, lang_ctx=lang_ctx, **kwargs)
 
         # Resets the tracing context
