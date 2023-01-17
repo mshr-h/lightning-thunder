@@ -159,7 +159,9 @@ def inline_method_call(gr, n):  # criterion?
         is_jump_target=ret_node.i.is_jump_target,
     )
     bl.nodes[-1].jump_targets = [((0, 0), gr1.blocks[0])]
+    gr1.blocks[0].jump_sources = [bl.nodes[-1]]
     ret_node.jump_targets = [((0, 0), nbl)]
+    nbl.jump_sources = [ret_node if js == bl.nodes[-1] else js for js in nbl.jump_sources]
 
     gr.blocks[i_bl + 1 : i_bl + 1] = gr1.blocks
 
@@ -203,3 +205,47 @@ def torch_to_thunder(gr):
                     i.value = getattr(thunder.langs.torch, n)
                     i.is_global = False
                     i.is_const = True
+
+
+def merge_two_blocks(gr, bl1):
+    jt = bl1.nodes[-1].jump_targets
+    if len(jt) != 1:
+        raise RuntimeError("can only fuse blocks with deterministic connection")
+    bl2 = jt[0][1]
+    if len(bl2.jump_sources) != 1 or bl2.jump_sources[0] != bl1.nodes[-1]:
+        raise RuntimeError("second block to be fused must only have first block as jump source")
+
+    replacements = {}
+    for i in bl2.block_inputs:
+        assert isinstance(i, PhiValue) and len(i.values) == 1
+        (iv,) = i.values
+        if iv in bl1.block_outputs:
+            replacements[i] = iv
+        else:
+            bl1.block_inputs.append(i)
+
+    replace_values(bl2, replacements)
+    # TODO: should this happen automatically in replace_values?
+
+    for o in bl1.block_outputs:
+        o.phi_values = [pv for pv in o.phi_values if pv not in replacements]
+    bl1.block_outputs = {o for o in bl1.block_outputs if o.phi_values}
+    bl1.block_outputs.update(bl2.block_outputs)
+
+    bl1.nodes[-1:] = bl2.nodes
+    gr.blocks.remove(bl2)
+
+
+def merge_blocks_where_possible(gr):
+    i_bl = 0
+    while i_bl + 1 < len(gr.blocks):
+        bl1 = gr.blocks[i_bl]
+        jt = bl1.nodes[-1].jump_targets
+        if len(jt) == 1:
+            bl2 = jt[0][1]
+        else:
+            bl2 = None
+        if bl2 is not None and len(bl2.jump_sources) == 1 and bl2.jump_sources[0] == bl1.nodes[-1]:
+            merge_two_blocks(gr, bl1)
+        else:
+            i_bl += 1

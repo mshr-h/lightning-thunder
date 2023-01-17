@@ -153,7 +153,15 @@ def test_inline_submodule():
     for n in nodes_to_inline:
         thunder.core.script.passes.inline_method_call(gr, n)
 
+    assert len(gr.blocks) > 1
+
+    thunder.core.script.passes.merge_blocks_where_possible(gr)
+
+    assert len(gr.blocks) == 1
+
     fn = thunder.core.script.python_ir.generate_function(gr)
 
     x = torch.randn(5, 5)
     assert_close(fn(m, x), m(x))
+
+    # explicitly check for things to have been inlined?
