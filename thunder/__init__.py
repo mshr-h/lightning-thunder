@@ -160,10 +160,10 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
 
 
 def _construct_trace(fn, trace, proxyargs, proxykwargs):
-    trace.add_input(proxyargs)
-    trace.add_kwarg_input(proxykwargs)
+    trace.add_args(proxyargs)
+    trace.add_kwargs(proxykwargs)
     proxyresult = fn(*proxyargs, **proxykwargs)
-    trace.add_output(proxyresult)
+    trace.add_outputs(proxyresult)
     return trace
 
 
@@ -214,7 +214,7 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
         translation_end = time.time_ns()
 
         invocation_start = time.time_ns()
-        result = fusion.execute(args, kwargs)
+        result = fusion(args, kwargs)
         invocation_end = time.time_ns()
 
         # Resets the tracing context

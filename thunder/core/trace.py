@@ -131,43 +131,39 @@ class Trace:
     """
 
     def __init__(self):
-        self.inputs = deque()
-        self.kwargs = deque()
+        self.args = None
+        self.kwargs = None
+        self.outputs = None
+
         self.constants = deque()
-        self.outputs = deque()
         self.symbols = deque()
 
         self.name_ctr = 0
         self.names = set()
 
     def __repr__(self):
-        input_string = "\n".join(str(inp) for inp in self.inputs)
-        kwarg_input_string = "\n".join(f"{k}={v}" for k, v in self.kwargs)
         constant_string = "\n".join(str(constant) for constant in self.constants)
         symbol_string = "\n".join(str(sym) for sym in self.symbols)
         output_string = "\n".join(str(out) for out in self.outputs)
         return (
-            f"[Trace, \nInputs:\n{input_string}\n"
-            f"Kwarg Inputs:\n{kwarg_input_string}\nConstants:\n{constant_string}\n"
+            f"[Trace, \Args:\n{self.args}\n"
+            f"Kwargs:\n{self.kwargs}\nConstants:\n{constant_string}\n"
             f"Symbols:\n{symbol_string}\nOutputs:\n{output_string}]"
         )
 
-    def add_input(self, inp):
-        self.inputs.append(inp)
-        return inp
+    def add_args(self, args):
+        self.args = args
 
-    def add_kwarg_input(self, k, v):
-        self.kwargs.append((k, v))
-        return k, v
+    def add_kwargs(self, kwargs):
+        self.kwargs = kwargs
+
+    def add_outputs(self, outputs):
+        self.outputs = outputs
 
     # TODO: review constants, particularly Python lists
     def add_constant(self, constant):
         self.constants.append(constant)
         return constant
-
-    def add_output(self, out):
-        self.outputs.append(out)
-        return out
 
     def add_symbol(self, sym):
         self.symbols.append(sym)

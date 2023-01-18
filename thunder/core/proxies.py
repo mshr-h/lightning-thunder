@@ -7,7 +7,7 @@ import string
 
 import thunder.core.dtypes as dtypes
 
-from .trace import Constraint, get_language_context, get_trace
+from .trace import get_language_context, get_trace
 
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
@@ -147,6 +147,7 @@ class TensorProxy(Proxy):
         shape=None,
         device=None,
         dtype=None,
+        strides=None,
     ):
         super().__init__(name)
 
@@ -160,7 +161,7 @@ class TensorProxy(Proxy):
             self._dtype = tensor.dtype if dtype is None else dtype
             self.device = tensor.device if device is None else device
         else:
-            # Requires all metadata be specified explicitly
+            # Requires all metadata, except strides, be specified explicitly
             assert shape is not None
             assert device is not None
             assert dtype is not None
@@ -169,6 +170,7 @@ class TensorProxy(Proxy):
             self.shape = shape
             self.device = device
             self._dtype = dtype
+            self.strides = strides
 
         self.ndim = len(self.shape)
 

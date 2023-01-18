@@ -99,7 +99,7 @@ class TorchLangCtx(object):
     def proxy(self, x, *, name):
         if isinstance(x, torch.Tensor):
             dtype = thunder_dtype(x.dtype)
-            return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=dtype)
+            return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=dtype, strides=x.stride())
         else:
             return proxies.proxy(x, name=name)
 
