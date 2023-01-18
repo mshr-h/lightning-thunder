@@ -124,28 +124,6 @@ def reset_executor_context(token):
     _executor_ctx.set(token)
 
 
-class Constraint:
-    """Represents a "constraint" on the validity of a region.
-
-    Constrains include a function to be evaluated, the arguments to it, and
-    the expected result.
-
-    For example, if an integer proxy (see proxies.py) was compared with 5 (p == 5), and p
-    did equal 5, then that would create a constraint (==, args=(p, 5), expected=True).
-    """
-
-    def __init__(self, op, expected, *args):
-        self.op = op
-        self.expected = expected
-        self.args = args
-
-        t = get_trace()
-        t.add_constraint(self)
-
-    def __repr__(self):
-        return f"[Constraint op={str(self.op)} expected={str(self.expected)} args={[str(arg) for arg in self.args]}]"
-
-
 class Trace:
     """The tracing context.
 
@@ -158,52 +136,21 @@ class Trace:
         self.constants = deque()
         self.outputs = deque()
         self.symbols = deque()
-        self.constraints = deque()
 
-        self._lowercase = tuple(string.ascii_lowercase)
-        self._tensor_name_counter = 0
-
-        self._uppercase = tuple(string.ascii_uppercase)
-        self._constant_name_counter = 0
+        self.name_ctr = 0
+        self.names = set()
 
     def __repr__(self):
-        constraint_string = "\n".join(str(constraint) for constraint in self.constraints)
         input_string = "\n".join(str(inp) for inp in self.inputs)
         kwarg_input_string = "\n".join(f"{k}={v}" for k, v in self.kwargs)
         constant_string = "\n".join(str(constant) for constant in self.constants)
         symbol_string = "\n".join(str(sym) for sym in self.symbols)
         output_string = "\n".join(str(out) for out in self.outputs)
         return (
-            f"[Trace, \nConstraints:\n{constraint_string}\nInputs:\n{input_string}\n"
+            f"[Trace, \nInputs:\n{input_string}\n"
             f"Kwarg Inputs:\n{kwarg_input_string}\nConstants:\n{constant_string}\n"
             f"Symbols:\n{symbol_string}\nOutputs:\n{output_string}]"
         )
-
-    # TODO: Consider using a different name generation technique that reuses the original names
-    @staticmethod
-    def _create_name(idx, chars):
-        name = ""
-        while idx >= len(chars):
-            name = chars[idx % len(chars)] + name
-            idx = idx - len(chars)
-        name = chars[idx] + name
-
-        return name
-
-    # TODO: add name functions for other types, like integers
-    # TODO: expose common helpers like this so that callers don't need to acquire the trace
-    #   the trace context itself should be invisible to them
-    def tensor_name(self):
-        idx = self._tensor_name_counter
-        self._tensor_name_counter += 1
-
-        return self._create_name(idx, self._lowercase)
-
-    def constant_name(self):
-        idx = self._constant_name_counter
-        self._constant_name_counter += 1
-
-        return self._create_name(idx, self._uppercase)
 
     def add_input(self, inp):
         self.inputs.append(inp)
@@ -226,6 +173,33 @@ class Trace:
         self.symbols.append(sym)
         return sym
 
-    def add_constraint(self, constraint):
-        self.constraints.append(constraint)
-        return constraint
+    def _make_proxy_name(self, generated_name_counter, names):
+        chars = tuple(string.ascii_uppercase)
+
+        type_str = None
+
+        def _gen_name(ctr):
+            s = ""
+            while ctr >= len(chars):
+                s = chars[ctr % len(chars)] + s
+                ctr = ctr - len(chars)
+
+            return chars[ctr] + s
+
+        ctr = generated_name_counter
+        name = None
+        while True:
+            name = _gen_name(ctr)
+            ctr += 1
+            if name not in names:
+                break
+
+        # Adds type string
+        name = f"{type_str}{name}"
+
+        names.add(name)
+        return name, ctr, names
+
+    def make_proxy_name(self):
+        name, self.name_ctr, self.names = self._make_proxy_name(self.name_ctr, self.names)
+        return name

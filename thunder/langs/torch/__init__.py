@@ -93,29 +93,25 @@ class TorchLangCtx(object):
         return cls.instance
 
     def __init__(self):
-        pass
+        self.dtype_cls = torch.dtype
+        self.tensor_cls = torch.Tensor
 
-    def proxy(self, x):
-        # TODO: maybe make this pre-emption mandatory by always calling it
-        #  before calling the language context's proxy method?
-        try:
-            return proxies.proxy(x)
-        except ValueError:
-            pass
-
+    def proxy(self, x, *, name):
         if isinstance(x, torch.Tensor):
-            name = trace.get_trace().tensor_name()
-            dtype = _torch_to_thunder_dtype_map[x.dtype]
-
+            dtype = thunder_dtype(x.dtype)
             return TensorProxy(name=name, shape=x.shape, device=str(x.device.type), dtype=dtype)
+        else:
+            return proxies.proxy(x, name=name)
 
-        raise ValueError(f"Torch doesn't know how to proxy {x}!")
+    def thunder_dtype(torch_dtype):
+        return _torch_to_thunder_dtype_map[torch_dtype]
 
-    def is_dtype(self, x):
-        return isinstance(x, torch.dtype)
+    def torch_dtype(thunder_dtype):
+        return _thunder_to_torch_dtype_map[thunder_dtype]
 
-    def intercept(self, op, *args, **kwargs):
-        return None
+    #
+    # Tensor methods
+    #
 
     #
     # Elementwise Unary Methods

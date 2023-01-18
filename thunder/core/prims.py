@@ -178,10 +178,13 @@ def make_prim(id, name, meta):
 def _convert_element_type_meta(a, dtype):
     if isinstance(a, Number):
         utils.check(utils.is_numbertype(dtype), lambda: f"Trying to convert a number to non-numbertype object {dtype}!")
-        return proxy(dtype(utils.get_numberlike_value(a)))
+        result = dtype(utils.get_numberlike_value(a))
+        proxy_name = get_trace().make_proxy_name(type(result))
+        return proxy(result, name=proxy_name)
 
     # a is a Tensor
-    return TensorProxy(tensor=a, dtype=dtype)
+    proxy_name = get_trace().make_proxy_name(TensorProxy)
+    return TensorProxy(name=proxy_name, tensor=a, dtype=dtype)
 
 
 convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type", _convert_element_type_meta)
@@ -194,7 +197,8 @@ convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
 def _full_meta(shape, fill_value, *, dtype, device):
-    return TensorProxy(shape=shape, device=device, dtype=dtype)
+    proxy_name = get_trace().make_proxy_name(TensorProxy)
+    return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
 
 
 full = make_prim(Ops.FULL, "full", _full_meta)
@@ -298,10 +302,11 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
     input_dtype = utils.to_dtype(a, true_dtype=True)
 
     result_dtype = _prim_type_promotion(input_dtype, type_promotion_kind=type_promotion_kind)
+    proxy_name = get_trace().make_proxy_name()
 
     # Tensor case
     if isinstance(a, TensorProxy):
-        return TensorProxy(tensor=a, dtype=result_dtype)
+        return TensorProxy(name=proxy_name, tensor=a, dtype=result_dtype)
 
     # Number case
     check(
@@ -316,8 +321,8 @@ def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None
 
     # a_typ = get_numberlike_type(a)
     va = get_numberlike_value(a)
-    value = number_handler(va)
-    return proxy(result_dtype(value))
+    result = result_dtype(number_handler(va))
+    return proxy(result, name=proxy_name)
 
 
 abs = make_prim(
@@ -546,6 +551,7 @@ isfinite = make_prim(
 # TODO: add type promotion (ex. abs complex->float type promotion)
 # TODO: document elementwise binary meta, incl. stride logic
 # TODO: use supported_dtypes
+# TODO: correct name of output
 def _elementwise_binary_meta(
     a, b, *, name, type_promotion_kind, number_handler=None, supported_dtypes=(dtypes.dtype,), **kwargs
 ):
@@ -560,6 +566,7 @@ def _elementwise_binary_meta(
     input_type = dtype if dtype is not None else numbertype
 
     result_type = _prim_type_promotion(input_type, type_promotion_kind=type_promotion_kind)
+    proxy_name = get_trace().make_proxy_name()
 
     # tensor x tensor case
     if isinstance(a, TensorProxy) and isinstance(b, TensorProxy):
@@ -570,7 +577,8 @@ def _elementwise_binary_meta(
                 f"be the same! But got shapes {a.shape} and {b.shape}!"
             ),
         )
-        return TensorProxy(tensor=a, dtype=result_type)
+
+        return TensorProxy(name=proxy_name, tensor=a, dtype=result_type)
 
     # scalar x scalar case
     if isinstance(a, Number) and isinstance(b, Number):
@@ -581,13 +589,14 @@ def _elementwise_binary_meta(
 
         va, vb = get_numberlike_value(a), get_numberlike_value(b)
         value = number_handler(va, vb)
-        return proxy(result_type(value))
+        result = result_type(value)
+        return proxy(result, name=proxy_name)
 
     # tensor x scalar case
     tensor = a if isinstance(a, TensorProxy) else b
     # number = b if tensor is a else a
 
-    return TensorProxy(tensor=tensor, dtype=result_type)
+    return TensorProxy(name=proxy_name, tensor=tensor, dtype=result_type)
 
 
 add = make_prim(
@@ -670,7 +679,8 @@ sub = make_prim(
 
 
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
-    return TensorProxy(shape=shape, device=a.device, dtype=a.true_dtype)
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=shape, device=a.device, dtype=a.true_dtype)
 
 
 broadcast_in_dim = make_prim(
@@ -706,7 +716,9 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
 
     output_shape = _compute_reduction_output_shape(a.shape, dims)
 
+    proxy_name = get_trace().make_proxy_name()
     return TensorProxy(
+        name=proxy_name,
         shape=output_shape,
         device=a.device,
         dtype=output_dtype,

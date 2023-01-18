@@ -185,6 +185,18 @@ def _get_nvfuser_op(fd, op):
     return nv_op(fd)
 
 
+# TODO: support NumPy arrays
+# TODO: possibly support caching on the object that fusion returns
+# fuse returns a function that, when called with actual PyTorch tensors and Python numbers
+#   in place of the corresponding TensorProxies and NumberProxies, computes the given
+#   trace.
+# NOTE: the function can be reused, but it should be called with tensors that have the
+#   same metadata, numbers of the same type, all conditionals on the number evaluated
+#   the same as previous number inputs, and all other values constant.
+def _fuse(trace):
+    pass
+
+
 class nvFuserCtx:
     def __init__(self):
         pass
@@ -200,6 +212,9 @@ class nvFuserCtx:
 
     def execute(self, *args, **kwargs):
         return execute(*args, **kwargs)
+
+    def fuse(trace):
+        return _fuse(trace)
 
 
 def _convert(fd, m, v, p):
