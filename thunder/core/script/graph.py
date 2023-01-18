@@ -1,6 +1,7 @@
 # This is a "TorchScript-like" graph representation of Python IR.
 # The idea is that blocks are "simple blocks" in terms of the code flow graph,
 # i.e. without branches
+import copy
 import inspect
 
 
@@ -62,6 +63,37 @@ class Value:
         self.is_function_arg = is_function_arg
         self.phi_values = []
 
+    def clone(self, translation_dict=None):
+        # clones a node, including (recursively) parent nodes
+        # uses translation_dict to look up parent node
+        # updates translation_dict
+        # does not register phi_values on the clone
+        # always clone parents?
+        if translation_dict is None:
+            translation_dict = {}
+        if self in translation_dict:
+            return translation_dict[self]
+        parent = self.parent
+        if parent:
+            if parent in self.translation_dict:
+                parent = self.translation_dict[parent]
+            else:
+                parent = parent.clone(translation_dict=translation_dict)
+        v = Value(
+            n=self.n,
+            nr=self.nr,
+            typ=self.typ,
+            value=self.value,
+            name=self.name,
+            parent=parent,
+            is_global=self.is_global,
+            is_const=self.is_const,
+            is_function_arg=self.is_function_arg,
+        )
+        if translation_dict is not None:
+            translation_dict[self] = v
+        return v
+
     def __str__(self):
         parts = []
         if self.is_function_arg:
@@ -88,12 +120,37 @@ class PhiValue(Value):
     # node?
     def __init__(self, values, jump_sources, bl):
         super().__init__()
+        self._unfinished_clone = False
+        self.bl = bl
+        self._set_values_jump_sourcess(values, jump_sources)
+
+    def _set_values_jump_sourcess(self, values, jump_sources):
         self.values = list(values)
         for v in self.values:
             if v is not None:
                 v.phi_values.append(self)
-        self.bl = bl
         self.jump_sources = jump_sources
+
+    def clone(self, translation_dict=None):
+        # due to loops in the Graph, this is complicated:
+        # we do not translate values or jump_sources here, but do
+        # translate blocks.
+        if translation_dict is None:
+            translation_dict = {}
+        if self in translation_dict:
+            return self
+        v = PhiValue(self.values, self.jump_sources, translation_dict[self.bl])
+        v._unfinished_clone = True
+        translation_dict[self] = v
+        return v
+
+    def post_process_clone(self, *, translation_dict):
+        assert self._unfinished_clone
+        self._unfinished_clone = False
+        self._set_values_jump_sourcess(
+            [translation_dict.get(v, v) for v in self.values],
+            [translation_dict.get(js, js) for js in self.jump_sources],
+        )
 
     def add_missing_value(self, v, idx):
         assert 0 <= idx < len(self.values)
@@ -123,6 +180,21 @@ class Node:
         self.line_no = line_no
         self.block = None
 
+    def clone(self, translation_dict=None):
+        """.block of the clone will be None if block is not in translation dict"""
+        if translation_dict is None:
+            translation_dict = {}
+        if self in translation_dict:
+            return translation_dict[self]
+        inputs = [i.clone(translation_dict=translation_dict) for i in self.inputs]
+        outputs = [o.clone(translation_dict=translation_dict) for o in self.outputs]
+        i = copy.copy(self.i)
+        n2 = Node(i=i, inputs=inputs, outputs=outputs, line_no=self.line_no)
+        n2.jump_targets = [(se, translation_dict.get(bl, bl)) for se, bl in self.jump_targets]
+        n2.block = translation_dict.get(self.block)
+        translation_dict[self] = n2
+        return n2
+
     def __str__(self):
         # i.i.offset // 2, i.i.opname, i.i.arg, "(", i.i.argval, ")"
         if self.i.opname == "CALL_METHOD":
@@ -141,16 +213,9 @@ class Node:
 # The jump targets are other blocks and are atributes of the jump instruction.
 class Block:
     def __init__(self, is_ssa=True):
-        # offset_start=0, stack_at_start=None, i=None, jump_source=None
         self.is_ssa = is_ssa
-        # if not is_ssa:
-        #    assert stack_at_start is not None
-        #    self.stack_at_start = stack_at_start
-        #    self.all_stacks_at_start = [(jump_source, self.stack_at_start)]
-        #    self.all_local_variables_at_start = []
         self.jump_sources = []
-        self.nodes = []  # if i is None else i
-        # self.offset_start = offset_start
+        self.nodes = []
 
     def __str__(self):
         return "\n".join([f"  Block (reached from {self.jump_sources})"] + ["    " + str(n) for n in self.nodes])
@@ -337,3 +402,28 @@ def make_dot(gr, format="png", add_names=False):
                             dot.edge(f"v {value_idxes[v]}", f"i {i_bl} {i_n}", color="red")
 
     return dot
+
+
+def clone_blocks(blocks_to_clone: list[Block], translation_dict=None):
+    assert all(bl.is_ssa for bl in blocks_to_clone)
+    if translation_dict is None:
+        translation_dict = {}
+
+    blocks_todo = []
+    for obl in blocks_to_clone:
+        if obl not in translation_dict:
+            bl = Block()
+            translation_dict[obl] = bl
+            blocks_todo.append(obl)
+
+    for obl in blocks_todo:
+        bl = translation_dict[obl]
+        bl.block_inputs = [i.clone(translation_dict=translation_dict) for i in obl.block_inputs]
+        bl.block_outputs = {o.clone(translation_dict=translation_dict) for o in obl.block_outputs}
+        bl.nodes = [n.clone(translation_dict=translation_dict) for n in obl.nodes]
+    for obl in blocks_todo:
+        bl = translation_dict[obl]
+        bl.jump_sources = [translation_dict.get(js, js) for js in obl.jump_sources]
+        for i in bl.block_inputs:
+            i.post_process_clone(translation_dict=translation_dict)
+    return [translation_dict[bl] for bl in blocks_to_clone], translation_dict
