@@ -115,10 +115,7 @@ def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kw
 
     def _add_constant_number(x):
         if isinstance(x, Number) and not isinstance(x, NumberProxy):
-            nv_dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[type(x)]
-            nv = fd.define_scalar(nv_dtype)
-            used_inputs.append(x)
-            proxy_to_nvfuser_map[x] = nv
+            nv = fd.define_constant(x)
             return nv
         return x
 
@@ -335,6 +332,13 @@ def _fuse(trace):
                 assert isinstance(p, Proxy)
                 proxy_to_nvfuser_map[p] = nv
 
+        # TODO: refactor this class and the following dict
+        class nvOutput:
+            def __init__(self, position):
+                self.position = position
+
+        proxy_to_nvOutput_map = {}
+
         #
         nvfuser_output_ctr = 0
         has_proxy_output = False
@@ -345,11 +349,18 @@ def _fuse(trace):
                 #   will not have been produced by an nvFuser operator if
                 #   it's also an input.
                 if o in proxy_to_nvfuser_map:
-                    fd.add_output(proxy_to_nvfuser_map[o])
-                    outputs.append(nvfuser_output_ctr)
-                    nvfuser_output_ctr += 1
-                else:
-                    outputs.append(o)
+                    if o not in proxy_to_nvOutput_map:
+                        # Ensures that the output is only added as a fusion output once
+                        fd.add_output(proxy_to_nvfuser_map[o])
+                        nvOut = nvOutput(nvfuser_output_ctr)
+                        proxy_to_nvOutput_map[o] = nvOut
+                        outputs.append(nvOut)
+                        nvfuser_output_ctr += 1
+                    else:
+                        outputs.append(proxy_to_nvOutput_map[o])
+                    continue
+
+            outputs.append(o)
 
     #
     # Builds the callable
@@ -402,8 +413,10 @@ def _fuse(trace):
     for o in outputs:
         if isinstance(o, Proxy):
             output_strs.append(o.name)
+        elif isinstance(o, nvOutput):
+            output_strs.append(f"result[{o.position}]")
         else:
-            output_strs.append(f"result[{o}]")
+            output_strs.append((str(o)))
     output_str = ", ".join(output_strs)
 
     cstr += f"\n{tab}# Assembles output"

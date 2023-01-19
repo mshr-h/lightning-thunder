@@ -409,3 +409,33 @@ def test_full(executor, device, dtype):
     torch_result = torch.full((1, 2, 3), 1.0, device=device, dtype=tdtype)
 
     assert_close(thunder_result, torch_result)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_crazy_collections_in_and_out(executor, device, dtype):
+    def foo(a, b, c):
+        d = {
+            5: 2,
+            7: 9,
+            "a": [a, b],
+            "b": {"a": a, "b": b, "c": [b, (a, c)]},
+            "x": (a, [a, a, a], (b, (a, a, c, b))),
+        }
+
+        e = a + b
+        f = b + c
+        g = e + f
+
+        return a, (g,), g, g, b, e, (f, d, c, (d,), c, {"a": a, 5: f}), (5,), (), (a,), [5, a, (b,), (), {}], {}
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+    c = make_tensor((2, 2), device=device, dtype=tdtype)
+
+    thunder_result = traced_foo(a, b, c)
+    torch_result = foo(a, b, c)
+
+    assert_close(thunder_result, torch_result)
