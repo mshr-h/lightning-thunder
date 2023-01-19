@@ -146,21 +146,8 @@ def make_prim(id, name, meta):
     ops_to_pretty_name_map[id] = name
 
     # TODO: update the signature
-    # TODO: improve kwarg handling
-    def _fn(*_args, **kwargs):
+    def _fn(*args, **kwargs):
         t = get_trace()
-
-        # Identifies number constants in args
-        # TODO: review other types of constants
-        def _extract_constant(x):
-            if isinstance(x, Number) and not isinstance(x, NumberProxy):
-                p = proxy(x)
-                t.add_constant(p)
-                return p
-            return x
-
-        args = tuple(map(_extract_constant, _args))
-
         result = meta(*args, **kwargs)
         sym = Prim(id, name, result, *args, **kwargs)
         t.add_symbol(sym)
@@ -179,11 +166,11 @@ def _convert_element_type_meta(a, dtype):
     if isinstance(a, Number):
         utils.check(utils.is_numbertype(dtype), lambda: f"Trying to convert a number to non-numbertype object {dtype}!")
         result = dtype(utils.get_numberlike_value(a))
-        proxy_name = get_trace().make_proxy_name(type(result))
+        proxy_name = get_trace().make_proxy_name()
         return proxy(result, name=proxy_name)
 
     # a is a Tensor
-    proxy_name = get_trace().make_proxy_name(TensorProxy)
+    proxy_name = get_trace().make_proxy_name()
     return TensorProxy(name=proxy_name, tensor=a, dtype=dtype)
 
 
@@ -197,7 +184,7 @@ convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
 def _full_meta(shape, fill_value, *, dtype, device):
-    proxy_name = get_trace().make_proxy_name(TensorProxy)
+    proxy_name = get_trace().make_proxy_name()
     return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
 
 

@@ -7,51 +7,20 @@ import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 from thunder.tests import executor_type
 
-# TODO: sample across executor_types and devices
-device = "cuda" if torch.has_cuda else "cpu"
+from .framework import executors
 
 
-# TODO: add device/dtype instantiation
-# TODO: use OpInfo samples
-def test_add():
-    def foo(a, b):
-        return tlang.add(a, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor_type)
-
-    a = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
-    b = torch.testing.make_tensor((2, 2), device=device, dtype=torch.float32)
-
-    thunder_result = traced_foo(a, b)
-    torch_result = a + b
-
-    torch.testing.assert_close(thunder_result, torch_result)
-
-
-def test_add_broadcast():
-    def foo(a, b):
-        return tlang.add(a, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor_type)
-
-    a = torch.testing.make_tensor((2, 1), device=device, dtype=torch.float32)
-    b = torch.testing.make_tensor((1, 2), device=device, dtype=torch.float32)
-
-    thunder_result = traced_foo(a, b)
-    torch_result = a + b
-
-    torch.testing.assert_close(thunder_result, torch_result)
-
-
-def test_add_integer_constant():
+@executors(dtypes=(thunder.float32,))
+def test_add_integer_constant(executor, device, dtype):
     def foo(a, b):
         c = tlang.add(a, 2)
         return tlang.add(c, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor_type)
+    traced_foo = thunder.make_traced(foo, executor=executor)
 
-    a = torch.testing.make_tensor((2, 1), device=device, dtype=torch.float32)
-    b = torch.testing.make_tensor((1, 2), device=device, dtype=torch.float32)
+    tdtype = ttorch.torch_dtype(dtype)
+    a = torch.testing.make_tensor((2, 1), device=device, dtype=tdtype)
+    b = torch.testing.make_tensor((1, 2), device=device, dtype=tdtype)
 
     thunder_result = traced_foo(a, b)
     torch_result = (a + 2) + b
@@ -59,13 +28,15 @@ def test_add_integer_constant():
     torch.testing.assert_close(thunder_result, torch_result)
 
 
-def test_add_integer_input():
+@executors(dtypes=(thunder.float32,))
+def test_add_integer_input(executor, device, dtype):
     def foo(a, b):
         return tlang.add(a, b)
 
-    traced_foo = thunder.make_traced(foo, executor=executor_type)
+    traced_foo = thunder.make_traced(foo, executor=executor)
 
-    a = make_tensor((2, 1), device=device, dtype=torch.float32)
+    tdtype = ttorch.torch_dtype(dtype)
+    a = make_tensor((2, 1), device=device, dtype=tdtype)
 
     thunder_result = traced_foo(a, 3)
     torch_result = a + 3

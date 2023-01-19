@@ -31,6 +31,17 @@ class Proxy:
     def __init__(self, name):
         self.name = name
 
+    # NOTE: hashing on name (or something like it) is important
+    #   The number proxies are subclasses of Python number types,
+    #   so they will inherit that __hash__ if another isn't defined.
+    #   The hash value for a Python number is its value, and Python
+    #   dicts don't distinguish the values 3 and 3.0. This means
+    #   that proxies with the same value, even with different types
+    #   would hash to the same key, preventing them from being
+    #   stored in a dict together.
+    def __hash__(self):
+        return self.name.__hash__()
+
 
 class NumberProxy(Proxy):
     def __init__(self, *, name, value, python_type):

@@ -96,6 +96,9 @@ def _get_executor(executor=None):
                 "Please make sure the `torch` package is installed and CUDA is available."
             )
 
+    if hasattr(executor, "get_executor_context"):
+        return executor.get_executor_context()
+
     raise ValueError(f"Trying to acquire an executor from unknown object {executor}!")
 
 
@@ -198,16 +201,11 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
         trace = get_trace()
         proxyargs, proxykwargs = _make_proxies(fn, trace, langctx, *args, **kwargs)
 
-        print(proxyargs)
-        print(proxykwargs)
-
         trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
 
         print(trace)
 
         acquisition_end = time.time_ns()
-
-        # print(trace)
 
         translation_start = time.time_ns()
         fusion = ex.fuse(trace)

@@ -127,8 +127,27 @@ def benchmark_executors():
     return executors
 
 
+# TODO: refactor with _instantiate_opinfo_test_template
+def _instantiate_executor_test_template(template, scope, *, executor, device, dtype):
+    # Ex. test_foo_CUDA_float32
+    test_name = "_".join((template.__name__, executor.name, device.upper(), str(dtype)))
+
+    def test():
+        # TODO: currently this passes the device type as a string, but actually a device or multiple devices
+        #   should be passed to the test
+        result = template(executor, device, dtype)
+        return result
+
+    # Mimics the instantiated test
+    # TODO: review this mimicry -- are there other attributes to mimic?
+    test.__name__ = test_name
+    test.__module__ = test.__module__
+
+    return test
+
+
 # TODO: add decorator support, support for test directives -- how would this control assert_close behavior?
-def _instantiate_test_template(template, scope, *, opinfo, executor, device, dtype):
+def _instantiate_opinfo_test_template(template, scope, *, opinfo, executor, device, dtype):
     """Instanties a test template for an operator."""
 
     # Ex. test_foo_CUDA_float32
@@ -203,7 +222,7 @@ class ops:
                     if not executor.supports_dtype(dtype):
                         continue
 
-                    test = _instantiate_test_template(
+                    test = _instantiate_opinfo_test_template(
                         test_template,
                         self.scope,
                         opinfo=opinfo,
@@ -213,6 +232,47 @@ class ops:
                     )
                     # Adds the instantiated test to the requested scope
                     self.scope[test.__name__] = test
+
+
+# TODO: don't pass the device type to the test, select an actual device
+class executors:
+
+    # TODO: support other kinds of dtype specifications
+    def __init__(self, *, executors=None, devicetypes=None, dtypes=None, scope=None):
+        self.executors = set(executors) if executors is not None else set(_all_executors())
+        self.devicetypes = set(devicetypes) if devicetypes is not None else set(_all_device_types())
+        self.dtypes = datatypes.resolve_dtypes(dtypes) if dtypes is not None else datatypes.all_dtypes
+
+        # Acquires the caller's global scope
+        if scope is None:
+            previous_frame = inspect.currentframe().f_back
+            scope = previous_frame.f_globals
+        self.scope = scope
+
+    # TODO: refactor with the ops class above
+    def __call__(self, test_template):
+        # NOTE: unlike a typical decorator, this __call__ does not return a function, because it may
+        #   (and typically does) instantiate multiple functions from the template it consumes
+        #   Since Python doesn't natively support one-to-many function decorators, the produced
+        #   functions are directly assigned to the requested scope (the caller's global scope by default)
+
+        for executor, devicetype in product(self.executors, self.devicetypes):
+            if not executor.supports_devicetype(devicetype):
+                continue
+
+            for dtype in self.dtypes:
+                if not executor.supports_dtype(dtype):
+                    continue
+
+                test = _instantiate_executor_test_template(
+                    test_template,
+                    self.scope,
+                    executor=executor,
+                    device=devicetype,
+                    dtype=dtype,
+                )
+                # Adds the instantiated test to the requested scope
+                self.scope[test.__name__] = test
 
 
 def run_snippet(snippet, opinfo, device_type, dtype, *args, **kwargs):

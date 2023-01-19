@@ -135,20 +135,20 @@ class Trace:
         self.kwargs = None
         self.outputs = None
 
-        self.constants = deque()
         self.symbols = deque()
 
         self.name_ctr = 0
         self.names = set()
 
     def __repr__(self):
-        constant_string = "\n".join(str(constant) for constant in self.constants)
         symbol_string = "\n".join(str(sym) for sym in self.symbols)
-        output_string = "\n".join(str(out) for out in self.outputs)
         return (
-            f"[Trace, \Args:\n{self.args}\n"
-            f"Kwargs:\n{self.kwargs}\nConstants:\n{constant_string}\n"
-            f"Symbols:\n{symbol_string}\nOutputs:\n{output_string}]"
+            f"[Trace"
+            f"\nArgs:\n{self.args}"
+            f"\nKwargs:\n{self.kwargs}"
+            f"\nSymbols:\n{symbol_string}"
+            f"\nOutputs:\n{self.outputs}"
+            f"\n]"
         )
 
     def add_args(self, args):
@@ -160,19 +160,12 @@ class Trace:
     def add_outputs(self, outputs):
         self.outputs = outputs
 
-    # TODO: review constants, particularly Python lists
-    def add_constant(self, constant):
-        self.constants.append(constant)
-        return constant
-
     def add_symbol(self, sym):
         self.symbols.append(sym)
         return sym
 
     def _make_proxy_name(self, generated_name_counter, names):
         chars = tuple(string.ascii_uppercase)
-
-        type_str = None
 
         def _gen_name(ctr):
             s = ""
@@ -189,9 +182,6 @@ class Trace:
             ctr += 1
             if name not in names:
                 break
-
-        # Adds type string
-        name = f"{type_str}{name}"
 
         names.add(name)
         return name, ctr, names
