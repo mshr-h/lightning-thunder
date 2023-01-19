@@ -2,9 +2,6 @@ from torch.testing import assert_close
 
 import thunder
 
-# TODO: sample across executor_types and devices
-from thunder.tests import executor_type, supported_device_types
-
 from .framework import ops, run_snippet
 from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 
@@ -12,7 +9,7 @@ from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 
 
 # Snippets run a single test using a single sample
-# TODO: should snippets be able to access the original opinfo? -- No
+# TODO: should snippets be able to access the original opinfo? -- No?
 def snippet_torch_consistency(op, torch_op, sample):
     thunder_result = op(*sample.args, **sample.kwargs)
     torch_result = torch_op(*sample.args, **sample.kwargs)

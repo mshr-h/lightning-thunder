@@ -20,7 +20,7 @@ unconditional_jump_names = {"JUMP_ABSOLUTE", "JUMP_FORWARD", "JUMP_BACKWARD", "J
 
 
 def acquire_method(method, module=None, mro_klass=None, verbose=False):
-    assert sys.version_info >= (3, 10) and sys.version_info < (3, 11)
+    assert sys.version_info >= (3, 9) and sys.version_info < (3, 11)
     if verbose:
         print(inspect.getsource(method))
     sig = inspect.signature(method)

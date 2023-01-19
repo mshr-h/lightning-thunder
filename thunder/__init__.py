@@ -203,7 +203,7 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
 
         trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
 
-        print(trace)
+        # print(trace)
 
         acquisition_end = time.time_ns()
 

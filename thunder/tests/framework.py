@@ -11,8 +11,14 @@ from thunder.core.trace import set_executor_context, reset_executor_context
 
 __all__ = [
     "available_device_types",
+    "executors",
     "ops",
+    "NOTHING",
 ]
+
+# A marker for actually wanting NOTHING instead of specifying nothing
+class NOTHING(object):
+    pass
 
 
 # TODO: Add device type functionality to an object in this list
@@ -130,6 +136,7 @@ def benchmark_executors():
 # TODO: refactor with _instantiate_opinfo_test_template
 def _instantiate_executor_test_template(template, scope, *, executor, device, dtype):
     # Ex. test_foo_CUDA_float32
+    # TODO: fix test name when dtype is None
     test_name = "_".join((template.__name__, executor.name, device.upper(), str(dtype)))
 
     def test():
@@ -241,7 +248,11 @@ class executors:
     def __init__(self, *, executors=None, devicetypes=None, dtypes=None, scope=None):
         self.executors = set(executors) if executors is not None else set(_all_executors())
         self.devicetypes = set(devicetypes) if devicetypes is not None else set(_all_device_types())
-        self.dtypes = datatypes.resolve_dtypes(dtypes) if dtypes is not None else datatypes.all_dtypes
+
+        if dtypes == NOTHING:
+            self.dtypes = (None,)
+        else:
+            self.dtypes = datatypes.resolve_dtypes(dtypes) if dtypes is not None else datatypes.all_dtypes
 
         # Acquires the caller's global scope
         if scope is None:
@@ -261,7 +272,7 @@ class executors:
                 continue
 
             for dtype in self.dtypes:
-                if not executor.supports_dtype(dtype):
+                if dtype is not None and not executor.supports_dtype(dtype):
                     continue
 
                 test = _instantiate_executor_test_template(

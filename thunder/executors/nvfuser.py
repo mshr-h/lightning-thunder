@@ -417,7 +417,7 @@ def _fuse(trace):
         "output_structure": output_structure,
     }
 
-    print(cstr)
+    # print(cstr)
 
     code = compile(cstr, "nvfuser.gen", mode="exec")
     exec(code, ctx)
