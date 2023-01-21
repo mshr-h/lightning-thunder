@@ -59,6 +59,7 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
         pass
 
 
+# TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
 @executors(dtypes=NOTHING)
 def test_integer_return(executor, device, _):
     def foo(a, b):
@@ -179,6 +180,8 @@ def test_int_to_float_type_promotion(executor, device, _):
 
 
 # TODO: put this in test_tensor_creation.py
+# TODO: specify multiple specific devices (today the test suite just passes a devicetype)
+# TODO: add test for full (), which will cause a segfault
 @executors(dtypes=(thunder.float32,))
 def test_full(executor, device, dtype):
     traced_full = thunder.make_traced(tlang.full, executor=executor)

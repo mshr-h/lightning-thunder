@@ -161,8 +161,12 @@ def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *a
 
 # NOTE: nvFuser's full prim requires shape to be a sequence of Python numbers, the fill value must
 #   be a nvScalar (or nvConstant?), and it accepts no device argument
+# NOTE: the full prim has a bug where it will segfault when shape is an empty sequence
 # TODO: add an assertion on device
 def _full_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, shape, fill_value, dtype, device):
+    # TODO: NVIDIA: FIXME!
+    assert len(shape) > 0
+
     def _realize_number(x):
         if isinstance(x, nvNumber):
             for p, nv in proxy_to_nvfuser_map.items():
@@ -403,8 +407,9 @@ def _fuse(trace):
 
         # TODO: refactor this class and the following dict
         class nvOutput:
-            def __init__(self, position):
+            def __init__(self, position, *, is_number=False):
                 self.position = position
+                self.is_number = is_number
 
         proxy_to_nvOutput_map = {}
 
@@ -420,11 +425,18 @@ def _fuse(trace):
                 if o in proxy_to_nvfuser_map:
                     if o not in proxy_to_nvOutput_map:
                         # Ensures that the output is only added as a fusion output once
-                        # if isinstance(o, NumberProxy):
-                        #     fd.ops.
+                        # NOTE: nvFuser doesn't support scalar outputs, so this
+                        #   wraps them in tensors (they are unwrapped later)
+                        is_number = False
+                        if isinstance(o, NumberProxy):
+                            is_number = True
+                            dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[o.python_type]
+                            tensor_out = fd.ops.full((1,), proxy_to_nvfuser_map[o], dtype)
+                            fd.add_output(tensor_out)
+                        else:
+                            fd.add_output(proxy_to_nvfuser_map[o])
 
-                        fd.add_output(proxy_to_nvfuser_map[o])
-                        nvOut = nvOutput(nvfuser_output_ctr)
+                        nvOut = nvOutput(nvfuser_output_ctr, is_number=is_number)
                         proxy_to_nvOutput_map[o] = nvOut
                         outputs.append(nvOut)
                         nvfuser_output_ctr += 1
@@ -486,7 +498,12 @@ def _fuse(trace):
         if isinstance(o, Proxy):
             output_strs.append(o.name)
         elif isinstance(o, nvOutput):
-            output_strs.append(f"result[{o.position}]")
+            if o.is_number:
+                # Unwraps nvFuser's tensor outputs into scalars
+                s = f"result[{o.position}].cpu().item()"
+                output_strs.append(s)
+            else:
+                output_strs.append(f"result[{o.position}]")
         else:
             output_strs.append((str(o)))
     output_str = ", ".join(output_strs)
