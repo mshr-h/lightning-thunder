@@ -8,92 +8,6 @@ import thunder.langs.torch as ttorch
 
 from .framework import executors, NOTHING
 
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_add_integer_constant(executor, device, dtype):
-    def foo(a, b):
-        c = tlang.add(a, 2)
-        return tlang.add(c, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = torch.testing.make_tensor((2, 1), device=device, dtype=tdtype)
-    b = torch.testing.make_tensor((1, 2), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a, b)
-    torch_result = (a + 2) + b
-
-    torch.testing.assert_close(thunder_result, torch_result)
-
-
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_add_integer_input(executor, device, dtype):
-    def foo(a, b):
-        return tlang.add(a, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = make_tensor((2, 1), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a, 3)
-    torch_result = a + 3
-
-    assert_close(thunder_result, torch_result)
-
-
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_add_integer_inputs(executor, device, dtype):
-    def foo(a, b, c):
-        d = tlang.add(a, b)
-        return tlang.add(c, d)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = make_tensor((3, 2), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(3, 4, a)
-    torch_result = 3 + 4 + a
-    assert_close(thunder_result, torch_result)
-
-
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_add_integer_constants(executor, device, dtype):
-    def foo(a):
-        b = tlang.add(2, 3)
-        return tlang.add(a, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = make_tensor((2, 4), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a)
-    torch_result = 5 + a
-    assert_close(thunder_result, torch_result)
-
-
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_add_floats(executor, device, dtype):
-    def foo(a, b):
-        c = tlang.add(2.0, a)
-        return tlang.add(b, c)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = make_tensor((2, 4), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(0.7, a)
-    torch_result = 2.0 + 0.7 + a
-    assert_close(thunder_result, torch_result)
-
 
 @executors(dtypes=(thunder.float32,))
 def test_integer_isinstance_mimicry(executor, device, dtype):
@@ -156,64 +70,10 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
 #     python_result = 3 + 4
 #     assert_close(thunder_result, python_result)
 
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_abs_integer(executor, device, dtype):
-    def foo(a, b):
-        a_abs = tlang.abs(a)
-        return tlang.add(a_abs, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = -3
-    b = make_tensor((1, 8), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a, b)
-    torch_result = 3 + b
-    assert_close(thunder_result, torch_result)
-
-
-# TODO: move to test_elementwise by adding more numeric sample inputs
-@executors(dtypes=(thunder.float32,))
-def test_abs_float(executor, device, dtype):
-    def foo(a, b):
-        a_abs = tlang.abs(a)
-        return tlang.add(a_abs, b)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = -2.7
-    b = make_tensor((1, 8), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a, b)
-    torch_result = abs(a) + b
-    assert_close(thunder_result, torch_result)
-
-
-# TODO: test operator variants as part of opinfo-based tests
-@executors(dtypes=(thunder.float32,))
-def test_core_tensor_methods(executor, device, dtype):
-    def foo(a, b, c, d):
-        return a + b - c + (d - a)
-
-    traced_foo = thunder.make_traced(foo, executor=executor)
-
-    tdtype = ttorch.torch_dtype(dtype)
-    a = torch.testing.make_tensor((4, 4), device=device, dtype=tdtype)
-    b = torch.testing.make_tensor((2, 1, 4), device=device, dtype=tdtype)
-    c = torch.testing.make_tensor((4, 1), device=device, dtype=tdtype)
-    d = torch.testing.make_tensor((1, 1, 4), device=device, dtype=tdtype)
-
-    thunder_result = traced_foo(a, b, c, d)
-    torch_result = a + b - c + (d - a)
-    assert_close(thunder_result, torch_result)
-
 
 # TODO: this test just spot-checks type promotion -- it could probably be better
 @executors(dtypes=NOTHING)
-def test_type_promotion(executor, device, _):
+def test_type_promotion_tensors(executor, device, _):
     def foo(a, b):
         return a + b
 
@@ -264,6 +124,30 @@ def test_type_promotion(executor, device, _):
 
     # float x int x int64 -- float32 result dtype
     result = traced_bar(2.1, -1, i64)
+    assert result.dtype is torch.float32
+
+
+@executors(dtypes=NOTHING)
+def test_type_promotion_numbers_and_tensors(executor, device, _):
+    def foo(a, b, c):
+        return a + b + c
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+
+    f16 = make_tensor((2, 2), device=device, dtype=torch.float16)
+    f32 = make_tensor((2, 2), device=device, dtype=torch.float32)
+    i64 = make_tensor((2, 2), device=device, dtype=torch.int64)
+
+    result = traced_foo(5, f32, 2)
+    assert result.dtype is torch.float32
+
+    result = traced_foo(f32, 1, f32)
+    assert result.dtype is torch.float32
+
+    result = traced_foo(i64, 3.0, f16)
+    assert result.dtype is torch.float16
+
+    result = traced_foo(i64, 3.0, i64)
     assert result.dtype is torch.float32
 
 

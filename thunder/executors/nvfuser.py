@@ -54,6 +54,15 @@ _thunder_dtype_to_nvfuser_dtype_map = {
     dtypes.int64: DataType.Int,
     dtypes.int32: DataType.Int32,
     dtypes.bool8: DataType.Bool,
+    dtypes.complex128_: DataType.ComplexDouble,
+    dtypes.complex64_: DataType.ComplexFloat,
+    dtypes.float64_: DataType.Double,
+    dtypes.float32_: DataType.Float,
+    dtypes.float16_: DataType.Half,
+    dtypes.bfloat16_: DataType.BFloat16,
+    dtypes.int64_: DataType.Int,
+    dtypes.int32_: DataType.Int32,
+    dtypes.bool8_: DataType.Bool,
 }
 
 _thunder_dtype_to_nvfuser_dtype_scalar_map = {
