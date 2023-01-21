@@ -32,16 +32,15 @@ def test_torch_var(executor, device, dtype):
     torch_result = torch.var(a, [1])
     assert_close(thunder_result, torch_result)
 
-    # TODO: review with NVIDIA -- how should correction be passed?
     # Specifying the correction
-    # thunder_result = traced_foo(a, [1], correction=2)
-    # torch_result = torch.var(a, [1], correction=2)
-    # assert_close(thunder_result, torch_result)
+    thunder_result = traced_foo(a, [1], correction=2)
+    torch_result = torch.var(a, [1], correction=2)
+    assert_close(thunder_result, torch_result)
 
-    # # Specifying keepdim
-    # thunder_result = traced_foo(a, [1], keepdim=True, correction=2)
-    # torch_result = torch.var(a, [1], keepdim=True, correction=2)
-    # assert_close(thunder_result, torch_result)
+    # Specifying keepdim
+    thunder_result = traced_foo(a, [1], keepdim=True, correction=2)
+    torch_result = torch.var(a, [1], keepdim=True, correction=2)
+    assert_close(thunder_result, torch_result)
 
     # Tests passing arguments as constants
     def foo(a):
