@@ -225,13 +225,11 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
             reset_executor_context(executor_token)
 
         if _info:
-            meta.update(
-                {
-                    "acquisition_time": acquisition_end - acquisition_start,
-                    "invocation_time": invocation_end - invocation_start,
-                    "translation_time": translation_end - translation_start,
-                }
-            )
+            meta = {
+                "acquisition_time": acquisition_end - acquisition_start,
+                "invocation_time": invocation_end - invocation_start,
+                "translation_time": translation_end - translation_start,
+            }
             return result, meta
 
         return result

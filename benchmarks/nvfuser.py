@@ -483,7 +483,7 @@ def simple_kwarg_conditional(iters, make_arg):
     thunder_fn = make_traced(foo)
     dynamo_fn = torch.compile(foo)
 
-    name = f"simple_number_conditional"
+    name = f"simple_kwarg_conditional"
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="dynamo", other_fn=dynamo_fn)
 
 
@@ -495,7 +495,7 @@ benchmarks = {
     "add_hundred_64x64": add_hundred_64x64,
     "add_stack100_64x64": add_stack100_64x64,
     "add_stack1000_64x64": add_stack1000_64x64,
-    # "add_many_64x64": add_many_64x64, # Requires supporting *args
+    "add_many_64x64": add_many_64x64,  # Requires supporting *args
     "add_1024x1024": add_1024x1024,
     "add_4096x4": add_4096x4,
     "add_4x4096": add_4x4096,
@@ -503,7 +503,7 @@ benchmarks = {
     # Elementwise Unary benchmarks
     "abs_64x64": abs_64x64,
     # Reduction benchmarks
-    # "var_1024x1024_all_reduce": var_1024x1024_all_reduce, # Requires supporting sequence proxies
+    "var_1024x1024_all_reduce": var_1024x1024_all_reduce,  # Requires supporting sequence proxies
     # Control flow benchmarks
     "simple_number_conditional": simple_number_conditional,
     "simple_kwarg_conditional": simple_kwarg_conditional,
