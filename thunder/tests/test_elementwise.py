@@ -38,4 +38,4 @@ def test_core_vs_torch_consistency(op, device, dtype, executor):
 
 
 # TODO: test that the operator variant works properly
-# TODO: add error inputs tests
+# TODO: add error inputs tests (like test_elementwise_binary_prim_shape_mismatch and test_elementwise_binary_prim_dtype_mismatch)

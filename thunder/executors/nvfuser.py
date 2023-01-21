@@ -131,7 +131,7 @@ def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kw
 
 # NOTE: nvFuser's broadcast_in_dim primitive does not accept nvScalars as arguments,
 #   so this converts nvScalars to Python numbers
-def _broadcast_in_dim_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
     # Converts scalars to actual values
     flat_args, arg_structure = tree_flatten(args)
     flat_kwargs, kwarg_structure = tree_flatten(kwargs)
@@ -217,7 +217,11 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.MUL: _elementwise_preprocessor,
     prims.Ops.SUB: _elementwise_preprocessor,
     # Shape prims
-    prims.Ops.BROADCAST_IN_DIM: _broadcast_in_dim_preprocessor,
+    prims.Ops.BROADCAST_IN_DIM: _nvScalars_to_Numbers_preprocessor,
+    # Reduction prims
+    prims.Ops.SUM: _nvScalars_to_Numbers_preprocessor,
+    prims.Ops.VAR: _nvScalars_to_Numbers_preprocessor,
+    nvOps.VAR_MEAN: _nvScalars_to_Numbers_preprocessor,
 }
 
 
@@ -346,7 +350,7 @@ def _fuse(trace):
             if nv_pre is not None:
                 # TODO: should preprocessing functions be called with the symbol's args and kwargs
                 #   or the nv args and kwargs or both?
-                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, *nv_kwargs)
+                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, **nv_kwargs)
             nv_op = _get_nvfuser_op(fd, sym.op)
             nv_result = nv_op(*nv_args, **nv_kwargs)
 
