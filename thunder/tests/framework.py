@@ -1,6 +1,7 @@
 import inspect
 import os
 import sys
+import pytest
 
 from itertools import product
 from functools import wraps
@@ -19,6 +20,18 @@ __all__ = [
 # A marker for actually wanting NOTHING instead of specifying nothing
 class NOTHING(object):
     pass
+
+
+def _jax_available():
+    try:
+        import jax
+    except Exception:
+        return False
+
+    return True
+
+
+JAX_AVAILABLE = _jax_available()
 
 
 # TODO: Add device type functionality to an object in this list
@@ -179,6 +192,7 @@ def _instantiate_opinfo_test_template(template, scope, *, opinfo, executor, devi
 
 
 # TODO: don't pass the device type to the test, select an actual device
+# TODO: example uses, note this must be the LAST decorator applied
 class ops:
 
     # TODO: support other kinds of dtype specifications
@@ -242,6 +256,7 @@ class ops:
 
 
 # TODO: don't pass the device type to the test, select an actual device
+# TODO: example uses, note this must be the LAST decorator applied
 class executors:
 
     # TODO: support other kinds of dtype specifications
@@ -300,3 +315,14 @@ def run_snippet(snippet, opinfo, device_type, dtype, *args, **kwargs):
         return e, exc_info, snippet, opinfo, device_type, dtype, args, kwargs
 
     return None
+
+
+def requiresJAX(fn):
+    @wraps(fn)
+    def _fn(*args, **kwargs):
+        if not JAX_AVAILABLE:
+            pytest.skip("Requires JAX")
+
+        return fn(*args, **kwargs)
+
+    return _fn

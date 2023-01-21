@@ -107,7 +107,11 @@ def _convert_element_type_translation(fd):
     return _fn
 
 
+# TODO: consider refactoring the preprocessors with a common pattern to flatten/unflatten?
+
 # TODO: combine constants
+# NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
+#   this converts Python numbers to nvConstants
 def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
     # Adds scalars as constants
     flat_args, arg_structure = tree_flatten(args)
@@ -121,6 +125,27 @@ def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kw
 
     flat_args = tuple(_add_constant_number(x) for x in flat_args)
     flat_kwargs = tuple(_add_constant_number(x) for x in flat_kwargs)
+
+    return tree_unflatten(flat_args, arg_structure), tree_unflatten(flat_kwargs, kwarg_structure)
+
+
+# NOTE: nvFuser's broadcast_in_dim primitive does not accept nvScalars as arguments,
+#   so this converts nvScalars to Python numbers
+def _broadcast_in_dim_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+    # Converts scalars to actual values
+    flat_args, arg_structure = tree_flatten(args)
+    flat_kwargs, kwarg_structure = tree_flatten(kwargs)
+
+    def _realize_numbers(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    flat_args = tuple(_realize_numbers(x) for x in flat_args)
+    flat_kwargs = tuple(_realize_numbers(x) for x in flat_kwargs)
 
     return tree_unflatten(flat_args, arg_structure), tree_unflatten(flat_kwargs, kwarg_structure)
 
@@ -191,6 +216,8 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.DIV: _elementwise_preprocessor,
     prims.Ops.MUL: _elementwise_preprocessor,
     prims.Ops.SUB: _elementwise_preprocessor,
+    # Shape prims
+    prims.Ops.BROADCAST_IN_DIM: _broadcast_in_dim_preprocessor,
 }
 
 
@@ -317,7 +344,9 @@ def _fuse(trace):
             nv_kwargs = tree_map(__get_nv, sym.kwargs)
             nv_pre = ops_to_nvfuser_preprocessors_map.get(sym.op, None)
             if nv_pre is not None:
-                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, **nv_kwargs)
+                # TODO: should preprocessing functions be called with the symbol's args and kwargs
+                #   or the nv args and kwargs or both?
+                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, *nv_kwargs)
             nv_op = _get_nvfuser_op(fd, sym.op)
             nv_result = nv_op(*nv_args, **nv_kwargs)
 
