@@ -461,7 +461,7 @@ def _fuse(trace):
         return fn
 
     tab = "  "
-    cstr = f"def fusion(args, kwargs):"
+    cstr = f"def fusion(*args, **kwargs):"
 
     # Acquires inputs
     flat_positional_inputs, _ = tree_flatten(trace.args)

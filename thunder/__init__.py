@@ -173,7 +173,9 @@ def _construct_trace(fn, trace, proxyargs, proxykwargs):
     return trace
 
 
-def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch, _info=False) -> Callable:
+def make_traced(
+    fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch, _info=False, _return_fusion=False
+) -> Callable:
     """Converts a callable in a callable that will be traced and then executed.
 
     Example usage:
@@ -215,7 +217,7 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
         translation_end = time.time_ns()
 
         invocation_start = time.time_ns()
-        result = fusion(args, kwargs)
+        result = fusion(*args, **kwargs)
         invocation_end = time.time_ns()
 
         # Resets the tracing context
@@ -223,6 +225,9 @@ def make_traced(fn: Callable, executor: Optional[str] = None, language_ctx=langs
         reset_language_context(lang_token)
         if executor_token is not None:
             reset_executor_context(executor_token)
+
+        if _return_fusion:
+            result = (result, fusion)
 
         if _info:
             meta = {

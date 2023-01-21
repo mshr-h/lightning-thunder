@@ -289,3 +289,49 @@ def test_no_compute(executor, device, dtype):
     torch_result = foo(a, b)
 
     assert_close(thunder_result, torch_result)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_fusion_reuse(executor, device, dtype):
+    def foo(a, b, *, flag=False):
+        if flag:
+            return a + b
+        return a - b
+
+    traced_foo = thunder.make_traced(foo, executor=executor, _return_fusion=True)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+
+    args = (a,)
+    kwargs = {"b": b, "flag": True}
+
+    thunder_result, fusion = traced_foo(*args, **kwargs)
+    torch_result = foo(*args, **kwargs)
+    assert_close(thunder_result, torch_result)
+
+    fusion_result = fusion(*args, **kwargs)
+    assert_close(fusion_result, torch_result)
+
+    # Calls the fusion with new tensor data (but preserves the flag arg)
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+
+    args = (a,)
+    kwargs = {"b": b, "flag": True}
+
+    fusion_result = fusion(*args, **kwargs)
+    torch_result = foo(*args, **kwargs)
+    assert_close(fusion_result, torch_result)
+
+    # Calls the fusion with new tensor data, and verifies the flag arg is ignored
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+
+    args = (a,)
+    kwargs = {"b": b, "flag": False}
+
+    fusion_result = fusion(*args, **kwargs)
+    torch_result = foo(*args, b=b, flag=True)
+    assert_close(fusion_result, torch_result)
