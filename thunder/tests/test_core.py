@@ -59,16 +59,16 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
         pass
 
 
-# FIXME NVIDIA: this test will cause a segmentation fault!
-# def test_return_integer():
-#     def foo(a, b):
-#         return tlang.add(a, b)
+@executors(dtypes=NOTHING)
+def test_integer_return(executor, device, _):
+    def foo(a, b):
+        return tlang.add(a, b)
 
-#     traced_foo = thunder.make_traced(foo, executor=executor_type)
+    traced_foo = thunder.make_traced(foo, executor=executor)
 
-#     thunder_result = traced_foo(3, 4)
-#     python_result = 3 + 4
-#     assert_close(thunder_result, python_result)
+    thunder_result = traced_foo(3, 4)
+    python_result = 3 + 4
+    assert_close(thunder_result, python_result)
 
 
 # TODO: this test just spot-checks type promotion -- it could probably be better
@@ -184,11 +184,8 @@ def test_full(executor, device, dtype):
     traced_full = thunder.make_traced(tlang.full, executor=executor)
 
     tdtype = ttorch.torch_dtype(dtype)
-    try:
-        thunder_result = traced_full((1, 2, 3), 1.0, device=device, dtype=tdtype)
-    except Exception:
-        pytest.skip("Expected to fail until connected to nvFuser full")
 
+    thunder_result = traced_full((1, 2, 3), 1.0, device=device, dtype=tdtype)
     torch_result = torch.full((1, 2, 3), 1.0, device=device, dtype=tdtype)
 
     assert_close(thunder_result, torch_result)

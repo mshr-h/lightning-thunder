@@ -103,10 +103,10 @@ class TorchLangCtx(object):
         else:
             return proxies.proxy(x, name=name)
 
-    def thunder_dtype(torch_dtype):
+    def thunder_dtype(self, torch_dtype):
         return _torch_to_thunder_dtype_map[torch_dtype]
 
-    def torch_dtype(thunder_dtype):
+    def torch_dtype(self, thunder_dtype):
         return _thunder_to_torch_dtype_map[thunder_dtype]
 
     #

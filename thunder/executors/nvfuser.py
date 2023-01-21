@@ -159,6 +159,29 @@ def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *a
     return tree_unflatten(flat_args, arg_structure), tree_unflatten(flat_kwargs, kwarg_structure)
 
 
+# NOTE: nvFuser's full prim requires shape to be a sequence of Python numbers, the fill value must
+#   be a nvScalar (or nvConstant?), and it accepts no device argument
+# TODO: add an assertion on device
+def _full_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, shape, fill_value, dtype, device):
+    def _realize_number(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    def _number_to_constant(x):
+        if isinstance(x, Number) and not isinstance(x, NumberProxy):
+            nv = fd.define_constant(x)
+            return nv
+        return x
+
+    shape = tuple(_realize_number(s) for s in shape)
+
+    return (shape, _number_to_constant(fill_value), dtype), {}
+
+
 # Maps the Thunder primitives to their corresponding nvfuser operation names
 # TODO: map directly to the nvfuser operations, not their names
 # TODO: review the cast operation on tensors vs scalars
@@ -199,6 +222,8 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.SUM: "sum",
     prims.Ops.VAR: "var",
     nvOps.VAR_MEAN: "var_mean",
+    # Tensor creation prims
+    prims.Ops.FULL: "full",
 }
 
 ops_to_nvfuser_preprocessors_map = {
@@ -231,6 +256,8 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.SUM: _nvScalars_to_Numbers_preprocessor,
     prims.Ops.VAR: _nvScalars_to_Numbers_preprocessor,
     nvOps.VAR_MEAN: _nvScalars_to_Numbers_preprocessor,
+    # Tensor creation prims
+    prims.Ops.FULL: _full_preprocessor,
 }
 
 
@@ -393,6 +420,9 @@ def _fuse(trace):
                 if o in proxy_to_nvfuser_map:
                     if o not in proxy_to_nvOutput_map:
                         # Ensures that the output is only added as a fusion output once
+                        # if isinstance(o, NumberProxy):
+                        #     fd.ops.
+
                         fd.add_output(proxy_to_nvfuser_map[o])
                         nvOut = nvOutput(nvfuser_output_ctr)
                         proxy_to_nvOutput_map[o] = nvOut
