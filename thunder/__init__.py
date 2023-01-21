@@ -115,15 +115,15 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
     bound_args = sig.bind_partial(*args)
 
     def _convert(x):
-        if isinstance(arg, (int, float)) or isinstance(arg, langctx.tensor_cls):
+        if isinstance(x, (int, float, complex)) or isinstance(x, langctx.tensor_cls):
             # Proxies numbers and tensors
-            name = trace.make_proxy_name(type(arg))
-            p = langctx.proxy(arg, name=name)
+            name = trace.make_proxy_name()
+            p = langctx.proxy(x, name=name)
             return p
 
         if isinstance(x, langctx.dtype_cls):
             # Converts dtypes
-            thunder_dtype = langctx.thunder_dtype(arg)
+            thunder_dtype = langctx.thunder_dtype(x)
             return thunder_dtype
 
         return x
@@ -145,19 +145,22 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
             proxyargs.append(packed)
 
     proxykwargs = {}
-    for name, arg in kwargs.items():
-        if isinstance(arg, (int, float)) or isinstance(arg, langctx.tensor_cls):
+    for name, kwarg in kwargs.items():
+        if isinstance(kwarg, (int, float)) or isinstance(kwarg, langctx.tensor_cls):
             # NOTE: for numbers or tensors that are passed as keyword arguments,
             #   this just gives them the name of the argument
             #   Numbers or tensors in a collection (like a list or dict) are
             #   just given generic names (in the else-block, below)
-            p = langctx.proxy(arg, name=name)
+            p = langctx.proxy(kwarg, name=name)
             proxykwargs[name] = p
         else:
-            values, structure = tree_flatten(arg)
+            values, structure = tree_flatten(kwarg)
             converted_values = list((_convert(v) for v in values))
             packed = tree_unflatten(converted_values, structure)
             proxykwargs[name] = packed
+
+    # print(f"proxyargs={proxyargs}")
+    # print(f"proxykwargs={proxykwargs}")
 
     return proxyargs, proxykwargs
 

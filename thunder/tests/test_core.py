@@ -8,7 +8,7 @@ import thunder.langs.torch as ttorch
 
 from .framework import executors, NOTHING
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_add_integer_constant(executor, device, dtype):
     def foo(a, b):
@@ -26,7 +26,7 @@ def test_add_integer_constant(executor, device, dtype):
 
     torch.testing.assert_close(thunder_result, torch_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_add_integer_input(executor, device, dtype):
     def foo(a, b):
@@ -42,7 +42,7 @@ def test_add_integer_input(executor, device, dtype):
 
     assert_close(thunder_result, torch_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_add_integer_inputs(executor, device, dtype):
     def foo(a, b, c):
@@ -58,7 +58,7 @@ def test_add_integer_inputs(executor, device, dtype):
     torch_result = 3 + 4 + a
     assert_close(thunder_result, torch_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_add_integer_constants(executor, device, dtype):
     def foo(a):
@@ -74,7 +74,7 @@ def test_add_integer_constants(executor, device, dtype):
     torch_result = 5 + a
     assert_close(thunder_result, torch_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_add_floats(executor, device, dtype):
     def foo(a, b):
@@ -152,7 +152,7 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
 #     python_result = 3 + 4
 #     assert_close(thunder_result, python_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_abs_integer(executor, device, dtype):
     def foo(a, b):
@@ -169,7 +169,7 @@ def test_abs_integer(executor, device, dtype):
     torch_result = 3 + b
     assert_close(thunder_result, torch_result)
 
-
+# TODO: move to test_elementwise by adding more numeric sample inputs
 @executors(dtypes=(thunder.float32,))
 def test_abs_float(executor, device, dtype):
     def foo(a, b):
@@ -187,7 +187,7 @@ def test_abs_float(executor, device, dtype):
     assert_close(thunder_result, torch_result)
 
 
-# TODO: write these tests
+# TODO: write these tests in test_prims.py (by first creating test_prim.py)
 # def test_elementwise_binary_prim_shape_mismatch():
 #     pass
 
@@ -195,7 +195,7 @@ def test_abs_float(executor, device, dtype):
 # def test_elementwise_binary_prim_dtype_mismatch():
 #     pass
 
-
+# TODO: fix this test and put into test_reductions.py
 @executors(dtypes=(thunder.float32,))
 def test_torch_var(executor, device, dtype):
     # Tests passing all arguments as function inputs
@@ -240,7 +240,7 @@ def test_torch_var(executor, device, dtype):
     torch_result = torch.var(a, [0, 1], keepdim=True, correction=2)
     assert_close(thunder_result, torch_result)
 
-
+# TODO: put into test_reductions.py
 @executors(dtypes=(thunder.float32,))
 def test_torch_mean(executor, device, dtype):
     def foo(a, dim=None, keepdim=False, *, dtype=None):
@@ -261,7 +261,7 @@ def test_torch_mean(executor, device, dtype):
     torch_result = torch.mean(a, [1])
     assert_close(thunder_result, torch_result)
 
-
+# TODO: put into test_reductions.py
 @executors(dtypes=(thunder.float32,))
 def test_var_mean(executor, device, dtype):
     def foo(a, dim=None, unbiased=None, keepdim=False, *, correction=None):
@@ -294,7 +294,7 @@ def test_var_mean(executor, device, dtype):
     torch_result = torch.var_mean(a, [0, 1], keepdim=True, correction=2)
     assert_close(thunder_result, torch_result)
 
-
+# TODO: test operator variants as part of opinfo-based tests
 @executors(dtypes=(thunder.float32,))
 def test_core_tensor_methods(executor, device, dtype):
     def foo(a, b, c, d):
@@ -395,7 +395,7 @@ def test_int_to_float_type_promotion(executor, device, _):
     result = traced_foo(i64, f16)
     assert result.dtype is torch.float16
 
-
+# TODO: put this in test_tensor_creation.py
 @executors(dtypes=(thunder.float32,))
 def test_full(executor, device, dtype):
     traced_full = thunder.make_traced(tlang.full, executor=executor)
@@ -413,7 +413,7 @@ def test_full(executor, device, dtype):
 
 @executors(dtypes=(thunder.float32,))
 def test_crazy_collections_in_and_out(executor, device, dtype):
-    def foo(a, b, c):
+    def foo(a, b, c, *, ka, kb, kc):
         d = {
             5: 2,
             7: 9,
@@ -422,11 +422,14 @@ def test_crazy_collections_in_and_out(executor, device, dtype):
             "x": (a, [a, a, a], (b, (a, a, c, b))),
         }
 
-        e = a + b
-        f = b + c
+        e = a['a']['a'] + b[0]
+        f = c[1]['c'] + b[1]
         g = e + f
+        h = f + ka + kb
+        i = ka + ka  # NOTE: not returned (ignored computation)
+        j = kc[0] + kc[1]
 
-        return a, (g,), g, g, b, e, (f, d, c, (d,), c, {"a": a, 5: f}), (5,), (), (a,), [5, a, (b,), (), {}], {}
+        return a, (g,), (((j,),),), g, g, b, e, (f, d, c, (d,), c, {"a": a, 5: f, 'b': h}), (5,), (), (a,), [5, a, (b,), (), {}], {}
 
     traced_foo = thunder.make_traced(foo, executor=executor)
     tdtype = ttorch.torch_dtype(dtype)
@@ -435,7 +438,54 @@ def test_crazy_collections_in_and_out(executor, device, dtype):
     b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
     c = make_tensor((2, 2), device=device, dtype=tdtype)
 
-    thunder_result = traced_foo(a, b, c)
-    torch_result = foo(a, b, c)
+    args = ({'a': {'a': a}}, (b, c), (3, {'c': c}))
+    kwargs = {'ka': b, 'kb': 3., 'kc': (a, 2)}
+    thunder_result = traced_foo(*args, **kwargs)
+    torch_result = foo(*args, **kwargs)
+
+    assert_close(thunder_result, torch_result)
+
+@executors(dtypes=(thunder.float32,))
+def test_no_return(executor, device, dtype):
+    def foo(a, b):
+        c = a + b
+        pass
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+
+    thunder_result = traced_foo(a, b=b)
+    torch_result = foo(a, b)
+
+    assert_close(thunder_result, torch_result)
+
+@executors(dtypes=NOTHING)
+def test_no_input(executor, device, dtype):
+    def foo():
+        return 3, ()
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+
+    thunder_result = traced_foo()
+    torch_result = foo()
+
+    assert_close(thunder_result, torch_result)
+
+@executors(dtypes=(thunder.float32,))
+def test_no_compute(executor, device, dtype):
+    def foo(a, b):
+        return a, 3.
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+
+    thunder_result = traced_foo(a, b=b)
+    torch_result = foo(a, b)
 
     assert_close(thunder_result, torch_result)

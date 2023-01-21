@@ -38,3 +38,4 @@ def test_core_vs_torch_consistency(op, device, dtype, executor):
 
 
 # TODO: test that the operator variant works properly
+# TODO: add error inputs tests
