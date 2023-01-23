@@ -104,6 +104,7 @@ def _get_executor(executor=None):
 
 # TODO: consider how subclasses could be supported
 # TODO: consider how proxies are extensible (review JAX's proxy extension mechanism)
+# TODO: harvest arg and kwargn names upfront to avoid name collisions with proxies
 def _make_proxies(fn, trace, langctx, *args, **kwargs):
     """
     Proxying rules:
@@ -113,6 +114,7 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
 
     sig = inspect.signature(fn)
     bound_args = sig.bind_partial(*args)
+    varargs_name = inspect.getfullargspec(fn).varargs
 
     def _convert(x):
         if isinstance(x, (int, float, complex)) or isinstance(x, langctx.tensor_cls):
@@ -142,7 +144,12 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
             converted_values = list((_convert(v) for v in values))
 
             packed = tree_unflatten(converted_values, structure)
-            proxyargs.append(packed)
+
+            # Handles varargs
+            if name == varargs_name:
+                proxyargs.extend(packed)
+            else:
+                proxyargs.append(packed)
 
     proxykwargs = {}
     for name, kwarg in kwargs.items():
@@ -158,9 +165,6 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
             converted_values = list((_convert(v) for v in values))
             packed = tree_unflatten(converted_values, structure)
             proxykwargs[name] = packed
-
-    # print(f"proxyargs={proxyargs}")
-    # print(f"proxykwargs={proxykwargs}")
 
     return proxyargs, proxykwargs
 
@@ -207,8 +211,6 @@ def make_traced(
         proxyargs, proxykwargs = _make_proxies(fn, trace, langctx, *args, **kwargs)
 
         trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
-
-        # print(trace)
 
         acquisition_end = time.time_ns()
 

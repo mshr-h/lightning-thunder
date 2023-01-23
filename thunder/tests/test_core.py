@@ -1,4 +1,7 @@
 import pytest
+import operator
+from functools import reduce
+
 import torch
 from torch.testing import assert_close, make_tensor
 
@@ -239,6 +242,69 @@ def test_crazy_collections_in_and_out(executor, device, dtype):
     kwargs = {"ka": b, "kb": 3.0, "kc": (a, 2)}
     thunder_result = traced_foo(*args, **kwargs)
     torch_result = foo(*args, **kwargs)
+
+    assert_close(thunder_result, torch_result)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_varargs_and_kwargs(executor, device, dtype):
+    def foo(a, b, *posargs, e, **kwargs):
+        accum = a
+        for x in posargs:
+            accum = a + x
+
+        d = b + e + kwargs["f"]
+
+        return accum, d, kwargs["g"]
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2, 2, 2), device=device, dtype=tdtype)
+    c = make_tensor((2, 2), device=device, dtype=tdtype)
+    d = make_tensor((2,), device=device, dtype=tdtype)
+    e = make_tensor((2,), device=device, dtype=tdtype)
+    f = make_tensor((2,), device=device, dtype=tdtype)
+    g = make_tensor((2,), device=device, dtype=tdtype)
+
+    thunder_result = traced_foo(a, b, c, d, e=e, f=f, g=g)
+    torch_result = foo(a, b, c, d, e=e, f=f, g=g)
+
+    assert_close(thunder_result, torch_result)
+
+
+# TODO: write these tests
+@executors(dtypes=(thunder.float32,))
+def test_varargs(executor, device, dtype):
+    def foo(*args):
+        return reduce(operator.add, args)
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    packed = (a, a, a, a, a)
+
+    thunder_result = traced_foo(*packed)
+    torch_result = foo(*packed)
+
+    assert_close(thunder_result, torch_result)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_kwargs(executor, device, dtype):
+    def foo(**kwargs):
+        return kwargs["a"] + kwargs["b"]
+
+    traced_foo = thunder.make_traced(foo, executor=executor)
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2,), device=device, dtype=tdtype)
+    b = make_tensor((2,), device=device, dtype=tdtype)
+
+    thunder_result = traced_foo(a=a, b=b)
+    torch_result = foo(a=a, b=b)
 
     assert_close(thunder_result, torch_result)
 

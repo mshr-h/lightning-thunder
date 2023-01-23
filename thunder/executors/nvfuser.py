@@ -19,7 +19,7 @@ nvTensor = torch._C._nvfuser.Tensor
 nvNumber = torch._C._nvfuser.Scalar
 
 __all__ = [
-    "nvfuser",
+    "nvFuserCtx",
 ]
 
 
@@ -455,7 +455,7 @@ def _fuse(trace):
         # TODO: maybe there's something better to do here than copy?
         my_outputs = copy.copy(trace.outputs)
 
-        def fn(args, kwargs):
+        def fn(*args, **kwargs):
             return my_outputs
 
         return fn
@@ -515,11 +515,9 @@ def _fuse(trace):
     ctx = {
         "tree_flatten": tree_flatten,
         "tree_unflatten": tree_unflatten,
-        "_fusion": fs.execute,
         "output_structure": output_structure,
+        "_fusion": fs.execute,
     }
-
-    # print(cstr)
 
     code = compile(cstr, "nvfuser.gen", mode="exec")
     exec(code, ctx)

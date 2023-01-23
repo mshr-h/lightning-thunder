@@ -88,10 +88,10 @@ def test_core_tensor_methods(executor, device, dtype):
     traced_foo = thunder.make_traced(foo, executor=executor)
 
     tdtype = ttorch.torch_dtype(dtype)
-    a = torch.testing.make_tensor((4, 4), device=device, dtype=tdtype)
-    b = torch.testing.make_tensor((2, 1, 4), device=device, dtype=tdtype)
-    c = torch.testing.make_tensor((4, 1), device=device, dtype=tdtype)
-    d = torch.testing.make_tensor((1, 1, 4), device=device, dtype=tdtype)
+    a = make_tensor((4, 4), device=device, dtype=tdtype)
+    b = make_tensor((2, 1, 4), device=device, dtype=tdtype)
+    c = make_tensor((4, 1), device=device, dtype=tdtype)
+    d = make_tensor((1, 1, 4), device=device, dtype=tdtype)
 
     thunder_result = traced_foo(a, b, c, d)
     torch_result = a + b - c + (d - a)
@@ -107,13 +107,13 @@ def test_add_integer_constant(executor, device, dtype):
     traced_foo = thunder.make_traced(foo, executor=executor)
 
     tdtype = ttorch.torch_dtype(dtype)
-    a = torch.testing.make_tensor((2, 1), device=device, dtype=tdtype)
-    b = torch.testing.make_tensor((1, 2), device=device, dtype=tdtype)
+    a = make_tensor((2, 1), device=device, dtype=tdtype)
+    b = make_tensor((1, 2), device=device, dtype=tdtype)
 
     thunder_result = traced_foo(a, b)
     torch_result = (a + 2) + b
 
-    torch.testing.assert_close(thunder_result, torch_result)
+    assert_close(thunder_result, torch_result)
 
 
 @executors(dtypes=(thunder.float32,))
