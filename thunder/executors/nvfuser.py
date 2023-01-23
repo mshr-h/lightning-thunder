@@ -1,20 +1,25 @@
 from enum import auto, Enum
 from typing import Sequence
 import time
+from functools import partial
+import copy
+from numbers import Number
 
 import torch
 import torch._C._nvfuser as nvfuser
 from torch._C._nvfuser import DataType, Fusion, FusionDefinition
 
+from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 import thunder.core.dtypes as dtypes
 import thunder.langs.torch as ttorch
 from thunder.core import prims, utils
-from thunder.core.proxies import NumberProxy, TensorProxy
+from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
 
 nvTensor = torch._C._nvfuser.Tensor
+nvNumber = torch._C._nvfuser.Scalar
 
 __all__ = [
-    "nvfuser",
+    "nvFuserCtx",
 ]
 
 
@@ -39,27 +44,28 @@ _torch_dtype_to_nvfuser_dtype_map = {
     bool: DataType.Bool,
 }
 
-# TODO: can probably remove weak dtypes from this map
 _thunder_dtype_to_nvfuser_dtype_map = {
-    dtypes.complex128_: DataType.ComplexDouble,
     dtypes.complex128: DataType.ComplexDouble,
-    dtypes.complex64_: DataType.ComplexFloat,
     dtypes.complex64: DataType.ComplexFloat,
-    dtypes.float64_: DataType.Double,
     dtypes.float64: DataType.Double,
-    dtypes.float32_: DataType.Float,
     dtypes.float32: DataType.Float,
-    dtypes.float16_: DataType.Half,
     dtypes.float16: DataType.Half,
-    dtypes.bfloat16_: DataType.BFloat16,
     dtypes.bfloat16: DataType.BFloat16,
-    dtypes.int64_: DataType.Int,
     dtypes.int64: DataType.Int,
-    dtypes.int32_: DataType.Int32,
     dtypes.int32: DataType.Int32,
     dtypes.bool8: DataType.Bool,
+    dtypes.complex128_: DataType.ComplexDouble,
+    dtypes.complex64_: DataType.ComplexFloat,
+    dtypes.float64_: DataType.Double,
+    dtypes.float32_: DataType.Float,
+    dtypes.float16_: DataType.Half,
+    dtypes.bfloat16_: DataType.BFloat16,
+    dtypes.int64_: DataType.Int,
+    dtypes.int32_: DataType.Int32,
     dtypes.bool8_: DataType.Bool,
-    # Python scalars
+}
+
+_thunder_dtype_to_nvfuser_dtype_scalar_map = {
     complex: DataType.ComplexDouble,
     float: DataType.Double,
     int: DataType.Int,
@@ -67,32 +73,122 @@ _thunder_dtype_to_nvfuser_dtype_map = {
 }
 
 
-# Wrapper for prims.convert_element_type, necessary to convert dtype to nvfuser_dtype
+# Wrapper for prims.convert_element_type
+# NOTE: Necessary to ...
+#   1) convert numbertypes to the appropriate datatype,
+#       the conversion depends on whether the input is a scalar or tensor
+#   2) handle constants, which nvFuser will refuse to convert
 def _convert_element_type_translation(fd):
     def _fn(a, dtype):
-        # Handles Thunder's use of Python types as "weak" tensor dtypes
-        # TODO: refactor into a helper
-        if isinstance(a, nvTensor) and dtype in (bool, int, float, complex):
-            tensor_dtype = torch.bool
 
-            if dtype is int:
-                tensor_dtype = dtypes.int64
-            if dtype is float:
-                tensor_dtype = dtypes.float32
-            if dtype is complex:
-                tensor_dtype = dtypes.complex64
+        nvfuser_dtype = dtype
 
-            nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[tensor_dtype]
-            return fd.ops.cast(a, nvfuser_dtype)
+        if dtypes.is_numbertype(dtype):
+            if isinstance(a, nvTensor):
+                tensor_dtype = torch.bool
 
-        nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[dtype]
+                if dtype is int:
+                    tensor_dtype = dtypes.int64
+                if dtype is float:
+                    tensor_dtype = dtypes.float32
+                if dtype is complex:
+                    tensor_dtype = dtypes.complex64
+
+                nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[tensor_dtype]
+            elif isinstance(a, nvNumber):
+                # a is a number
+                number_dtype = bool
+                if dtype is int:
+                    number_dtype = dtypes.int64
+                if dtype is float:
+                    number_dtype = dtypes.float64
+                if dtype is complex:
+                    number_dtype = dtypes.complex128
+
+                nvfuser_dtype = _thunder_dtype_to_nvfuser_dtype_map[number_dtype]
+            elif isinstance(a, Number):
+                return dtype(a)
+            else:
+                raise ValueError(f"Trying to cast unknown object {a}!")
+
         return fd.ops.cast(a, nvfuser_dtype)
 
     return _fn
 
 
+# TODO: consider refactoring the preprocessors with a common pattern to flatten/unflatten?
+
+# TODO: combine constants
+# NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
+#   this converts Python numbers to nvConstants
+def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+    # Adds scalars as constants
+    flat_args, arg_structure = tree_flatten(args)
+    flat_kwargs, kwarg_structure = tree_flatten(kwargs)
+
+    def _add_constant_number(x):
+        if isinstance(x, Number) and not isinstance(x, NumberProxy):
+            nv = fd.define_constant(x)
+            return nv
+        return x
+
+    flat_args = tuple(_add_constant_number(x) for x in flat_args)
+    flat_kwargs = tuple(_add_constant_number(x) for x in flat_kwargs)
+
+    return tree_unflatten(flat_args, arg_structure), tree_unflatten(flat_kwargs, kwarg_structure)
+
+
+# NOTE: nvFuser's broadcast_in_dim primitive does not accept nvScalars as arguments,
+#   so this converts nvScalars to Python numbers
+def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+    # Converts scalars to actual values
+    flat_args, arg_structure = tree_flatten(args)
+    flat_kwargs, kwarg_structure = tree_flatten(kwargs)
+
+    def _realize_numbers(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    flat_args = tuple(_realize_numbers(x) for x in flat_args)
+    flat_kwargs = tuple(_realize_numbers(x) for x in flat_kwargs)
+
+    return tree_unflatten(flat_args, arg_structure), tree_unflatten(flat_kwargs, kwarg_structure)
+
+
+# NOTE: nvFuser's full prim requires shape to be a sequence of Python numbers, the fill value must
+#   be a nvScalar (or nvConstant?), and it accepts no device argument
+# NOTE: the full prim has a bug where it will segfault when shape is an empty sequence
+# TODO: add an assertion on device
+def _full_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, shape, fill_value, dtype, device):
+    # TODO: NVIDIA: FIXME!
+    assert len(shape) > 0
+
+    def _realize_number(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    def _number_to_constant(x):
+        if isinstance(x, Number) and not isinstance(x, NumberProxy):
+            nv = fd.define_constant(x)
+            return nv
+        return x
+
+    shape = tuple(_realize_number(s) for s in shape)
+
+    return (shape, _number_to_constant(fill_value), dtype), {}
+
+
 # Maps the Thunder primitives to their corresponding nvfuser operation names
 # TODO: map directly to the nvfuser operations, not their names
+# TODO: review the cast operation on tensors vs scalars
 ops_to_nvfuser_ops_map = {
     # Data movement and transformation prims
     prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
@@ -130,6 +226,42 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.SUM: "sum",
     prims.Ops.VAR: "var",
     nvOps.VAR_MEAN: "var_mean",
+    # Tensor creation prims
+    prims.Ops.FULL: "full",
+}
+
+ops_to_nvfuser_preprocessors_map = {
+    # Elementwise unary prims
+    prims.Ops.ABS: _elementwise_preprocessor,
+    prims.Ops.ACOS: _elementwise_preprocessor,
+    # prims.Ops.ACOSH:_elementwise_preprocessor,
+    prims.Ops.ASIN: _elementwise_preprocessor,
+    prims.Ops.ATAN: _elementwise_preprocessor,
+    prims.Ops.ATANH: _elementwise_preprocessor,
+    prims.Ops.BITWISE_NOT: _elementwise_preprocessor,
+    prims.Ops.CEIL: _elementwise_preprocessor,
+    prims.Ops.COS: _elementwise_preprocessor,
+    prims.Ops.COSH: _elementwise_preprocessor,
+    prims.Ops.ERF: _elementwise_preprocessor,
+    prims.Ops.ERFC: _elementwise_preprocessor,
+    prims.Ops.EXP: _elementwise_preprocessor,
+    prims.Ops.EXPM1: _elementwise_preprocessor,
+    prims.Ops.FLOOR: _elementwise_preprocessor,
+    # Elementwise binary prims
+    prims.Ops.ADD: _elementwise_preprocessor,
+    prims.Ops.ATAN2: _elementwise_preprocessor,
+    prims.Ops.BITWISE_AND: _elementwise_preprocessor,
+    prims.Ops.DIV: _elementwise_preprocessor,
+    prims.Ops.MUL: _elementwise_preprocessor,
+    prims.Ops.SUB: _elementwise_preprocessor,
+    # Shape prims
+    prims.Ops.BROADCAST_IN_DIM: _nvScalars_to_Numbers_preprocessor,
+    # Reduction prims
+    prims.Ops.SUM: _nvScalars_to_Numbers_preprocessor,
+    prims.Ops.VAR: _nvScalars_to_Numbers_preprocessor,
+    nvOps.VAR_MEAN: _nvScalars_to_Numbers_preprocessor,
+    # Tensor creation prims
+    prims.Ops.FULL: _full_preprocessor,
 }
 
 
@@ -185,6 +317,215 @@ def _get_nvfuser_op(fd, op):
     return nv_op(fd)
 
 
+# Creates an nvFuser input for the corresponding proxy
+def _add_input(fd, x, proxy_to_nvfuser_map, used_inputs):
+    # Converts Tensor datatypes to torch datatypes
+    if dtypes.is_dtype(x) and not dtypes.is_numbertype(x):
+        return _thunder_dtype_to_nvfuser_dtype_map[x]
+
+    # Handles other constants (by passing them through)
+    if not isinstance(x, Proxy):
+        return x
+
+    # Handles proxies
+    nv = None
+    if isinstance(x, NumberProxy):
+        python_type = x.python_type
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[python_type]
+        nv = fd.define_scalar(nv_dtype)
+    elif isinstance(x, TensorProxy):
+        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[x.dtype]
+        nv = fd.define_tensor(sizes=x.shape, strides=x.strides, dtype=nv_dtype)
+    else:
+        raise ValueError(f"Trying to add an unknown proxy {x} as an input!")
+
+    proxy_to_nvfuser_map[x] = nv
+    used_inputs.append(x)
+
+    return nv
+
+
+# Finds or creates the nvFuser object associated with x,
+#   possibly updating datastructures for proxies.
+def _get_nv(x, *, fd, proxy_to_nvfuser_map, used_inputs):
+    # TODO: revise this
+    #   This is here because nvFuser accepts some numbers, particularly numbers
+    #   in collections, but some operations require a defined nvNumber and not
+    #   a constant number. Because we're treemapping when calling this function,
+    #   it can't disambiguate numbers in collections vs. a number argument.
+    #   So this explicitly doesn't convert numbers to nvNumber, and that
+    #   is left to preprocessing functions.
+    if isinstance(x, Number) and not isinstance(x, Proxy):
+        return x
+
+    if x not in proxy_to_nvfuser_map:
+        return _add_input(fd, x, proxy_to_nvfuser_map, used_inputs)
+
+    return proxy_to_nvfuser_map[x]
+
+
+# TODO: support NumPy arrays
+# TODO: possibly support caching on the object that fusion returns
+# fuse returns a function that, when called with actual PyTorch tensors and Python numbers
+#   in place of the corresponding TensorProxies and NumberProxies, computes the given
+#   trace.
+# NOTE: the function can be reused, but it should be called with tensors that have the
+#   same metadata, numbers of the same type, all conditionals on the number evaluated
+#   the same as previous number inputs, and all other values constant.
+def _fuse(trace):
+    proxy_to_nvfuser_map = {}
+    used_inputs = []
+    outputs = []
+    flat_outputs, output_structure = tree_flatten(trace.outputs)
+
+    fs = Fusion()
+    with FusionDefinition(fs) as fd:
+        __get_nv = partial(_get_nv, fd=fd, proxy_to_nvfuser_map=proxy_to_nvfuser_map, used_inputs=used_inputs)
+
+        #
+        for sym in trace.symbols:
+            nv_args = tree_map(__get_nv, sym.args)
+            nv_kwargs = tree_map(__get_nv, sym.kwargs)
+            nv_pre = ops_to_nvfuser_preprocessors_map.get(sym.op, None)
+            if nv_pre is not None:
+                # TODO: should preprocessing functions be called with the symbol's args and kwargs
+                #   or the nv args and kwargs or both?
+                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, **nv_kwargs)
+            nv_op = _get_nvfuser_op(fd, sym.op)
+            nv_result = nv_op(*nv_args, **nv_kwargs)
+
+            # Associates proxies to the nvFuser results
+            # NOTE: it's assumed that NV operations produce results with proxies as leaves
+            proxies, _ = tree_flatten(sym.result)
+            nvs, _ = tree_flatten(nv_result)
+            for p, nv in zip(proxies, nvs):
+                if p in proxy_to_nvfuser_map:
+                    raise AssertionError(f"An output {p} was already in the proxy map {proxy_to_nvfuser_map}!")
+                assert p not in proxy_to_nvfuser_map
+                assert isinstance(p, Proxy)
+                proxy_to_nvfuser_map[p] = nv
+
+        # TODO: refactor this class and the following dict
+        class nvOutput:
+            def __init__(self, position, *, is_number=False):
+                self.position = position
+                self.is_number = is_number
+
+        proxy_to_nvOutput_map = {}
+
+        #
+        nvfuser_output_ctr = 0
+        has_proxy_output = False
+        for idx, o in enumerate(flat_outputs):
+            if isinstance(o, Proxy):
+                has_proxy_output = True
+                # NOTE: Not every output will be in this map, because the output
+                #   will not have been produced by an nvFuser operator if
+                #   it's also an input.
+                if o in proxy_to_nvfuser_map:
+                    if o not in proxy_to_nvOutput_map:
+                        # Ensures that the output is only added as a fusion output once
+                        # NOTE: nvFuser doesn't support scalar outputs, so this
+                        #   wraps them in tensors (they are unwrapped later)
+                        is_number = False
+                        if isinstance(o, NumberProxy):
+                            is_number = True
+                            dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[o.python_type]
+                            tensor_out = fd.ops.full((1,), proxy_to_nvfuser_map[o], dtype)
+                            fd.add_output(tensor_out)
+                        else:
+                            fd.add_output(proxy_to_nvfuser_map[o])
+
+                        nvOut = nvOutput(nvfuser_output_ctr, is_number=is_number)
+                        proxy_to_nvOutput_map[o] = nvOut
+                        outputs.append(nvOut)
+                        nvfuser_output_ctr += 1
+                    else:
+                        outputs.append(proxy_to_nvOutput_map[o])
+                    continue
+
+            outputs.append(o)
+
+    #
+    # Builds the callable
+    #
+
+    # Handles the special case of the function having no proxy outputs
+    if not has_proxy_output:
+        # TODO: maybe there's something better to do here than copy?
+        my_outputs = copy.copy(trace.outputs)
+
+        def fn(*args, **kwargs):
+            return my_outputs
+
+        return fn
+
+    tab = "  "
+    cstr = f"def fusion(*args, **kwargs):"
+
+    # Acquires inputs
+    flat_positional_inputs, _ = tree_flatten(trace.args)
+    flat_kwarg_inputs, _ = tree_flatten(trace.kwargs)
+
+    cstr += f"\n{tab}# Extracts inputs"
+    cstr += f"\n{tab}flat_args, _ = tree_flatten(args)"
+    cstr += f"\n{tab}flat_kwargs, _ = tree_flatten(kwargs)"
+    for idx, pinp in enumerate(flat_positional_inputs):
+        if isinstance(pinp, Proxy):
+            cstr += f"\n{tab}{pinp.name} = flat_args[{idx}]"
+    for idx, kwinp in enumerate(flat_kwarg_inputs):
+        if isinstance(kwinp, Proxy):
+            cstr += f"\n{tab}{kwinp.name} = flat_kwargs[{idx}]"
+
+    # Calls fusion
+    cstr += f"\n{tab}# Invokes fusion"
+
+    # Acquires a proxies name or passes a constant by value
+    def _extract_name(x):
+        if isinstance(x, Proxy):
+            return x.name
+
+        return str(x)
+
+    # NOTE: this guard is necessary for programs where there is no fusion
+    if len(trace.symbols) > 0:
+        arg_string = ", ".join(tuple(_extract_name(uinp) for uinp in used_inputs))
+        cstr += f"\n{tab}result = _fusion(({arg_string},))"
+
+    # Assembles output
+    output_strs = []
+    for o in outputs:
+        if isinstance(o, Proxy):
+            output_strs.append(o.name)
+        elif isinstance(o, nvOutput):
+            if o.is_number:
+                # Unwraps nvFuser's tensor outputs into scalars
+                s = f"result[{o.position}].cpu().item()"
+                output_strs.append(s)
+            else:
+                output_strs.append(f"result[{o.position}]")
+        else:
+            output_strs.append((str(o)))
+    output_str = ", ".join(output_strs)
+
+    cstr += f"\n{tab}# Assembles output"
+    cstr += f"\n{tab}return tree_unflatten(({output_str},), output_structure)"
+
+    # Creates context
+    ctx = {
+        "tree_flatten": tree_flatten,
+        "tree_unflatten": tree_unflatten,
+        "output_structure": output_structure,
+        "_fusion": fs.execute,
+    }
+
+    code = compile(cstr, "nvfuser.gen", mode="exec")
+    exec(code, ctx)
+    fusion = ctx["fusion"]
+
+    return fusion
+
+
 class nvFuserCtx:
     def __init__(self):
         pass
@@ -198,134 +539,5 @@ class nvFuserCtx:
 
         return None
 
-    def execute(self, *args, **kwargs):
-        return execute(*args, **kwargs)
-
-
-def _convert(fd, m, v, p):
-    if isinstance(v, torch.Tensor):
-        nv_dtype = _torch_dtype_to_nvfuser_dtype_map[v.dtype]
-        nv = fd.define_tensor(sizes=v.shape, strides=v.stride(), dtype=nv_dtype)
-        m[p.name] = nv
-    elif isinstance(v, int):
-        # NOTE: this handles both booleans and integers, since Python accepts bools as ints
-        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[type(v)]
-        nv = fd.define_scalar(nv_dtype)
-        m[p.name] = nv
-    elif isinstance(v, float):
-        nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[float]
-        nv = fd.define_scalar(nv_dtype)
-        m[p.name] = nv
-    else:
-        raise AssertionError(f"execute(): Received unknown input type: {v}")
-
-
-def execute(t, *args, **kwargs):
-    translation_start = time.time_ns()
-
-    # Constructs a fusion from a trace
-    proxy_to_nv_map = {}
-    fs = Fusion()
-    with FusionDefinition(fs) as fd:
-        # Converts inputs
-        for arg, p in zip(args, t.inputs):
-            _convert(fd, proxy_to_nv_map, arg, p)
-
-        for (k, v), (pk, pv) in zip(kwargs.items(), t.kwargs):
-            _convert(fd, proxy_to_nv_map, v, pv)
-
-        # TODO: experimental, only here for discussion
-        # NOTE: enabling this requires changes elsewhere -- just for illustration purposes
-        # Adds symbolic shape information as new args
-        # NOTE: this happens after regular args because we want this inputs
-        #   to be defined after all others
-        # length_args = deque()
-        # for arg, p in zip(args, t.inputs):
-        #     if isinstance(arg, torch.Tensor):
-        #         for l, lp in zip(arg.shape, p.shape):
-        #             nv_dtype = _torch_dtype_to_nvfuser_dtype_map[int]
-        #             nv = fd.define_scalar(nv_dtype)
-        #             proxy_to_nv_map[lp.name] = nv
-        #             length_args.append(l)
-
-        # Convert constants
-        for constant in t.constants:
-            nv = fd.define_constant(constant.value)
-            proxy_to_nv_map[constant.name] = nv
-
-        for sym in t.symbols:
-            nv_op = _get_nvfuser_op(fd, sym.op)
-
-            def _proxy_to_value(x):
-                if isinstance(x, NumberProxy):
-                    return x.value
-
-                return x
-
-            def _proxy_to_nv(x):
-                # TODO: always enumerating every element of a sequence seems expensive
-                #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
-                if isinstance(x, Sequence):
-                    return tuple(map(_proxy_to_nv, x))
-                if isinstance(x, NumberProxy):
-                    # TODO: discuss with NVIDIA
-                    # NOTE: this means that symbols which are not inputs or constants are
-                    #   passed by value. Examples of these symbols are the lengths of the
-                    #   input tensors' dimensions.
-                    return proxy_to_nv_map.get(x.name, x.value)
-                if isinstance(x, TensorProxy):
-                    return proxy_to_nv_map[x.name]
-
-                return x
-
-            nv_args = tuple(map(_proxy_to_nv, sym.args))
-            nv_kwargs = {k: _proxy_to_nv(v) for k, v in sym.kwargs.items()}
-
-            nv_result = nv_op(*nv_args, **nv_kwargs)
-
-            # TODO handle more output datastructures
-            if isinstance(nv_result, Sequence):
-                for nvr, p in zip(nv_result, sym.result):
-                    proxy_to_nv_map[p.name] = nvr
-            else:
-                proxy_to_nv_map[sym.result.name] = nv_result
-
-        # TODO: test support for multiple return arguments
-        for out in t.outputs:
-            # TODO: handle more datastructures (probably want to tree map here)
-            if isinstance(out, Sequence):
-                for o in out:
-                    fd.add_output(proxy_to_nv_map[o.name])
-            else:
-                fd.add_output(proxy_to_nv_map[out.name])
-
-    # Filters sequences in args, which are currently treated as constants
-    # TODO: revisit this modeling
-    def _arg_filter(x):
-        if isinstance(x, Sequence):
-            return True
-
-        return False
-
-    filtered_args = tuple(arg for arg in args if not _arg_filter(arg))
-
-    # Adds kwargs
-    flattened_kwargs = []
-    for k, v in kwargs.items():
-        flattened_kwargs.append(v)
-
-    args_and_kwargs = filtered_args + tuple(flattened_kwargs)
-
-    translation_end = time.time_ns()
-
-    ex_start = time.time_ns()
-    nvf_out = fs.execute(args_and_kwargs)
-    ex_end = time.time_ns()
-
-    meta = {
-        "translation_time": translation_end - translation_start,
-        "execution_time": ex_end - ex_start,
-        "fusion": fs,
-    }
-
-    return nvf_out, meta
+    def fuse(self, trace):
+        return _fuse(trace)

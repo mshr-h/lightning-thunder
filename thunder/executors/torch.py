@@ -1,14 +1,14 @@
-from typing import Sequence
-
 import torch
 
 import thunder.core.dtypes as dtypes
 import thunder.langs.torch as ttorch
 from thunder.core import prims
-from thunder.core.proxies import NumberProxy, TensorProxy
+from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
+
+from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 
 __all__ = [
-    "torch",
+    "torchCtx",
 ]
 
 # TODO: can probably remove weak dtypes from this map
@@ -46,79 +46,211 @@ _thunder_to_torch_dtype_map = {
 }
 
 
-def _convert_element_type_translation():
-    def _fn(a, dtype):
-        if not isinstance(a, torch.Tensor):
-            return dtype(a)
-        dtype = _thunder_to_torch_dtype_map.get(dtype, dtype)
-        return a.to(dtype)
+def convert_element_type(a, dtype):
+    # Handles converting a tensor to a numbertype, which Thunder allows but
+    #   Torch does not
+    if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
+        # TODO: respect default scalar types?
+        if dtype is bool:
+            dtype = torch.bool
+        elif dtype is int:
+            dtype = torch.int64
+        elif dtype is float:
+            dtype = torch.float32
+        elif dtype is complex:
+            dtype = torch.complex64
 
-    return _fn
+    # Handles number conversions
+    if dtype in (bool, int, float, complex):
+        return dtype(a)
+
+    return a.to(dtype)
 
 
-def _broadcast_in_dim_translation():
-    def _fn(a, shape, broadcast_dims):
-        s = list(shape)
-        for broadcast_dim in broadcast_dims:
-            s[broadcast_dim] = -1
+def broadcast_in_dim(a, shape, broadcast_dims):
+    s = list(shape)
+    for broadcast_dim in broadcast_dims:
+        s[broadcast_dim] = -1
 
-        v = a
-        for idx, x in enumerate(s):
-            if x != -1:
-                v = v.unsqueeze(idx)
+    v = a
+    for idx, x in enumerate(s):
+        if x != -1:
+            v = v.unsqueeze(idx)
 
-        return v.expand(shape)
+    return v.expand(shape)
 
-    return _fn
+
+def is_tensor(a):
+    return isinstance(a, torch.Tensor)
+
+
+# TODO: refactor into elementwise helper
+def abs_helper(a):
+    if is_tensor(a):
+        return torch.abs(a)
+
+    return abs(a)
+
+
+# Handles adding two Python numbers, which PyTorch allows but returns
+#   as a tensor, while Thunder expects a Python number
+def add_helper(a, b, alpha=1):
+    if any(map(is_tensor, (a, b, alpha))):
+        return torch.add(a, b, alpha=alpha)
+
+    return a + b * alpha
 
 
 # Maps the Thunder primitives to their corresponding torch operation names
+# TODO: handle more scalar arguments (like add does above)
 ops_to_torch_ops_map = {
     # Data movement and transformation prims
-    prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
+    prims.Ops.CONVERT_ELEMENT_TYPE: convert_element_type,
     # Tensor creation prims
-    prims.Ops.FULL: "full",
+    prims.Ops.FULL: "torch.full",
     # Elementwise unary prims
-    prims.Ops.ABS: "abs",
-    prims.Ops.ACOS: "acos",
-    prims.Ops.ACOSH: "acosh",
-    prims.Ops.ASIN: "asin",
-    prims.Ops.ATAN: "atan",
-    prims.Ops.ATANH: "atanh",
-    prims.Ops.BITWISE_NOT: "bitwise_not",
-    prims.Ops.CEIL: "ceil",
-    prims.Ops.COS: "cos",
-    prims.Ops.COSH: "cosh",
-    prims.Ops.ERF: "erf",
-    prims.Ops.ERFC: "erfc",
-    prims.Ops.EXP: "exp",
-    prims.Ops.EXPM1: "expm1",
-    prims.Ops.FLOOR: "floor",
-    prims.Ops.ISFINITE: "isfinite",
+    prims.Ops.ABS: abs_helper,
+    prims.Ops.ACOS: "torch.acos",
+    prims.Ops.ACOSH: "torch.acosh",
+    prims.Ops.ASIN: "torch.asin",
+    prims.Ops.ATAN: "torch.atan",
+    prims.Ops.ATANH: "torch.atanh",
+    prims.Ops.BITWISE_NOT: "torch.bitwise_not",
+    prims.Ops.CEIL: "torch.ceil",
+    prims.Ops.COS: "torch.cos",
+    prims.Ops.COSH: "torch.cosh",
+    prims.Ops.ERF: "torch.erf",
+    prims.Ops.ERFC: "torch.erfc",
+    prims.Ops.EXP: "torch.exp",
+    prims.Ops.EXPM1: "torch.expm1",
+    prims.Ops.FLOOR: "torch.floor",
+    prims.Ops.ISFINITE: "torch.isfinite",
     # Elementwise binary prims
-    prims.Ops.ADD: "add",
-    prims.Ops.ATAN2: "atan2",
-    prims.Ops.BITWISE_AND: "bitwise_and",
-    prims.Ops.DIV: "div",
-    prims.Ops.MUL: "mul",
-    prims.Ops.SUB: "sub",
+    prims.Ops.ADD: add_helper,
+    prims.Ops.ATAN2: "torch.atan2",
+    prims.Ops.BITWISE_AND: "torch.bitwise_and",
+    prims.Ops.DIV: "torch.div",
+    prims.Ops.MUL: "torch.mul",
+    prims.Ops.SUB: "torch.sub",
     # Shape prims
-    prims.Ops.BROADCAST_IN_DIM: _broadcast_in_dim_translation,
+    prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
     # Reduction prims
-    prims.Ops.SUM: "sum",
-    prims.Ops.VAR: "var",
+    prims.Ops.SUM: "torch.sum",
+    prims.Ops.VAR: "torch.var",
 }
+
+# NOTE: this class is here to help with proper printing
+class ProxyName:
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return self.name
+
+
+def _get_torch(x):
+    if dtypes.is_dtype(x) and not dtypes.is_numbertype(x):
+        return _thunder_to_torch_dtype_map[x]
+
+    if isinstance(x, str):
+        return f"'{x}'"
+
+    if isinstance(x, type):
+        return x.__name__
+
+    if isinstance(x, Proxy):
+        return ProxyName(x.name)
+
+    return x
 
 
 def _get_torch_op(op):
-    torch_op = ops_to_torch_ops_map[op]
+    return ops_to_torch_ops_map[op]
 
-    # TODO: always directly look up the appropriate callable
-    if isinstance(torch_op, str):
-        return getattr(torch, ops_to_torch_ops_map[op])
 
-    # nv_op is a callable
-    return torch_op()
+# TODO: intercept PyTorch operations and handle functions whose results are
+#   bound to multiple values (i.e. a, b = foo(x, y))
+# Creates a Python callable that executes the trace using PyTorch and Python
+# NOTE: does this by compiling a function from a string
+def _fuse(trace):
+
+    flat_outputs, output_structure = tree_flatten(trace.outputs)
+
+    # Short-circuits if the fusion has no outputs
+    if len(flat_outputs) == 0:
+
+        def _fusion(*args, **kwargs):
+            return None
+
+        return _fusion
+
+    #
+    # Constructs the program
+    #
+
+    # Writes the signatures
+    tab = "  "
+    cstr = f"def fusion(*args, **kwargs):"
+    # TODO: maybe consider the possibility of name conflicts?
+    ctx = {
+        "torch": torch,
+        "tree_flatten": tree_flatten,
+        "tree_unflatten": tree_unflatten,
+        "output_structure": output_structure,
+    }
+
+    # Acquires inputs
+    flat_positional_inputs, _ = tree_flatten(trace.args)
+    flat_kwarg_inputs, _ = tree_flatten(trace.kwargs)
+
+    cstr += f"\n{tab}# Extracts inputs"
+    cstr += f"\n{tab}flat_args, _ = tree_flatten(args)"
+    cstr += f"\n{tab}flat_kwargs, _ = tree_flatten(kwargs)"
+
+    for idx, pinp in enumerate(flat_positional_inputs):
+        if isinstance(pinp, Proxy):
+            cstr += f"\n{tab}{pinp.name} = flat_args[{idx}]"
+    for idx, kwinp in enumerate(flat_kwarg_inputs):
+        if isinstance(kwinp, Proxy):
+            cstr += f"\n{tab}{kwinp.name} = flat_kwargs[{idx}]"
+
+    # Calls PyTorch and Python operations
+    cstr += f"\n{tab}# Executes the trace"
+    for sym in trace.symbols:
+        torch_args = tree_map(_get_torch, sym.args)
+        torch_kwargs = tree_map(_get_torch, sym.kwargs)
+        torch_op = _get_torch_op(sym.op)
+        result = sym.result
+
+        if not isinstance(result, Proxy):
+            raise NotImplementedError
+
+        # NOTE: currently assumes result is always a proxy
+        op_str = None
+        if isinstance(torch_op, str):
+            op_str = torch_op
+        else:
+            op_str = torch_op.__name__
+            ctx[op_str] = torch_op
+
+        arg_str = ", ".join(f"{a}" for a in torch_args)
+        kwarg_str = ", ".join(f"{k}={v}" for k, v in torch_kwargs.items())
+        segue_str = ", " if (len(arg_str) > 0 and len(kwarg_str) > 0) else ""
+
+        cstr += f"\n{tab}{result.name} = {op_str}({arg_str}{segue_str}{kwarg_str})"
+
+    # Constructs output
+    # NOTE: len(flat_outputs) > 0
+    torch_outputs = tree_map(_get_torch, flat_outputs)
+    output_str = ", ".join(str(x) for x in torch_outputs)
+    cstr += f"\n{tab}return tree_unflatten(({output_str},), output_structure)"
+
+    # Compiles the function
+    code = compile(cstr, "torch.gen", mode="exec")
+    exec(code, ctx)
+    fusion = ctx["fusion"]
+
+    return fusion
 
 
 class torchCtx:
@@ -126,105 +258,7 @@ class torchCtx:
         pass
 
     def intercept(self, op):
-        pass
+        return None
 
-    def execute(self, *args, **kwargs):
-        return execute(*args, **kwargs)
-
-
-def _convert(m, v, p):
-    if isinstance(v, torch.Tensor):
-        m[p.name] = v
-    elif isinstance(v, int) or isinstance(v, float):
-        # NOTE: this handles both booleans and integers, since Python accepts bools as ints
-        m[p.name] = torch.tensor(v)
-    else:
-        # NOTE: we may extend this but we want to break when nvFuser breaks
-        raise AssertionError(f"execute(): Received unknown input type: {v}")
-
-
-# TODO: add kwarg support
-def execute(t, *args, **kwargs):
-    proxy_to_torch_map = {}
-
-    # Converts inputs
-    for arg, p in zip(args, t.inputs):
-        _convert(proxy_to_torch_map, arg, p)
-
-    for (k, v), (pk, pv) in zip(kwargs.items(), t.kwargs):
-        _convert(proxy_to_torch_map, v, pv)
-
-    # Convert constants
-    for constant in t.constants:
-        proxy_to_torch_map[constant.name] = constant.value
-
-    for sym in t.symbols:
-        torch_op = _get_torch_op(sym.op)
-
-        def _proxy_to_value(x):
-            if isinstance(x, NumberProxy):
-                return x.value
-
-            return x
-
-        def _proxy_to_torch(x):
-            if isinstance(x, dtypes.dtype):
-                return ttorch.torch_dtype(x)
-            if isinstance(x, str):
-                return x
-            # TODO: always enumerating every element of a sequence seems expensive
-            #  (This comes up in calls to broadcast_in_dim where a list of IntegerProxies is passed as an argument)
-            if isinstance(x, Sequence):
-                return tuple(map(_proxy_to_torch, x))
-            if isinstance(x, NumberProxy):
-                # TODO: discuss with NVIDIA
-                # NOTE: this means that symbols which are not inputs or constants are
-                #   passed by value. Examples of these symbols are the lengths of the
-                #   input tensors' dimensions.
-                return proxy_to_torch_map.get(x.name, x.value)
-            if isinstance(x, TensorProxy):
-                return proxy_to_torch_map[x.name]
-
-            return x
-
-        torch_args = tuple(map(_proxy_to_torch, sym.args))
-        torch_kwargs = {k: _proxy_to_torch(v) for k, v in sym.kwargs.items()}
-
-        torch_result = torch_op(*torch_args, **torch_kwargs)
-
-        # TODO handle more output datastructures
-        if isinstance(torch_result, Sequence):
-            for r, p in zip(torch_result, sym.result):
-                proxy_to_torch_map[p.name] = r
-        else:
-            proxy_to_torch_map[sym.result.name] = torch_result
-
-    torch_out = []
-
-    # TODO: test support for multiple return arguments
-    for out in t.outputs:
-        # TODO: handle more datastructures (probably want to tree map here)
-        if isinstance(out, Sequence):
-            for o in out:
-                torch_out.append(proxy_to_torch_map[o.name])
-        else:
-            torch_out.append(proxy_to_torch_map[out.name])
-
-    # Filters sequences in args, which are currently treated as constants
-    # TODO: revisit this modeling
-    def _arg_filter(x):
-        if isinstance(x, Sequence):
-            return True
-
-        return False
-
-    # filtered_args = tuple(arg for arg in args if not _arg_filter(arg))
-
-    # Adds kwargs
-    # flattened_kwargs = []
-    # for k, v in kwargs.items():
-    #     flattened_kwargs.append(v)
-
-    # args_and_kwargs = filtered_args + tuple(flattened_kwargs)
-
-    return torch_out, None
+    def fuse(self, trace):
+        return _fuse(trace)

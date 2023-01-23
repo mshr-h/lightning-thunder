@@ -1,6 +1,7 @@
 import inspect
 import os
 import sys
+import pytest
 
 from itertools import product
 from functools import wraps
@@ -11,8 +12,26 @@ from thunder.core.trace import set_executor_context, reset_executor_context
 
 __all__ = [
     "available_device_types",
+    "executors",
     "ops",
+    "NOTHING",
 ]
+
+# A marker for actually wanting NOTHING instead of specifying nothing
+class NOTHING(object):
+    pass
+
+
+def _jax_available():
+    try:
+        import jax
+    except Exception:
+        return False
+
+    return True
+
+
+JAX_AVAILABLE = _jax_available()
 
 
 # TODO: Add device type functionality to an object in this list
@@ -127,8 +146,28 @@ def benchmark_executors():
     return executors
 
 
+# TODO: refactor with _instantiate_opinfo_test_template
+def _instantiate_executor_test_template(template, scope, *, executor, device, dtype):
+    # Ex. test_foo_CUDA_float32
+    # TODO: fix test name when dtype is None
+    test_name = "_".join((template.__name__, executor.name, device.upper(), str(dtype)))
+
+    def test():
+        # TODO: currently this passes the device type as a string, but actually a device or multiple devices
+        #   should be passed to the test
+        result = template(executor, device, dtype)
+        return result
+
+    # Mimics the instantiated test
+    # TODO: review this mimicry -- are there other attributes to mimic?
+    test.__name__ = test_name
+    test.__module__ = test.__module__
+
+    return test
+
+
 # TODO: add decorator support, support for test directives -- how would this control assert_close behavior?
-def _instantiate_test_template(template, scope, *, opinfo, executor, device, dtype):
+def _instantiate_opinfo_test_template(template, scope, *, opinfo, executor, device, dtype):
     """Instanties a test template for an operator."""
 
     # Ex. test_foo_CUDA_float32
@@ -153,6 +192,7 @@ def _instantiate_test_template(template, scope, *, opinfo, executor, device, dty
 
 
 # TODO: don't pass the device type to the test, select an actual device
+# TODO: example uses, note this must be the LAST decorator applied
 class ops:
 
     # TODO: support other kinds of dtype specifications
@@ -203,7 +243,7 @@ class ops:
                     if not executor.supports_dtype(dtype):
                         continue
 
-                    test = _instantiate_test_template(
+                    test = _instantiate_opinfo_test_template(
                         test_template,
                         self.scope,
                         opinfo=opinfo,
@@ -213,6 +253,52 @@ class ops:
                     )
                     # Adds the instantiated test to the requested scope
                     self.scope[test.__name__] = test
+
+
+# TODO: don't pass the device type to the test, select an actual device
+# TODO: example uses, note this must be the LAST decorator applied
+class executors:
+
+    # TODO: support other kinds of dtype specifications
+    def __init__(self, *, executors=None, devicetypes=None, dtypes=None, scope=None):
+        self.executors = set(executors) if executors is not None else set(_all_executors())
+        self.devicetypes = set(devicetypes) if devicetypes is not None else set(_all_device_types())
+
+        if dtypes == NOTHING:
+            self.dtypes = (None,)
+        else:
+            self.dtypes = datatypes.resolve_dtypes(dtypes) if dtypes is not None else datatypes.all_dtypes
+
+        # Acquires the caller's global scope
+        if scope is None:
+            previous_frame = inspect.currentframe().f_back
+            scope = previous_frame.f_globals
+        self.scope = scope
+
+    # TODO: refactor with the ops class above
+    def __call__(self, test_template):
+        # NOTE: unlike a typical decorator, this __call__ does not return a function, because it may
+        #   (and typically does) instantiate multiple functions from the template it consumes
+        #   Since Python doesn't natively support one-to-many function decorators, the produced
+        #   functions are directly assigned to the requested scope (the caller's global scope by default)
+
+        for executor, devicetype in product(self.executors, self.devicetypes):
+            if not executor.supports_devicetype(devicetype):
+                continue
+
+            for dtype in self.dtypes:
+                if dtype is not None and not executor.supports_dtype(dtype):
+                    continue
+
+                test = _instantiate_executor_test_template(
+                    test_template,
+                    self.scope,
+                    executor=executor,
+                    device=devicetype,
+                    dtype=dtype,
+                )
+                # Adds the instantiated test to the requested scope
+                self.scope[test.__name__] = test
 
 
 def run_snippet(snippet, opinfo, device_type, dtype, *args, **kwargs):
@@ -229,3 +315,14 @@ def run_snippet(snippet, opinfo, device_type, dtype, *args, **kwargs):
         return e, exc_info, snippet, opinfo, device_type, dtype, args, kwargs
 
     return None
+
+
+def requiresJAX(fn):
+    @wraps(fn)
+    def _fn(*args, **kwargs):
+        if not JAX_AVAILABLE:
+            pytest.skip("Requires JAX")
+
+        return fn(*args, **kwargs)
+
+    return _fn

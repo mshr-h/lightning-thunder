@@ -367,7 +367,7 @@ def linetable_writer(first_lineno):
     """Used to create typing.CodeType.co_linetable See
     https://github.com/python/cpython/blob/main/Objects/lnotab_notes.txt This
     is the internal format of the line number table if Python >= 3.10."""
-    assert sys.version_info >= (3, 10)
+    assert sys.version_info >= (3, 9)
     linetable = []
     lineno = first_lineno
     lineno_delta = 0
