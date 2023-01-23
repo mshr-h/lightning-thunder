@@ -161,6 +161,7 @@ def _compare_stats(name_a, stats_a, name_b, stats_b):
 
 def _benchmark(name, *, gen, iters, thunder_fn, other_name, other_fn):
     print(f"Benchmark: {name}")
+
     thunder_stats = time_ns(thunder_fn, gen)
     _prettyprint_thunder_nvfuser_stats(thunder_stats)
 
@@ -277,28 +278,26 @@ def add_hundred_64x64(iters, make_arg):
     )
 
 
-def add_many_64x64(iters, make_arg):
+def add_dozen_64x64(iters, make_arg):
     shape = (64, 64)
 
     def gen():
         args = []
-        for _ in range(2):
+        for _ in range(12):
             args.append(make_arg(shape))
         return tuple(args), {}
 
-    def _add_many(*args):
-        print(f"args={args}")
-        cur = 0
-        for a in args:
-            print(f"a={a}")
+    def _add_dozen(*args):
+        cur = args[0]
+        for a in args[1:]:
             cur = cur + a
         return cur
 
-    thunder_fn = make_traced(_add_many)
-    dynamo_fn = torch.compile(_add_many)
+    thunder_fn = make_traced(_add_dozen)
+    dynamo_fn = torch.compile(_add_dozen)
     shape_str = "x".join(str(l) for l in shape)
     _benchmark(
-        f"add_many_{shape_str}", gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="dynamo", other_fn=dynamo_fn
+        f"add_dozen_{shape_str}", gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="dynamo", other_fn=dynamo_fn
     )
 
 
@@ -487,6 +486,24 @@ def simple_kwarg_conditional(iters, make_arg):
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="dynamo", other_fn=dynamo_fn)
 
 
+#
+# nanoGPT benchmarks
+#
+# TODO: maybe put these in their own file?
+
+# TODO: in development, need tanh and pow support
+# def _nanogpt_new_gelu_vs_dynamo_factory(shape, *, iters, make_arg):
+#     def gen():
+#         a = make_arg(shape)
+#         return (a,), {}
+
+#     def new_gelu(a):
+#         return 0.5 * a * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (a + 0.044715 * torch.pow(a, 3.0))))
+
+
+# def nanogpt_new_gelu_64(iters, make_arg):
+#     def gen():
+
 benchmarks = {
     # Elementwise Binary benchmarks
     "add_64x64": add_64x64,
@@ -495,16 +512,16 @@ benchmarks = {
     "add_hundred_64x64": add_hundred_64x64,
     "add_stack100_64x64": add_stack100_64x64,
     "add_stack1000_64x64": add_stack1000_64x64,
-    "add_many_64x64": add_many_64x64,  # Requires supporting *args
+    "add_dozen_64x64": add_dozen_64x64,  # Requires supporting *args
     "add_1024x1024": add_1024x1024,
     "add_4096x4": add_4096x4,
     "add_4x4096": add_4x4096,
     "add_1024x1024_contiguous_transposed": add_1024x1024_contiguous_transposed,
-    # Elementwise Unary benchmarks
+    # # Elementwise Unary benchmarks
     "abs_64x64": abs_64x64,
-    # Reduction benchmarks
+    # # Reduction benchmarks
     "var_1024x1024_all_reduce": var_1024x1024_all_reduce,  # Requires supporting sequence proxies
-    # Control flow benchmarks
+    # # Control flow benchmarks
     "simple_number_conditional": simple_number_conditional,
     "simple_kwarg_conditional": simple_kwarg_conditional,
 }
