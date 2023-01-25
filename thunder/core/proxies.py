@@ -171,6 +171,7 @@ class TensorProxy(Proxy):
             self.shape = tensor.shape if shape is None else shape
             self._dtype = tensor.dtype if dtype is None else dtype
             self.device = tensor.device if device is None else device
+            self.strides = tensor.strides if strides is None else strides
         else:
             # Requires all metadata, except strides, be specified explicitly
             assert shape is not None
@@ -205,6 +206,9 @@ class TensorProxy(Proxy):
     def _get_true_dtype(self):
         return self._dtype
 
+    def _get_strides(self):
+        return self.strides
+
     # +
     def __add__(self, other):
         ctx = get_language_context()
@@ -225,6 +229,7 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
 
+    # TODO: review and fix language ctx attribute lookup
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
     #  by the language context. Just returning that method wouldn't work, however,
     #  since the TensorProxy, passed as self here, wouldn't be passed through to the
@@ -235,6 +240,8 @@ class TensorProxy(Proxy):
             return self._get_dtype()
         if name == "true_dtype":
             return self._get_true_dtype()
+        if name == "strides":
+            return super(TensorProxy, self).__getattribute__("strides")
 
         ctx = get_language_context()
         return partial(getattr(ctx, name), self)

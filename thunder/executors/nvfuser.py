@@ -11,9 +11,13 @@ from torch._C._nvfuser import DataType, Fusion, FusionDefinition
 
 from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 import thunder.core.dtypes as dtypes
-import thunder.langs.torch as ttorch
+
+# TODO: review language and executor dependencies
+# import thunder.langs.torch as ttorch
 from thunder.core import prims, utils
 from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
+
+from thunder.executors.torch import _fuse_region as _fuse_torch_region
 
 nvTensor = torch._C._nvfuser.Tensor
 nvNumber = torch._C._nvfuser.Scalar
@@ -121,7 +125,7 @@ def _convert_element_type_translation(fd):
 # TODO: combine constants
 # NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
 #   this converts Python numbers to nvConstants
-def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs):
     # Adds scalars as constants
     flat_args, arg_structure = tree_flatten(args)
     flat_kwargs, kwarg_structure = tree_flatten(kwargs)
@@ -140,7 +144,7 @@ def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kw
 
 # NOTE: nvFuser's broadcast_in_dim primitive does not accept nvScalars as arguments,
 #   so this converts nvScalars to Python numbers
-def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *args, **kwargs):
+def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs):
     # Converts scalars to actual values
     flat_args, arg_structure = tree_flatten(args)
     flat_kwargs, kwarg_structure = tree_flatten(kwargs)
@@ -163,7 +167,7 @@ def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, *a
 #   be a nvScalar (or nvConstant?), and it accepts no device argument
 # NOTE: the full prim has a bug where it will segfault when shape is an empty sequence
 # TODO: add an assertion on device
-def _full_preprocessor(fd, proxy_to_nvfuser_map, used_inputs, shape, fill_value, dtype, device):
+def _full_preprocessor(fd, proxy_to_nvfuser_map, shape, fill_value, dtype, device):
     # TODO: NVIDIA: FIXME!
     assert len(shape) > 0
 
@@ -317,17 +321,27 @@ def _get_nvfuser_op(fd, op):
     return nv_op(fd)
 
 
+def _make_contiguous_strides_for(shape):
+    """
+    Returns the strides of a contiguous tensor if row_major
+    """
+    if len(shape) == 0:
+        return ()
+
+    multiplier = 1
+    strides = []
+    for l in reversed(shape):
+        strides.append(multiplier)
+        if l != 0:
+            multiplier *= l
+
+    result = tuple(reversed(strides))
+
+    return result
+
+
 # Creates an nvFuser input for the corresponding proxy
-def _add_input(fd, x, proxy_to_nvfuser_map, used_inputs):
-    # Converts Tensor datatypes to torch datatypes
-    if dtypes.is_dtype(x) and not dtypes.is_numbertype(x):
-        return _thunder_dtype_to_nvfuser_dtype_map[x]
-
-    # Handles other constants (by passing them through)
-    if not isinstance(x, Proxy):
-        return x
-
-    # Handles proxies
+def _add_input(fd, x, proxy_to_nvfuser_map):
     nv = None
     if isinstance(x, NumberProxy):
         python_type = x.python_type
@@ -335,19 +349,23 @@ def _add_input(fd, x, proxy_to_nvfuser_map, used_inputs):
         nv = fd.define_scalar(nv_dtype)
     elif isinstance(x, TensorProxy):
         nv_dtype = _thunder_dtype_to_nvfuser_dtype_map[x.dtype]
-        nv = fd.define_tensor(sizes=x.shape, strides=x.strides, dtype=nv_dtype)
+        # TODO: carefully review define tensor args
+        # TODO: fix striding assumption -- currently intermediates produces from
+        #   PyTorch are made contiguous so it's true
+        # NOTE: there is a bug when defining a tensor with ndims!
+        # nv = fd.define_tensor(ndims=len(x.shape), dtype=nv_dtype)
+        strides = x.strides if x.strides is not None else _make_contiguous_strides_for(x.shape)
+        nv = fd.define_tensor(sizes=x.shape, strides=strides, dtype=nv_dtype)
     else:
         raise ValueError(f"Trying to add an unknown proxy {x} as an input!")
 
     proxy_to_nvfuser_map[x] = nv
-    used_inputs.append(x)
-
     return nv
 
 
 # Finds or creates the nvFuser object associated with x,
 #   possibly updating datastructures for proxies.
-def _get_nv(x, *, fd, proxy_to_nvfuser_map, used_inputs):
+def _get_nv(x, *, fd, proxy_to_nvfuser_map):
     # TODO: revise this
     #   This is here because nvFuser accepts some numbers, particularly numbers
     #   in collections, but some operations require a defined nvNumber and not
@@ -355,13 +373,136 @@ def _get_nv(x, *, fd, proxy_to_nvfuser_map, used_inputs):
     #   it can't disambiguate numbers in collections vs. a number argument.
     #   So this explicitly doesn't convert numbers to nvNumber, and that
     #   is left to preprocessing functions.
-    if isinstance(x, Number) and not isinstance(x, Proxy):
+    # if isinstance(x, Number) and not isinstance(x, Proxy):
+    #     return x
+    if dtypes.is_dtype(x) and not dtypes.is_numbertype(x):
+        return _thunder_dtype_to_nvfuser_dtype_map[x]
+
+    if not isinstance(x, Proxy):
         return x
 
     if x not in proxy_to_nvfuser_map:
-        return _add_input(fd, x, proxy_to_nvfuser_map, used_inputs)
+        return _add_input(fd, x, proxy_to_nvfuser_map)
 
     return proxy_to_nvfuser_map[x]
+
+
+# Acquires a proxies name or passes a constant by value
+def _extract_name(x):
+    if isinstance(x, Proxy):
+        return x.name
+
+    return str(x)
+
+
+def _fuse_region(inputs, outputs, symbols):
+    # TODO: ensure this is true in the _fuse call
+    assert len(outputs) > 0
+    assert len(symbols) > 0
+
+    proxy_to_nvfuser_map = {}
+
+    fs = Fusion()
+    with FusionDefinition(fs) as fd:
+        # Adds inputs
+        for inp in inputs:
+            _add_input(fd, inp, proxy_to_nvfuser_map)
+
+        # Adds symbols
+        __get_nv = partial(_get_nv, fd=fd, proxy_to_nvfuser_map=proxy_to_nvfuser_map)
+        for sym in symbols:
+            nv_args = tree_map(__get_nv, sym.args)
+            nv_kwargs = tree_map(__get_nv, sym.kwargs)
+            nv_pre = ops_to_nvfuser_preprocessors_map.get(sym.op, None)
+            if nv_pre is not None:
+                # TODO: should preprocessing functions be called with the symbol's args and kwargs
+                #   or the nv args and kwargs or both?
+                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, *nv_args, **nv_kwargs)
+            nv_op = _get_nvfuser_op(fd, sym.op)
+            nv_result = nv_op(*nv_args, **nv_kwargs)
+
+            # Associates proxies to the nvFuser results
+            # NOTE: it's assumed that NV operations produce results with proxies as leaves
+            proxies, _ = tree_flatten(sym.result)
+            nvs, _ = tree_flatten(nv_result)
+            for p, nv in zip(proxies, nvs):
+                if p in proxy_to_nvfuser_map:
+                    raise AssertionError(f"An output {p} was already in the proxy map {proxy_to_nvfuser_map}!")
+                assert isinstance(p, Proxy)
+                proxy_to_nvfuser_map[p] = nv
+
+        # Adds outputs
+
+        # TODO: refactor this class and the following dict
+        # TODO: probably don't need position in nvOutput
+        class nvOutput:
+            def __init__(self, position, *, is_number=False):
+                self.position = position
+                self.is_number = is_number
+
+        proxy_to_nvOutput_map = {}
+        nvfuser_output_ctr = 0
+        for idx, o in enumerate(outputs):
+            # Asserts that all outputs are proxies, that they are unique, and that they
+            #   were produced by the above fusion
+            assert isinstance(o, Proxy)
+            assert o in proxy_to_nvfuser_map
+            assert o not in proxy_to_nvOutput_map
+            # Validates that each output from the fusino appears only once
+
+            # Ensures that the output is only added as a fusion output once
+            # NOTE: nvFuser doesn't support scalar outputs, so this
+            #   wraps them in tensors (they are unwrapped later)
+            is_number = False
+            if isinstance(o, NumberProxy):
+                is_number = True
+                dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[o.python_type]
+                tensor_out = fd.ops.full((1,), proxy_to_nvfuser_map[o], dtype)
+                fd.add_output(tensor_out)
+            else:
+                fd.add_output(proxy_to_nvfuser_map[o])
+
+            nvOut = nvOutput(nvfuser_output_ctr, is_number=is_number)
+            proxy_to_nvOutput_map[o] = nvOut
+            nvfuser_output_ctr += 1
+
+    #
+    # Builds the callable
+    #
+    # NOTE: the only reason the callable is built today is to handle unwrapping numbers
+    #   from tensors
+
+    # Defines utilities
+    tab = "  "
+
+    # Creates signature
+    arg_str = ", ".join(tuple(_extract_name(inp) for inp in inputs))
+    cstr = f"def fusion({arg_str}):"
+
+    # Creates call to fusion
+    result_str = ", ".join(tuple(_extract_name(out) for out in outputs))
+    cstr += f"\n{tab}{result_str}, = _fusion(({arg_str},))"
+
+    # Converts tensors to numbers, where appropriate
+    out_strs = []
+    for o in outputs:
+        if isinstance(o, NumberProxy):
+            out_strs.append(f"{o.name}.cpu().item()")
+        else:
+            out_strs.append(f"{o.name}")
+    out_str = ", ".join(out_strs)
+    cstr += f"\n{tab}return {out_str}"
+
+    # Creates context
+    ctx = {
+        "_fusion": fs.execute,
+    }
+
+    code = compile(cstr, "nvfuser.gen", mode="exec")
+    exec(code, ctx)
+    fusion = ctx["fusion"]
+
+    return fusion
 
 
 # TODO: support NumPy arrays
@@ -373,94 +514,150 @@ def _get_nv(x, *, fd, proxy_to_nvfuser_map, used_inputs):
 #   same metadata, numbers of the same type, all conditionals on the number evaluated
 #   the same as previous number inputs, and all other values constant.
 def _fuse(trace):
-    proxy_to_nvfuser_map = {}
-    used_inputs = []
-    outputs = []
+    # Separates the trace into parts to execute with nvFuser, and parts to execute with PyTorch
+    # TODO: consider where this pass should live in the future
+    # TODO: consider reordering operations cleverly
+    # TODO: there are more elegant ways to express this logic; consider refactoring it
+
+    #
+    # TODO: maybe generalize is_supported to an executor
+    class Region:
+        def __init__(self, is_supported):
+            self.symbols = []
+            self.is_supported = is_supported
+            self.inputs = []
+            self.outputs = []
+            self.fusion = None
+
+    regions = []
+
+    # Proxies <-> producers
+    proxies_to_producers_map = {}
+    symbols_to_produced_map = {}
+
+    # Proxies <-> consumers
+    proxies_to_consumers_map = {}
+    symbols_to_consumed_map = {}
+
+    symbols_to_region_map = {}
+
+    cur_region = None
+
+    # NOTE: this takes advantage of both symbols and the trace itself stores inputs
+    #   as args and kwargs
+    def _extract_input_proxies(sym):
+        flat_args, _ = tree_flatten(sym.args)
+        flat_kwargs, _ = tree_flatten(sym.kwargs)
+
+        return tuple(x for x in (flat_args + flat_kwargs) if isinstance(x, Proxy))
+
+    def _update_producers(proxy, sym):
+        # Updates proxy -> producer mapping (one to one)
+        assert proxy not in proxies_to_producers_map
+        proxies_to_producers_map[proxy] = sym
+
+        # Updates symbol -> producer mapping (one to many)
+        if sym in symbols_to_produced_map:
+            symbols_to_produced_map[sym].append(proxy)
+        else:
+            symbols_to_produced_map[sym] = [proxy]
+
+    def _update_consumers(proxy, sym):
+        # Updates proxy -> consumers mapping (one to many)
+        if proxy in proxies_to_consumers_map:
+            proxies_to_consumers_map[proxy].append(sym)
+        else:
+            proxies_to_consumers_map[proxy] = [sym]
+
+        # Updates symbol -> consumed mapping (one to many)
+        if sym in symbols_to_consumed_map:
+            symbols_to_consumed_map[sym].append(proxy)
+        else:
+            symbols_to_consumed_map[sym] = [proxy]
+
+    def _update_region(sym, cur_region):
+        # NOTE: Semantically, is_supported(sym)
+        region = None
+
+        op_supported = sym.op in ops_to_nvfuser_ops_map
+        if cur_region is None or op_supported != cur_region.is_supported:
+            region = Region(op_supported)
+            regions.append(region)
+        else:
+            region = cur_region
+
+        region.symbols.append(sym)
+        symbols_to_region_map[sym] = region
+        return region
+
+    # Processes input proxies
+    # TODO: is input its own region?
+    proxies = _extract_input_proxies(trace)
+    for p in proxies:
+        _update_producers(p, "input")
+
+    # Identifies regions and where proxies are produced and consumed
+    for sym in trace.symbols:
+        cur_region = _update_region(sym, cur_region)
+
+        proxies = _extract_input_proxies(sym)
+        for p in proxies:
+            _update_consumers(p, sym)
+
+        flat_outputs, _ = tree_flatten(sym.result)
+        for p in (o for o in flat_outputs if isinstance(o, Proxy)):
+            _update_producers(p, sym)
+
+    # Processes outputs
+    # TODO: is output its own region?
     flat_outputs, output_structure = tree_flatten(trace.outputs)
+    for p in (o for o in flat_outputs if isinstance(o, Proxy)):
+        _update_consumers(p, "output")
 
-    fs = Fusion()
-    with FusionDefinition(fs) as fd:
-        __get_nv = partial(_get_nv, fd=fd, proxy_to_nvfuser_map=proxy_to_nvfuser_map, used_inputs=used_inputs)
+    # Identifies inputs and outputs for each region, creates fusion for each region
+    for region in regions:
+        consumed = []
+        produced = []
+        for sym in region.symbols:
+            # NOTE: it's possible that a symbol doesn't consume a proxy
+            if sym in symbols_to_consumed_map:
+                consumed.extend(symbols_to_consumed_map[sym])
+            if sym in symbols_to_produced_map:
+                produced.extend(symbols_to_produced_map[sym])
+        consumed = set(consumed)
+        produced = set(produced)
 
-        #
-        for sym in trace.symbols:
-            nv_args = tree_map(__get_nv, sym.args)
-            nv_kwargs = tree_map(__get_nv, sym.kwargs)
-            nv_pre = ops_to_nvfuser_preprocessors_map.get(sym.op, None)
-            if nv_pre is not None:
-                # TODO: should preprocessing functions be called with the symbol's args and kwargs
-                #   or the nv args and kwargs or both?
-                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, used_inputs, *nv_args, **nv_kwargs)
-            nv_op = _get_nvfuser_op(fd, sym.op)
-            nv_result = nv_op(*nv_args, **nv_kwargs)
+        # A proxy that's consumed but not produced in the region is an input
+        # TODO: consider ordering inputs in some sensible way
+        region.inputs = consumed - produced
 
-            # Associates proxies to the nvFuser results
-            # NOTE: it's assumed that NV operations produce results with proxies as leaves
-            proxies, _ = tree_flatten(sym.result)
-            nvs, _ = tree_flatten(nv_result)
-            for p, nv in zip(proxies, nvs):
-                if p in proxy_to_nvfuser_map:
-                    raise AssertionError(f"An output {p} was already in the proxy map {proxy_to_nvfuser_map}!")
-                assert p not in proxy_to_nvfuser_map
-                assert isinstance(p, Proxy)
-                proxy_to_nvfuser_map[p] = nv
+        # A proxy that's produced in the region and consumed in another region is an output
+        outputs = []
+        for p in produced:
+            consumers = proxies_to_consumers_map.get(p, ())
+            for c in consumers:
+                if c == "output" or symbols_to_region_map[c] is not region:
+                    region.outputs.append(p)
+                    break
 
-        # TODO: refactor this class and the following dict
-        class nvOutput:
-            def __init__(self, position, *, is_number=False):
-                self.position = position
-                self.is_number = is_number
-
-        proxy_to_nvOutput_map = {}
-
-        #
-        nvfuser_output_ctr = 0
-        has_proxy_output = False
-        for idx, o in enumerate(flat_outputs):
-            if isinstance(o, Proxy):
-                has_proxy_output = True
-                # NOTE: Not every output will be in this map, because the output
-                #   will not have been produced by an nvFuser operator if
-                #   it's also an input.
-                if o in proxy_to_nvfuser_map:
-                    if o not in proxy_to_nvOutput_map:
-                        # Ensures that the output is only added as a fusion output once
-                        # NOTE: nvFuser doesn't support scalar outputs, so this
-                        #   wraps them in tensors (they are unwrapped later)
-                        is_number = False
-                        if isinstance(o, NumberProxy):
-                            is_number = True
-                            dtype = _thunder_dtype_to_nvfuser_dtype_scalar_map[o.python_type]
-                            tensor_out = fd.ops.full((1,), proxy_to_nvfuser_map[o], dtype)
-                            fd.add_output(tensor_out)
-                        else:
-                            fd.add_output(proxy_to_nvfuser_map[o])
-
-                        nvOut = nvOutput(nvfuser_output_ctr, is_number=is_number)
-                        proxy_to_nvOutput_map[o] = nvOut
-                        outputs.append(nvOut)
-                        nvfuser_output_ctr += 1
-                    else:
-                        outputs.append(proxy_to_nvOutput_map[o])
-                    continue
-
-            outputs.append(o)
+        # Short-circuits if the region outputs nothing
+        # NOTE: because regions are functional, this means the region does nothing
+        if len(region.outputs) == 0:
+            region.fusion = None
+        elif region.is_supported:
+            region.fusion = _fuse_region(region.inputs, region.outputs, region.symbols)
+        else:
+            # CASE: not region.is_supported (currently used PyTorch to run)
+            region.fusion = _fuse_torch_region(region.inputs, region.outputs, region.symbols)
 
     #
-    # Builds the callable
+    # Creates the callable connecting the fusions
     #
 
-    # Handles the special case of the function having no proxy outputs
-    if not has_proxy_output:
-        # TODO: maybe there's something better to do here than copy?
-        my_outputs = copy.copy(trace.outputs)
-
-        def fn(*args, **kwargs):
-            return my_outputs
-
-        return fn
-
+    # Common utils
     tab = "  "
+
+    # Creates the signature
     cstr = f"def fusion(*args, **kwargs):"
 
     # Acquires inputs
@@ -477,37 +674,20 @@ def _fuse(trace):
         if isinstance(kwinp, Proxy):
             cstr += f"\n{tab}{kwinp.name} = flat_kwargs[{idx}]"
 
-    # Calls fusion
-    cstr += f"\n{tab}# Invokes fusion"
+    # Calls fusion(s)
+    cstr += f"\n{tab}# Invokes fusion(s)"
 
-    # Acquires a proxies name or passes a constant by value
-    def _extract_name(x):
-        if isinstance(x, Proxy):
-            return x.name
+    for idx, region in enumerate(regions):
+        # Skips regions that do nothing
+        if region.fusion is None:
+            continue
 
-        return str(x)
+        arg_str = ", ".join(tuple(_extract_name(inp) for inp in region.inputs))
+        result_str = ", ".join(tuple(_extract_name(out) for out in region.outputs))
+        cstr += f"\n{tab}{result_str} = _fusion{idx}({arg_str})"
 
-    # NOTE: this guard is necessary for programs where there is no fusion
-    if len(trace.symbols) > 0:
-        arg_string = ", ".join(tuple(_extract_name(uinp) for uinp in used_inputs))
-        cstr += f"\n{tab}result = _fusion(({arg_string},))"
-
-    # Assembles output
-    output_strs = []
-    for o in outputs:
-        if isinstance(o, Proxy):
-            output_strs.append(o.name)
-        elif isinstance(o, nvOutput):
-            if o.is_number:
-                # Unwraps nvFuser's tensor outputs into scalars
-                s = f"result[{o.position}].cpu().item()"
-                output_strs.append(s)
-            else:
-                output_strs.append(f"result[{o.position}]")
-        else:
-            output_strs.append((str(o)))
-    output_str = ", ".join(output_strs)
-
+    # Constructs return statement
+    output_str = ", ".join(tuple(_extract_name(out) for out in flat_outputs))
     cstr += f"\n{tab}# Assembles output"
     cstr += f"\n{tab}return tree_unflatten(({output_str},), output_structure)"
 
@@ -516,9 +696,12 @@ def _fuse(trace):
         "tree_flatten": tree_flatten,
         "tree_unflatten": tree_unflatten,
         "output_structure": output_structure,
-        "_fusion": fs.execute,
     }
 
+    for idx, region in enumerate(regions):
+        ctx[f"_fusion{idx}"] = region.fusion
+
+    # Compiles the function
     code = compile(cstr, "nvfuser.gen", mode="exec")
     exec(code, ctx)
     fusion = ctx["fusion"]

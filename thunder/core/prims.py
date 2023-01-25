@@ -60,6 +60,8 @@ __all__ = [
     "sum",
     "var",
     "var_meta",
+    # Matmul prims
+    "linear",
 ]
 
 
@@ -97,6 +99,8 @@ class Ops(Enum):
     # Reduction prims
     SUM = auto()
     VAR = auto()
+    # Matmul prims
+    LINEAR = auto()
 
 
 # maps from operators to their meta functions
@@ -726,3 +730,70 @@ def var_meta(a, dims, *, correction, **kwargs):
 
 
 var = make_prim(Ops.VAR, "var", var_meta)
+
+#
+# Matmul prims
+#
+# NOTE: matmul prims are highly experimental and will almost definitely change
+
+# out = a @ w.transpose() + bias
+def linear_meta(a, w, bias):
+    # a's shape is (batch dims..., in)
+    # w's shape is (out x in)
+    # if bias is not None, bias's shape is (out)
+    # the output shape is (batch dims..., out)
+
+    # Checks types of the required arguments
+    utils.check(isinstance(a, TensorProxy), lambda: f"a={a} was not a TensorProxy!")
+    utils.check(isinstance(w, TensorProxy), lambda: f"w={w} was not a TensorProxy!")
+
+    # Checks that required arguments are on the same device
+    utils.check(a.device == w.device, lambda: f"Expected a.device={a.device} and w.device={w.device} to be the same!")
+
+    # Acquires the computation dtype and checks that a and w have the same dtype
+    dtype = a.dtype
+    utils.check(
+        dtypes.are_same_dtypes(a, w), lambda: f"Expected a.dtype={a.dtype} and w.dtype={w.dtype} to be the same!"
+    )
+
+    # Acquires the shape information and validates the shapes of the required arguments
+    batch_dims = a.shape[:-1]
+    in_length = a.shape[-1]
+
+    # Validates w's shape
+    utils.check(
+        len(w.shape) == 2, lambda: f"Expected w.shape={w.shape} to have length 2, but found length {len(w.shape)}!"
+    )
+    utils.check(
+        w.shape[1] == in_length,
+        lambda: f"Expected w.shape={w.shape} to have an innermost dimension of length {in_length}, the same length as the innermost dimension of a.shape={a.shape}!",
+    )
+
+    out_length = w.shape[0]
+
+    # Validates bias shape
+    if bias is not None:
+        utils.check(isinstance(bias, TensorProxy), lambda: f"bias={bias} was not None or a TensorProxy!")
+        utils.check(
+            a.device == bias.device,
+            lambda: f"Expected a.device={a.device} and bias.device={bias.device} to be the same!",
+        )
+        utils.check(
+            len(bias.shape) == 1,
+            lambda: f"Expected bias.shape={bias.shape} to have length 1, but found length {len(bias.shape)}!",
+        )
+        utils.check(
+            bias.shape[0] == out_length,
+            lambda: f"Expected bias.shape={bias.shape} to have an innermost dimension of length {out_length}, the same length as the outermost dimension of w.shape={w.shape}!",
+        )
+        utils.check(
+            dtypes.are_same_dtypes(bias, a),
+            lambda: f"Expected a.dtype={a.dtype} and bias.dtype={bias.dtype} to be the same!",
+        )
+
+    out_shape = batch_dims + (out_length,)
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=out_shape, device=a.device, dtype=dtype)
+
+
+linear = make_prim(Ops.LINEAR, "linear", linear_meta)

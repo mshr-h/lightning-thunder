@@ -401,3 +401,38 @@ def test_fusion_reuse(executor, device, dtype):
     fusion_result = fusion(*args, **kwargs)
     torch_result = foo(*args, b=b, flag=True)
     assert_close(fusion_result, torch_result)
+
+
+# TODO: probably only want to run this on nvFuser
+# TODO: maybe move to special test_nvfuser?
+@executors(
+    dtypes=(thunder.float32,),
+)
+def test_hybrid_execution(executor, device, dtype):
+    def foo(a, b, bias=None):
+        c = a + b
+        d = c + a
+        e = d + 2
+        f = ttorch.linear(a, c, bias)
+        g = c + f
+        return (c, e, 2), 5, f, g
+
+    def bar(a, b, bias=None):
+        c = a + b
+        d = c + a
+        e = d + 2
+        f = torch.nn.functional.linear(a, c, bias)
+        g = c + f
+        return (c, e, 2), 5, f, g
+
+    traced_foo = thunder.make_traced(foo, executor="nvfuser")
+    tdtype = ttorch.torch_dtype(dtype)
+
+    a = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    b = make_tensor((2, 2), device="cuda", dtype=torch.float32)
+    bias = None
+
+    result = traced_foo(a, b, bias)
+    torch_result = bar(a, b, bias)
+
+    assert_close(result, torch_result)
