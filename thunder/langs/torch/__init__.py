@@ -28,6 +28,8 @@ __all__ = [
     "mean",
     "var",
     "var_mean",
+    # Matmul Ops,
+    "linear",
     # Language context
     "TorchLangCtx",
 ]
@@ -394,3 +396,7 @@ def var_mean(
     v = a.var(dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
+
+
+def linear(a, w, bias=None):
+    return prims.linear(a, w, bias)

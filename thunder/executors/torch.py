@@ -1,7 +1,6 @@
 import torch
 
 import thunder.core.dtypes as dtypes
-import thunder.langs.torch as ttorch
 from thunder.core import prims
 from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
 
@@ -9,6 +8,7 @@ from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 
 __all__ = [
     "torchCtx",
+    "_fuse_region",
 ]
 
 # TODO: can probably remove weak dtypes from this map
@@ -85,6 +85,8 @@ def is_tensor(a):
 
 
 # TODO: refactor into elementwise helper
+# TODO: conditional based on type aren't actually needed, so maybe find a way
+#   to remove this and speedup PyTorch fusion execution
 def abs_helper(a):
     if is_tensor(a):
         return torch.abs(a)
@@ -137,6 +139,8 @@ ops_to_torch_ops_map = {
     # Reduction prims
     prims.Ops.SUM: "torch.sum",
     prims.Ops.VAR: "torch.var",
+    # Matmul prims
+    prims.Ops.LINEAR: "torch.nn.functional.linear",
 }
 
 # NOTE: this class is here to help with proper printing
@@ -166,6 +170,72 @@ def _get_torch(x):
 
 def _get_torch_op(op):
     return ops_to_torch_ops_map[op]
+
+
+# Acquires a proxies name or passes a constant by value
+# TODO: put this into executors utils
+def _extract_name(x):
+    if isinstance(x, Proxy):
+        return x.name
+
+    return str(x)
+
+
+# TODO: refactor _fuse_region to be called by a common executor utility to generate fusions
+def _fuse_region(inputs, outputs, symbols):
+    # Defines utilities
+    tab = "  "
+
+    # Initializes context
+    ctx = {
+        "torch": torch,
+    }
+
+    # Creates signature
+    arg_str = ", ".join(tuple(_extract_name(inp) for inp in inputs))
+    cstr = f"def fusion({arg_str}):"
+
+    # Calls PyTorch and Python operations
+    cstr += f"\n{tab}# Executes the trace"
+    for sym in symbols:
+        torch_args = tree_map(_get_torch, sym.args)
+        torch_kwargs = tree_map(_get_torch, sym.kwargs)
+        torch_op = _get_torch_op(sym.op)
+        result = sym.result
+
+        if not isinstance(result, Proxy):
+            raise NotImplementedError
+
+        # NOTE: currently assumes result is always a proxy
+        op_str = None
+        if isinstance(torch_op, str):
+            op_str = torch_op
+        else:
+            op_str = torch_op.__name__
+            ctx[op_str] = torch_op
+
+        arg_str = ", ".join(f"{a}" for a in torch_args)
+        kwarg_str = ", ".join(f"{k}={v}" for k, v in torch_kwargs.items())
+        segue_str = ", " if (len(arg_str) > 0 and len(kwarg_str) > 0) else ""
+
+        cstr += f"\n{tab}{result.name} = {op_str}({arg_str}{segue_str}{kwarg_str})"
+
+    # Constructs outputs
+    output_strs = []
+    for out in outputs:
+        if isinstance(out, TensorProxy):
+            # TODO: FIXME: currently makes all outputs contiguous to simplify stride analysis
+            output_strs.append(f"{_extract_name(out)}.contiguous()")
+        else:
+            output_strs.append(_extract_name(out))
+    out_str = ", ".join(output_strs)
+    cstr += f"\n{tab}return {out_str}"
+
+    code = compile(cstr, "torch.gen", mode="exec")
+    exec(code, ctx)
+    fusion = ctx["fusion"]
+
+    return fusion
 
 
 # TODO: intercept PyTorch operations and handle functions whose results are
@@ -242,7 +312,7 @@ def _fuse(trace):
     # Constructs output
     # NOTE: len(flat_outputs) > 0
     torch_outputs = tree_map(_get_torch, flat_outputs)
-    output_str = ", ".join(str(x) for x in torch_outputs)
+    output_str = ", ".join(_extract_name(x) for x in torch_outputs)
     cstr += f"\n{tab}return tree_unflatten(({output_str},), output_structure)"
 
     # Compiles the function
