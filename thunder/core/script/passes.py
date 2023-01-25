@@ -5,6 +5,7 @@ import opcode
 import torch  # # aehem.
 
 import thunder
+from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
 from .graph import Block, Node, PhiValue, replace_values
@@ -92,6 +93,8 @@ def split_block(gr, bl, n):
 
 
 def find_method_through_phi_parent(fn_value):
+    # for inlining, we need to (reverse) traverse PhiValues and attribute
+    # lookups to find the actual function we want to inline
     while isinstance(fn_value, PhiValue) and len(fn_value.values) == 1:
         fn_value = fn_value.values[0]
     if fn_value.parent is not None and fn_value.name is not None:
@@ -183,28 +186,60 @@ def inline_method_call(gr, n):  # criterion?
     ret_bl.block_outputs.add(rv)
 
 
-def torch_to_thunder(gr):
+def inline_submodule_calls(gr):
+    # inlines submodule calls
+    # TODO: recursively and not from nested structures (ModuleList etc.)
+    for bl in gr.blocks[:]:
+        for n in bl.nodes[:]:
+            if n.i.opname == "CALL_METHOD":
+                fn_parent_value, attr_lookups = thunder.core.script.passes.find_method_through_phi_parent(n.inputs[0])
+                if fn_parent_value.value is None:
+                    continue
+
+                fn_value = fn_parent_value.value
+                for al in attr_lookups:
+                    fn_value = getattr(fn_value, al)
+
+                if isinstance(fn_value, torch.nn.Module):
+                    thunder.core.script.passes.inline_method_call(gr, n)
+
+
+def torch_to_thunder(gr, fallback=False):
     """replaces calls to torch.foo functions with calls into thunder's torch
     language."""
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:
-                # todo: change name?, deeper nesting?
-                if i.value == torch:
-                    i.value = thunder.langs.torch
-                if i.parent is not None and i.parent.value == torch:
-                    i.parent.value = thunder.langs.torch
-                    i.value = getattr(thunder.langs.torch, i.name)
+                done = False
+                i_or_parent = i
+                while i_or_parent.value not in _torch_to_thunder_complete_map and i_or_parent.parent is not None:
+                    i_or_parent = i_or_parent.parent
 
-                # replace other things by checking against torch module (make dict at startup?)
-                n = getattr(i.value, "__name__", None)
-                tf = None
-                if n is not None:
-                    tf = getattr(torch, n, None)
-                if tf is not None and i.value == tf:
-                    i.value = getattr(thunder.langs.torch, n)
-                    i.is_global = False
-                    i.is_const = True
+                if i_or_parent.value in _torch_to_thunder_complete_map:
+                    i_or_parent.value = _torch_to_thunder_complete_map[i.value]
+                    i_or_parent.typ = type(i_or_parent.value)
+                    i_or_parent.parent = None
+                    i_or_parent.is_const = True
+                    i_or_parent.is_global = False
+                    done = True
+
+                if (not done) and fallback:  # fallback
+                    # todo: change name?, deeper nesting?
+                    if i.value == torch:
+                        i.value = thunder.langs.torch
+                    if i.parent is not None and i.parent.value == torch:
+                        i.parent.value = thunder.langs.torch
+                        i.value = getattr(thunder.langs.torch, i.name)
+
+                    # replace other things by checking against torch module (make dict at startup?)
+                    n = getattr(i.value, "__name__", None)
+                    tf = None
+                    if n is not None:
+                        tf = getattr(torch, n, None)
+                    if tf is not None and i.value == tf:
+                        i.value = getattr(thunder.langs.torch, n)
+                        i.is_global = False
+                        i.is_const = True
 
 
 def merge_two_blocks(gr, bl1):
@@ -224,7 +259,8 @@ def merge_two_blocks(gr, bl1):
         else:
             bl1.block_inputs.append(i)
 
-    replace_values(bl2, replacements)
+    replace_values(bl2, replacements, follow_phi_values=True)
+    replace_values(bl1, replacements, follow_phi_values=True)
     # TODO: should this happen automatically in replace_values?
 
     for o in bl1.block_outputs:
@@ -238,7 +274,7 @@ def merge_two_blocks(gr, bl1):
 
 def merge_blocks_where_possible(gr):
     i_bl = 0
-    while i_bl + 1 < len(gr.blocks):
+    while i_bl < len(gr.blocks):
         bl1 = gr.blocks[i_bl]
         jt = bl1.nodes[-1].jump_targets
         if len(jt) == 1:
@@ -249,3 +285,27 @@ def merge_blocks_where_possible(gr):
             merge_two_blocks(gr, bl1)
         else:
             i_bl += 1
+
+
+def find_blocks_of_for(gr, for_block):
+    assert for_block.nodes[-1].i.opname == "FOR_ITER"
+
+    blocks_of_for_loop = {for_block}
+    currently_looking_at = set()
+
+    def find_blocks_of_for_rec(for_block, start_block):
+        if for_block == start_block:
+            return True
+        if start_block in currently_looking_at:
+            return False
+        currently_looking_at.add(start_block)
+        found = False
+        for _, jt in start_block.nodes[-1].jump_targets:
+            found |= find_blocks_of_for_rec(for_block, jt)
+        currently_looking_at.remove(start_block)
+        if found:
+            blocks_of_for_loop.add(start_block)
+        return found
+
+    find_blocks_of_for_rec(for_block, gr.blocks[1].nodes[-1].jump_targets[0][1])
+    return blocks_of_for_loop
