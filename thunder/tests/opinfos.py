@@ -633,6 +633,15 @@ bitwise_and_opinfo = OpInfo(
 )
 elementwise_binary_ops.append(bitwise_and_opinfo)
 
+lt_opinfo = OpInfo(
+    tlang.lt,
+    # NOTE: less than is only defined for real numbers
+    dtypes=(datatypes.exact, datatypes.floating),
+    sample_input_generator=elementwise_binary_generator,
+    torch_reference=torch.lt,
+)
+elementwise_binary_ops.append(lt_opinfo)
+
 mul_opinfo = OpInfo(
     tlang.mul,
     sample_input_generator=elementwise_binary_generator,

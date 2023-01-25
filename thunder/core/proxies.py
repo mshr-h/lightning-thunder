@@ -212,6 +212,11 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.add(other, self)
 
+    # <
+    def __lt__(self, other):
+        ctx = get_language_context()
+        return ctx.lt(self, other)
+
     # *
     def __mul__(self, other):
         ctx = get_language_context()

@@ -21,6 +21,7 @@ __all__ = [
     # Tensor creation operations
     "full",
     "full_like",
+    "uniform",
     # Shape operations
     "expand",
     # Elemenwise unary operations
@@ -45,6 +46,7 @@ __all__ = [
     "add",
     "atan2",
     "bitwise_and",
+    "lt",
     "mul",
     "pow",
     "sub",
@@ -110,6 +112,10 @@ def full_like(tensor, fill_value, *, device=None, dtype=None):
     dtype = dtype if dtype is not None else tensor.true_dtype
 
     return full(tensor.shape, fill_value, device=device, dtype=dtype)
+
+
+def uniform(shape, minval=0.0, maxval=1.0, *, dtype, device):
+    return prims.uniform(shape, minval, maxval, dtype=dtype, device=device)
 
 
 #
@@ -330,6 +336,10 @@ def bitwise_and(a, b):
         b,
         supported_dtypes=(dtypes.exact,),
     )
+
+
+def lt(a, b):
+    return _elementwise_binary_helper(prims.lt, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a, b)
 
 
 def mul(a, b):

@@ -84,6 +84,12 @@ def is_tensor(a):
     return isinstance(a, torch.Tensor)
 
 
+def uniform_helper(shape, minval=0.0, maxval=1.0, *, device, dtype):
+    t = torch.empty(shape, device=device, dtype=dtype)
+    t.uniform_(minval, maxval)
+    return t
+
+
 # TODO: refactor into elementwise helper
 # TODO: conditional based on type aren't actually needed, so maybe find a way
 #   to remove this and speedup PyTorch fusion execution
@@ -110,6 +116,7 @@ ops_to_torch_ops_map = {
     prims.Ops.CONVERT_ELEMENT_TYPE: convert_element_type,
     # Tensor creation prims
     prims.Ops.FULL: "torch.full",
+    prims.Ops.UNIFORM: uniform_helper,
     # Elementwise unary prims
     prims.Ops.ABS: abs_helper,
     prims.Ops.ACOS: "torch.acos",
@@ -133,6 +140,7 @@ ops_to_torch_ops_map = {
     prims.Ops.ATAN2: "torch.atan2",
     prims.Ops.BITWISE_AND: "torch.bitwise_and",
     prims.Ops.DIV: "torch.div",
+    prims.Ops.LT: "torch.lt",
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",
     prims.Ops.SUB: "torch.sub",

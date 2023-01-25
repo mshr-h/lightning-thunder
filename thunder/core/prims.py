@@ -27,6 +27,8 @@ __all__ = [
     "convert_element_type",
     # Tensor creation prims
     "full",
+    # TODO: review randomness prims
+    "uniform",
     # Shape prims
     "broadcast_in_dim_meta",
     "broadcast_in_dim",
@@ -53,6 +55,7 @@ __all__ = [
     "atan2",
     "bitwise_and",
     "div",
+    "lt",
     "mul",
     "pow",
     "sub",
@@ -72,6 +75,7 @@ class Ops(Enum):
     CONVERT_ELEMENT_TYPE = auto()
     # Tensor creation prims
     FULL = auto()
+    UNIFORM = auto()
     # Elementwise unary prims
     ABS = auto()
     ACOS = auto()
@@ -95,6 +99,7 @@ class Ops(Enum):
     ATAN2 = auto()
     BITWISE_AND = auto()
     DIV = auto()
+    LT = auto()
     MUL = auto()
     POW = auto()
     SUB = auto()
@@ -197,6 +202,14 @@ def _full_meta(shape, fill_value, *, dtype, device):
 
 
 full = make_prim(Ops.FULL, "full", _full_meta)
+
+# TODO: should the uniform prim include minval maxval or always be [0, 1)?
+def _uniform_meta(shape, minval, maxval, *, dtype, device):
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
+
+
+uniform = make_prim(Ops.UNIFORM, "uniform", _uniform_meta)
 
 #
 # Elementwise prims
@@ -527,7 +540,6 @@ tanh = make_prim(
 # "igamma",
 # "igammac",
 # "le",
-# "lt",
 # "maximum",
 # "minimum",
 # "ne",
@@ -547,7 +559,6 @@ tanh = make_prim(
 # "ge",
 # "gt",
 # "le",
-# "lt",
 # "ne",
 # "remainder",
 
@@ -652,6 +663,17 @@ div = make_prim(
         name="div",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=_div_number_handler,
+    ),
+)
+
+lt = make_prim(
+    Ops.LT,
+    "lt",
+    partial(
+        _elementwise_binary_meta,
+        name="lt",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
+        number_handler=operator.lt,
     ),
 )
 
