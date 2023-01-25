@@ -13,7 +13,7 @@ from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 import thunder.core.dtypes as dtypes
 
 # TODO: review language and executor dependencies
-# import thunder.langs.torch as ttorch
+import thunder.langs.torch as ttorch
 from thunder.core import prims, utils
 from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
 
