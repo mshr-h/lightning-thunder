@@ -228,17 +228,20 @@ def make_traced(
         if executor_token is not None:
             reset_executor_context(executor_token)
 
-        if _return_fusion:
-            result = (result, fusion)
-
+        meta = None
         if _info:
             meta = {
                 "acquisition_time": acquisition_end - acquisition_start,
                 "invocation_time": invocation_end - invocation_start,
                 "translation_time": translation_end - translation_start,
             }
-            return result, meta
 
+        if _info and _return_fusion:
+            return result, meta, fusion
+        if _info:
+            return result, meta
+        if _return_fusion:
+            return result, fusion
         return result
 
     return _fn

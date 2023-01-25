@@ -202,22 +202,25 @@ class TensorProxy(Proxy):
         """
         return dtypes.to_strong_dtype(self._dtype)
 
-    # .true_dtype, registered using __getattr__
-    def _get_true_dtype(self):
-        return self._dtype
-
-    def _get_strides(self):
-        return self.strides
-
     # +
     def __add__(self, other):
         ctx = get_language_context()
         return ctx.add(self, other)
 
+    # +
+    def __radd__(self, other):
+        ctx = get_language_context()
+        return ctx.add(other, self)
+
     # *
     def __mul__(self, other):
         ctx = get_language_context()
         return ctx.mul(self, other)
+
+    # *
+    def __rmul__(self, other):
+        ctx = get_language_context()
+        return ctx.mul(other, self)
 
     # -
     def __sub__(self, other):
@@ -229,7 +232,6 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
 
-    # TODO: review and fix language ctx attribute lookup
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
     #  by the language context. Just returning that method wouldn't work, however,
     #  since the TensorProxy, passed as self here, wouldn't be passed through to the
@@ -237,9 +239,9 @@ class TensorProxy(Proxy):
     def __getattr__(self, name):
         # Handles properties
         if name == "dtype":
-            return self._get_dtype()
+            return super(TensorProxy, self).__getattribute__("_get_dtype")()
         if name == "true_dtype":
-            return self._get_true_dtype()
+            return super(TensorProxy, self).__getattribute__("_dtype")
         if name == "strides":
             return super(TensorProxy, self).__getattribute__("strides")
 

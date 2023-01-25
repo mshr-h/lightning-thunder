@@ -571,6 +571,26 @@ isfinite_opinfo = OpInfo(
 )
 elementwise_unary_ops.append(isfinite_opinfo)
 
+tanh_opinfo = OpInfo(
+    tlang.tanh,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.tanh,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 or complex32 tanh
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(tanh_opinfo)
+
 
 # Puts all opinfos into the "opinfos" list
 opinfos.extend(elementwise_unary_ops)
@@ -619,6 +639,28 @@ mul_opinfo = OpInfo(
     torch_reference=torch.mul,
 )
 elementwise_binary_ops.append(mul_opinfo)
+
+pow_opinfo = OpInfo(
+    tlang.pow,
+    sample_input_generator=elementwise_binary_generator,
+    torch_reference=torch.pow,
+    test_directives=(
+        # NOTE: PyTorch doesn't support bool pow
+        DecorateInfo(pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,)),
+        # NOTE: PyTorch doesn't support cpu float16 pow
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            devicetypes=("cpu",),
+            dtypes=(datatypes.float16, datatypes.complex32),
+        ),
+        # See https://github.com/csarofeen/pytorch/issues/2361
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser,"), dtypes=(datatypes.complex64,)
+        ),
+    ),
+)
+elementwise_binary_ops.append(pow_opinfo)
 
 sub_opinfo = OpInfo(
     tlang.sub,

@@ -19,9 +19,11 @@ from thunder.core.proxies import TensorProxy
 __all__ = [
     # Elementwise Unary Ops
     "acos",
+    "tanh",
     # Elementwise Binary Ops
     "add",
     "mul",
+    "pow",
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
@@ -162,6 +164,10 @@ def acos(a):
     return tlang.acos(a)
 
 
+def tanh(a):
+    return tlang.tanh(a)
+
+
 #
 # Elementwise Binary Ops
 #
@@ -176,6 +182,10 @@ def add(a, b, *, alpha=None):
 
 def mul(a, b):
     return a * b
+
+
+def pow(a, b):
+    return tlang.pow(a, b)
 
 
 #

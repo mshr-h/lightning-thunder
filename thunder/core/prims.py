@@ -47,12 +47,14 @@ __all__ = [
     "expm1",
     "floor",
     "isfinite",
+    "tanh",
     # Elementwise binary prims
     "add",
     "atan2",
     "bitwise_and",
     "div",
     "mul",
+    "pow",
     "sub",
     # Reduction prims
     "reduction_meta",
@@ -87,12 +89,14 @@ class Ops(Enum):
     EXPM1 = auto()
     FLOOR = auto()
     ISFINITE = auto()
+    TANH = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
     BITWISE_AND = auto()
     DIV = auto()
     MUL = auto()
+    POW = auto()
     SUB = auto()
     # Shape prims
     BROADCAST_IN_DIM = auto()
@@ -286,6 +290,8 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "tan",
 # "tanh",
 # "trunc",
+
+# TODO: review number handlers for complex support
 
 
 def _elementwise_unary_meta(a, *, name, type_promotion_kind, number_handler=None, **kwargs):
@@ -492,6 +498,17 @@ isfinite = make_prim(
     ),
 )
 
+tanh = make_prim(
+    Ops.TANH,
+    "tanh",
+    partial(
+        _elementwise_unary_meta,
+        name="isfinite",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.tanh,
+    ),
+)
+
 
 #
 # Elementwise binary prims
@@ -513,10 +530,8 @@ isfinite = make_prim(
 # "lt",
 # "maximum",
 # "minimum",
-# "mul",
 # "ne",
 # "nextafter",
-# "pow",
 # "remainder",
 # "rsqrt",
 # "shift_left",
@@ -533,9 +548,7 @@ isfinite = make_prim(
 # "gt",
 # "le",
 # "lt",
-# "mul",
 # "ne",
-# "pow",
 # "remainder",
 
 
@@ -650,6 +663,17 @@ mul = make_prim(
         name="mul",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=operator.mul,
+    ),
+)
+
+pow = make_prim(
+    Ops.POW,
+    "pow",
+    partial(
+        _elementwise_binary_meta,
+        name="pow",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=operator.pow,
     ),
 )
 

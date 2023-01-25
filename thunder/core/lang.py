@@ -27,11 +27,26 @@ __all__ = [
     "abs",
     "acos",
     "acosh",
+    "asin",
+    "atan",
+    "atanh",
+    "bitwise_not",
+    "ceil",
+    "cos",
+    "cosh",
+    "erf",
+    "erfc",
+    "exp",
+    "expm1",
+    "floor",
+    "isfinite",
+    "tanh",
     # Elementwise binary operations
     "add",
     "atan2",
     "bitwise_and",
     "mul",
+    "pow",
     "sub",
     "true_divide",
     # Language context
@@ -269,6 +284,10 @@ def isfinite(a):
     return _elementwise_unary_helper(prims.isfinite, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a)
 
 
+def tanh(a):
+    return _elementwise_unary_helper(prims.tanh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
 #
 # Elementwise binary operations
 #
@@ -315,6 +334,10 @@ def bitwise_and(a, b):
 
 def mul(a, b):
     return _elementwise_binary_helper(prims.mul, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT, a, b)
+
+
+def pow(a, b):
+    return _elementwise_binary_helper(prims.pow, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG, a, b)
 
 
 def sub(a, b):
