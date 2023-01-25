@@ -5,6 +5,7 @@ import opcode
 import torch  # # aehem.
 
 import thunder
+from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
 from .graph import Block, Node, PhiValue, replace_values
@@ -185,28 +186,60 @@ def inline_method_call(gr, n):  # criterion?
     ret_bl.block_outputs.add(rv)
 
 
-def torch_to_thunder(gr):
+def inline_submodule_calls(gr):
+    # inlines submodule calls
+    # TODO: recursively and not from nested structures (ModuleList etc.)
+    for bl in gr.blocks[:]:
+        for n in bl.nodes[:]:
+            if n.i.opname == "CALL_METHOD":
+                fn_parent_value, attr_lookups = thunder.core.script.passes.find_method_through_phi_parent(n.inputs[0])
+                if fn_parent_value.value is None:
+                    continue
+
+                fn_value = fn_parent_value.value
+                for al in attr_lookups:
+                    fn_value = getattr(fn_value, al)
+
+                if isinstance(fn_value, torch.nn.Module):
+                    thunder.core.script.passes.inline_method_call(gr, n)
+
+
+def torch_to_thunder(gr, fallback=False):
     """replaces calls to torch.foo functions with calls into thunder's torch
     language."""
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:
-                # todo: change name?, deeper nesting?
-                if i.value == torch:
-                    i.value = thunder.langs.torch
-                if i.parent is not None and i.parent.value == torch:
-                    i.parent.value = thunder.langs.torch
-                    i.value = getattr(thunder.langs.torch, i.name)
+                done = False
+                i_or_parent = i
+                while i_or_parent.value not in _torch_to_thunder_complete_map and i_or_parent.parent is not None:
+                    i_or_parent = i_or_parent.parent
 
-                # replace other things by checking against torch module (make dict at startup?)
-                n = getattr(i.value, "__name__", None)
-                tf = None
-                if n is not None:
-                    tf = getattr(torch, n, None)
-                if tf is not None and i.value == tf:
-                    i.value = getattr(thunder.langs.torch, n)
-                    i.is_global = False
-                    i.is_const = True
+                if i_or_parent.value in _torch_to_thunder_complete_map:
+                    i_or_parent.value = _torch_to_thunder_complete_map[i.value]
+                    i_or_parent.typ = type(i_or_parent.value)
+                    i_or_parent.parent = None
+                    i_or_parent.is_const = True
+                    i_or_parent.is_global = False
+                    done = True
+
+                if (not done) and fallback:  # fallback
+                    # todo: change name?, deeper nesting?
+                    if i.value == torch:
+                        i.value = thunder.langs.torch
+                    if i.parent is not None and i.parent.value == torch:
+                        i.parent.value = thunder.langs.torch
+                        i.value = getattr(thunder.langs.torch, i.name)
+
+                    # replace other things by checking against torch module (make dict at startup?)
+                    n = getattr(i.value, "__name__", None)
+                    tf = None
+                    if n is not None:
+                        tf = getattr(torch, n, None)
+                    if tf is not None and i.value == tf:
+                        i.value = getattr(thunder.langs.torch, n)
+                        i.is_global = False
+                        i.is_const = True
 
 
 def merge_two_blocks(gr, bl1):

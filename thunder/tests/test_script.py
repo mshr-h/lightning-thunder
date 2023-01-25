@@ -165,3 +165,23 @@ def test_inline_submodule():
     assert_close(fn(m, x), m(x))
 
     # explicitly check for things to have been inlined?
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
+def test_inline_submodule_and_convert_to_thunder():
+    model = nanogpt_model.MLP(nanogpt_model.GPTConfig)
+
+    gr = thunder.core.script.frontend.acquire_method(model.forward, verbose=False)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+
+    thunder.core.script.passes.inline_submodule_calls(gr)
+    thunder.core.script.passes.merge_blocks_where_possible(gr)
+    thunder.core.script.passes.torch_to_thunder(gr)
+
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    ### now trace fn and check things work...

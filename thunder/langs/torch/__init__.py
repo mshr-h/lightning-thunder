@@ -400,3 +400,14 @@ def var_mean(
 
 def linear(a, w, bias=None):
     return prims.linear(a, w, bias)
+
+
+_torch_to_thunder_function_map = {
+    torch.add: add,
+    torch.nn.functional.linear: linear,
+}
+
+_torch_to_thunder_complete_map = {
+    **_torch_to_thunder_dtype_map,
+    **_torch_to_thunder_function_map,
+}
