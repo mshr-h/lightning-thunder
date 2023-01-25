@@ -217,12 +217,14 @@ ops_to_nvfuser_ops_map = {
     #   but prims.isfinite always expects a boolean return (consistent with
     #   Python, NumPy, JAX, and PyTorch)
     prims.Ops.ISFINITE: "isfinite",
+    prims.Ops.TANH: "tanh",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
     prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
     prims.Ops.MUL: "mul",
+    prims.Ops.POW: "pow",
     prims.Ops.SUB: "sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
@@ -238,6 +240,7 @@ ops_to_nvfuser_preprocessors_map = {
     # Elementwise unary prims
     prims.Ops.ABS: _elementwise_preprocessor,
     prims.Ops.ACOS: _elementwise_preprocessor,
+    prims.Ops.TANH: _elementwise_preprocessor,
     # prims.Ops.ACOSH:_elementwise_preprocessor,
     prims.Ops.ASIN: _elementwise_preprocessor,
     prims.Ops.ATAN: _elementwise_preprocessor,
@@ -257,6 +260,7 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.BITWISE_AND: _elementwise_preprocessor,
     prims.Ops.DIV: _elementwise_preprocessor,
     prims.Ops.MUL: _elementwise_preprocessor,
+    prims.Ops.POW: _elementwise_preprocessor,
     prims.Ops.SUB: _elementwise_preprocessor,
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: _nvScalars_to_Numbers_preprocessor,

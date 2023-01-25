@@ -127,12 +127,14 @@ ops_to_torch_ops_map = {
     prims.Ops.EXPM1: "torch.expm1",
     prims.Ops.FLOOR: "torch.floor",
     prims.Ops.ISFINITE: "torch.isfinite",
+    prims.Ops.TANH: "torch.tanh",
     # Elementwise binary prims
     prims.Ops.ADD: add_helper,
     prims.Ops.ATAN2: "torch.atan2",
     prims.Ops.BITWISE_AND: "torch.bitwise_and",
     prims.Ops.DIV: "torch.div",
     prims.Ops.MUL: "torch.mul",
+    prims.Ops.POW: "torch.pow",
     prims.Ops.SUB: "torch.sub",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
