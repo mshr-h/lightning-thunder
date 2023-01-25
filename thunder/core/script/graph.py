@@ -118,10 +118,10 @@ class Value:
 
 class PhiValue(Value):
     # node?
-    def __init__(self, values, jump_sources, bl):
+    def __init__(self, values, jump_sources, block):
         super().__init__()
         self._unfinished_clone = False
-        self.bl = bl
+        self.block = block
         self._set_values_jump_sourcess(values, jump_sources)
 
     def _set_values_jump_sourcess(self, values, jump_sources):
@@ -139,7 +139,7 @@ class PhiValue(Value):
             translation_dict = {}
         if self in translation_dict:
             return self
-        v = PhiValue(self.values, self.jump_sources, translation_dict[self.bl])
+        v = PhiValue(self.values, self.jump_sources, translation_dict[self.block])
         v._unfinished_clone = True
         translation_dict[self] = v
         return v
@@ -174,8 +174,8 @@ def unify_values(values, jump_sources, bl, all_predecessors_done=True):
 class Node:
     def __init__(self, *, i=None, inputs=None, outputs=None, line_no=None):
         self.i = i
-        self.inputs = inputs
-        self.outputs = outputs
+        self.inputs = inputs if inputs is not None else []
+        self.outputs = outputs if inputs is not None else []
         self.jump_targets = []
         self.line_no = line_no
         self.block = None
@@ -303,7 +303,7 @@ def insert_after(new_n, n):
     new_n.block = n.block
 
 
-def replace_values(gr_or_bl, value_map):
+def replace_values(gr_or_bl, value_map, follow_phi_values=False):
     ### Replacing a value:
     # - as inputs/outputs of nodes
     # - value.parent for other values
@@ -312,6 +312,11 @@ def replace_values(gr_or_bl, value_map):
 
     def map_values(v):
         if v in value_map:
+            if follow_phi_values:
+                for pv in v.phi_values:
+                    pv.values = [(vv if vv is not v else value_map[v]) for vv in pv.values]
+                value_map[v].phi_values += v.phi_values
+                v.phi_values = []
             return value_map[v]
         if isinstance(v.value, MROAwareObjectRef):
             v.value.obj = map_values(v.value.obj)
@@ -326,6 +331,7 @@ def replace_values(gr_or_bl, value_map):
         return v
 
     def process_block(bl):
+        bl.block_inputs = [map_values(vv) for vv in bl.block_inputs]
         for n in bl.nodes:
             n.inputs = [map_values(vv) for vv in n.inputs]
             n.outputs = [map_values(vv) for vv in n.outputs]
@@ -396,7 +402,7 @@ def make_dot(gr, format="png", add_names=False):
                 if i in value_idxes:
                     dot.edge(f"v {value_idxes[i]}", f"i {i_bl} {i_n}", color="blue")
                 elif isinstance(i, PhiValue):
-                    print("oops")
+                    print("oops", repr(i))
                     for v in i.values:
                         if v in value_idxes:
                             dot.edge(f"v {value_idxes[v]}", f"i {i_bl} {i_n}", color="red")

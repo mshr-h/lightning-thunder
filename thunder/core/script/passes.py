@@ -226,7 +226,8 @@ def merge_two_blocks(gr, bl1):
         else:
             bl1.block_inputs.append(i)
 
-    replace_values(bl2, replacements)
+    replace_values(bl2, replacements, follow_phi_values=True)
+    replace_values(bl1, replacements, follow_phi_values=True)
     # TODO: should this happen automatically in replace_values?
 
     for o in bl1.block_outputs:
@@ -240,7 +241,7 @@ def merge_two_blocks(gr, bl1):
 
 def merge_blocks_where_possible(gr):
     i_bl = 0
-    while i_bl + 1 < len(gr.blocks):
+    while i_bl < len(gr.blocks):
         bl1 = gr.blocks[i_bl]
         jt = bl1.nodes[-1].jump_targets
         if len(jt) == 1:
@@ -253,7 +254,7 @@ def merge_blocks_where_possible(gr):
             i_bl += 1
 
 
-def find_blocks_of_for(for_block):
+def find_blocks_of_for(gr, for_block):
     assert for_block.nodes[-1].i.opname == "FOR_ITER"
 
     blocks_of_for_loop = {for_block}
