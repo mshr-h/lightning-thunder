@@ -2,12 +2,13 @@ import sys
 
 import pytest
 import torch
+from torch import add as tadd
 from torch.testing import assert_close
 
 import thunder.core.script.frontend
-import thunder.core.script.python_ir
 import thunder.core.script.passes
-from torch import add as tadd
+import thunder.core.script.python_ir
+
 from . import nanogpt_model
 
 
