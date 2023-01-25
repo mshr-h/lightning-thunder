@@ -17,11 +17,17 @@ import thunder.core.prims as prims
 from thunder.core.proxies import TensorProxy
 
 __all__ = [
+    # Tensor creation operations
+    "full",
+    "full_like",
+    "uniform",
+    "zeros_like",
     # Elementwise Unary Ops
     "acos",
     "tanh",
     # Elementwise Binary Ops
     "add",
+    "lt",
     "mul",
     "pow",
     # Reduction Ops
@@ -30,6 +36,9 @@ __all__ = [
     "mean",
     "var",
     "var_mean",
+    # NN Ops
+    # TODO: move to torch.nn.functional
+    "dropout",
     # Matmul Ops,
     "linear",
     # Language context
@@ -131,6 +140,10 @@ class TorchLangCtx(object):
     def add(self, a, b):
         return tlang.add(a, b)
 
+    # <
+    def lt(self, a, b):
+        return tlang.lt(a, b)
+
     # *
     def mul(self, a, b):
         return tlang.mul(a, b)
@@ -156,6 +169,31 @@ def ctx():
 
 
 #
+# Tensor Creation Ops
+#
+
+# TODO: check these signatures
+def full(shape, fill_value, *, device, dtype=None):
+    return tlang.full(shape, fill_value, device=device, dtype=dtype)
+
+
+def full_like(tensor, fill_value, *, device=None, dtype=None):
+    return tlang.full_like(tensor, fill_value, device=device, dtype=dtype)
+
+
+# TODO: based on uniform_, check if Torch now has a functional uniform
+# NOTE: the uniform_ documentation suggests the interval is specified using "from" and "to",
+#   but from is a reserved keyword in Python
+def uniform(shape, minval=0.0, maxval=1.0, *, device, dtype):
+    return tlang.uniform(shape, minval, maxval, device=device, dtype=dtype)
+
+
+# TODO: maybe just make this a passthrough?
+def zeros_like(tensor, *, device=None, dtype=None):
+    return full_like(tensor, 0.0, device=device, dtype=dtype)
+
+
+#
 # Elementwise Unary Ops
 #
 
@@ -178,6 +216,10 @@ def add(a, b, *, alpha=None):
         b = b * alpha
 
     return a + b
+
+
+def lt(a, b):
+    return tlang.lt(a, b)
 
 
 def mul(a, b):
@@ -406,6 +448,58 @@ def var_mean(
     v = a.var(dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
+
+
+#
+# NN Ops
+#
+# def _uniform_helper(shape, low=0., high=1., *, dtype, device):
+#     utils.validate_shape(shape)
+
+#     assert isinstance(low, Number)
+#     assert isinstance(high, Number)
+
+#     return prims._uniform_helper(shape, low=low, high=high, dtype=dtype, device=device)
+
+
+def _dropout_helper(self, val):
+    """
+    Helper function for all dropout-type operators. During training,
+    some of the elements of the input tensor are randomly masked.
+
+    Returns the masked tensor of the boolean values.
+
+    """
+
+    r = uniform(self.shape, 0.0, 1.0, dtype=dtypes.float32, device=self.device)
+    result = r < val
+
+    return result
+
+
+# full torch signature is: a, p, training, inplace
+def dropout(a, p=0.5):
+
+    utils.check(
+        p <= 1 and p >= 0,
+        lambda: f"dropout probability has to be between 0 and 1, but got, {p}",
+    )
+
+    if p == 1:
+        return zeros_like(a)
+
+    if p == 0:
+        return a
+
+    scale = 1 / (1 - p)
+    dropout_mask = _dropout_helper(a, 1 - p)
+
+    return a * dropout_mask * scale
+
+
+#
+# Matmul Ops
+#
 
 
 def linear(a, w, bias=None):
