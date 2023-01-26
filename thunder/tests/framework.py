@@ -328,3 +328,16 @@ def requiresJAX(fn):
         return fn(*args, **kwargs)
 
     return _fn
+
+
+def requiresCUDA(fn):
+    import torch
+
+    @wraps(fn)
+    def _fn(*args, **kwargs):
+        if not torch.cuda.is_available():
+            pytest.skip("Requires CUDA")
+
+        return fn(*args, **kwargs)
+
+    return _fn

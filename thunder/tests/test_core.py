@@ -9,7 +9,7 @@ import thunder
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 
-from .framework import executors, NOTHING
+from .framework import executors, NOTHING, requiresCUDA
 
 
 @executors(dtypes=(thunder.float32,))
@@ -408,6 +408,7 @@ def test_fusion_reuse(executor, device, dtype):
 @executors(
     dtypes=(thunder.float32,),
 )
+@requiresCUDA
 def test_hybrid_execution(executor, device, dtype):
     def foo(a, b, bias=None):
         c = a + b
