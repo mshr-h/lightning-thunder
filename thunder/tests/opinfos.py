@@ -782,3 +782,43 @@ reshape_opinfo = OpInfo(
 shape_ops.append(reshape_opinfo)
 
 opinfos.extend(shape_ops)
+
+#
+# Reduction OpInfos
+#
+reduction_ops = []
+
+
+def sum_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, dim, keepdim, dtype
+    cases = (((4, 4), None, False, None),)
+
+    for shape, dim, keepdim, dtype in cases:
+        yield (SampleInput(make(shape), dim, keepdim, dtype=dtype))
+
+
+sum_opinfo = OpInfo(
+    ttorch.sum,
+    sample_input_generator=sum_sample_generator,
+    torch_reference=torch.sum,
+    test_directives=(
+        # Torch doesn't support cpu complex half sum
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32,),
+            devicetypes=("cpu",),
+        ),
+        # See https://github.com/csarofeen/pytorch/issues/2369
+        DecorateInfo(
+            pytest.mark.xfail,
+            dtypes=(datatypes.complexfloating,),
+            executors=("nvFuser",),
+        ),
+    ),
+)
+reduction_ops.append(sum_opinfo)
+
+opinfos.extend(reduction_ops)

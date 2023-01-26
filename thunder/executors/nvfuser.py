@@ -199,7 +199,6 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.FULL: "full",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
-    # prims.Ops.RESHAPE: "reshape", TODO: does nvFuser not have a reshape prim?
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
