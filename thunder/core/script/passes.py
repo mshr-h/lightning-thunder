@@ -8,7 +8,7 @@ import thunder
 from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
-from .graph import Block, Node, PhiValue, replace_values
+from .graph import Block, check_graph, Node, PhiValue, replace_values
 
 
 def specify_inputs(gr, inps):
@@ -77,9 +77,17 @@ def split_block(gr, bl, n):
 
     for n in nbl.nodes:
         for idx_i, i in enumerate(n.inputs):
-            if i in potential_bl_outputs:
-                n.inputs[idx_i] = get_or_create_phi(i)
-                bl.block_outputs.add(i)
+            i_or_parent = i
+            last_i_or_parent = i
+            while i_or_parent not in potential_bl_outputs and i_or_parent.parent != None:
+                last_i_or_parent = i_or_parent
+                i_or_parent = i_or_parent.parent
+            if i_or_parent in potential_bl_outputs:
+                if i_or_parent is i:
+                    n.inputs[idx_i] = get_or_create_phi(i)
+                else:
+                    last_i_or_parent.parent = get_or_create_phi(i_or_parent)
+                bl.block_outputs.add(i_or_parent)
         # for inplace ops, we also check the outputs (e.g. FOR_ITER)
         for idx_o, o in enumerate(n.outputs):
             if o in potential_bl_outputs:
@@ -139,7 +147,9 @@ def inline_method_call(gr, n):  # criterion?
     else:
         raise NotImplementedError(f"inlining {n}")
 
+    check_graph(gr)
     nbl = split_block(gr, bl, bl.nodes[i_n + 1])
+    check_graph(gr)
     n1 = bl.nodes.pop(i_n)
     assert n1 is n
 
@@ -206,10 +216,19 @@ def inline_submodule_calls(gr):
 
 def torch_to_thunder(gr, fallback=False):
     """replaces calls to torch.foo functions with calls into thunder's torch language."""
+
+    def fill_in_value(v):
+        # PhiValues ?
+        if v.value is None and v.parent is not None:
+            fill_in_value(v.parent)
+        if v.value is None and v.parent is not None and v.parent.value is not None and v.name is not None:
+            v.value = getattr(v.parent.value, v.name)
+
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:
                 done = False
+                fill_in_value(i)
                 i_or_parent = i
                 while i_or_parent.value not in _torch_to_thunder_complete_map and i_or_parent.parent is not None:
                     i_or_parent = i_or_parent.parent
@@ -259,11 +278,12 @@ def merge_two_blocks(gr, bl1):
             bl1.block_inputs.append(i)
 
     replace_values(bl2, replacements, follow_phi_values=True)
-    replace_values(bl1, replacements, follow_phi_values=True)
-    # TODO: should this happen automatically in replace_values?
-
+    # TODO: Should this happen automatically in replace_values?
+    #       Should we also replace values in bl1?
     for o in bl1.block_outputs:
-        o.phi_values = [pv for pv in o.phi_values if pv not in replacements]
+        for pv in o.phi_values:
+            if pv in replacements:
+                pv.remove_value(o)
     bl1.block_outputs = {o for o in bl1.block_outputs if o.phi_values}
     bl1.block_outputs.update(bl2.block_outputs)
 
@@ -282,6 +302,7 @@ def merge_blocks_where_possible(gr):
             bl2 = None
         if bl2 is not None and len(bl2.jump_sources) == 1 and bl2.jump_sources[0] == bl1.nodes[-1]:
             merge_two_blocks(gr, bl1)
+            check_graph(gr)
         else:
             i_bl += 1
 
