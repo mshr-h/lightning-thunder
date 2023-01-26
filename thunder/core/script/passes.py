@@ -147,6 +147,7 @@ def inline_method_call(gr, n):  # criterion?
     else:
         raise NotImplementedError(f"inlining {n}")
 
+    check_graph(gr)
     nbl = split_block(gr, bl, bl.nodes[i_n + 1])
     check_graph(gr)
     n1 = bl.nodes.pop(i_n)
@@ -215,10 +216,19 @@ def inline_submodule_calls(gr):
 
 def torch_to_thunder(gr, fallback=False):
     """replaces calls to torch.foo functions with calls into thunder's torch language."""
+
+    def fill_in_value(v):
+        # PhiValues ?
+        if v.value is None and v.parent is not None:
+            fill_in_value(v.parent)
+        if v.value is None and v.parent is not None and v.parent.value is not None and v.name is not None:
+            v.value = getattr(v.parent.value, v.name)
+
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:
                 done = False
+                fill_in_value(i)
                 i_or_parent = i
                 while i_or_parent.value not in _torch_to_thunder_complete_map and i_or_parent.parent is not None:
                     i_or_parent = i_or_parent.parent
