@@ -1,7 +1,7 @@
-import pytest
 import operator
 from functools import reduce
 
+import pytest
 import torch
 from torch.testing import assert_close, make_tensor
 

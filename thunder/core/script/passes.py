@@ -205,8 +205,7 @@ def inline_submodule_calls(gr):
 
 
 def torch_to_thunder(gr, fallback=False):
-    """replaces calls to torch.foo functions with calls into thunder's torch
-    language."""
+    """replaces calls to torch.foo functions with calls into thunder's torch language."""
     for bl in gr.blocks:
         for n in bl.nodes:
             for i in n.inputs:

@@ -1,13 +1,13 @@
 from enum import Enum
+from functools import reduce, wraps
 from itertools import product
-from functools import wraps, reduce
 from numbers import Number
 from typing import Callable, Sequence, Type
 
-import thunder.core.trace as trace
 import thunder.core.dtypes as dtypes
-from .proxies import TensorProxy, NumberProxy
+import thunder.core.trace as trace
 
+from .proxies import NumberProxy, TensorProxy
 
 # This file defines utilities that can be used when defining primitive operations.
 
@@ -525,11 +525,9 @@ def check_no_duplicates(dims: Sequence):
 
 
 # TODO: think about preserving the original function's signature
-class langctx(object):
-    """
-    A decorator that calls the decorated function in the given language context,
-    resetting to the caller's language context when the function is done.
-    """
+class langctx:
+    """A decorator that calls the decorated function in the given language context, resetting to the caller's language
+    context when the function is done."""
 
     def __init__(self, ctx):
         self.ctx = ctx

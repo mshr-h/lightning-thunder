@@ -114,7 +114,6 @@ def test_var_mean(executor, device, dtype):
 # TODO: autogenerate consistency tests using opinfos
 @executors(dtypes=(thunder.float32,))
 def test_layer_norm(executor, device, dtype):
-
     thunder_fn = thunder.make_traced(ttorch.layer_norm, executor=executor)
     torch_fn = torch.nn.functional.layer_norm
     tdtype = ttorch.torch_dtype(dtype)
@@ -139,4 +138,4 @@ def test_layer_norm(executor, device, dtype):
 
         thunder_result = thunder_fn(a, normalized_shape, weight, bias, **kwargs)
         torch_result = torch_fn(a, normalized_shape, weight, bias, **kwargs)
-        assert_close(thunder_result, torch_result, atol=1e-3, rtol=0.)
+        assert_close(thunder_result, torch_result, atol=1e-3, rtol=0.0)

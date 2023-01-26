@@ -1,9 +1,9 @@
 import operator
-from collections import deque
-from numbers import Number
-from functools import partial, reduce
-from enum import auto, Enum
 import string
+from collections import deque
+from enum import auto, Enum
+from functools import partial, reduce
+from numbers import Number
 
 import thunder.core.dtypes as dtypes
 
@@ -84,9 +84,7 @@ class NumberProxy(Proxy):
 # TODO: implement more methods
 #   See https://docs.python.org/3/reference/datamodel.html#emulating-numeric-types
 class IntegerProxy(NumberProxy, int):
-    """
-    A proxy integer.
-    """
+    """A proxy integer."""
 
     def __new__(cls, *, name, value):
         return int.__new__(cls, value)
@@ -154,9 +152,7 @@ class FloatProxy(NumberProxy, float):
 # TODO: add method resolution through language context
 # TODO: maybe change "tensor" param to "like" to be clearer
 class TensorProxy(Proxy):
-    """
-    A proxy tensor.
-    """
+    """A proxy tensor."""
 
     def __init__(
         self,
@@ -206,8 +202,7 @@ class TensorProxy(Proxy):
 
     # .dtype, registered using __getattr__
     def _get_dtype(self):
-        """
-        Returns the strong variant of the tensor's dtype.
+        """Returns the strong variant of the tensor's dtype.
 
         To acquire the actual dtype use "true_dtype"
         """
@@ -258,11 +253,11 @@ class TensorProxy(Proxy):
     def __getattr__(self, name):
         # Handles properties
         if name == "dtype":
-            return super(TensorProxy, self).__getattribute__("_get_dtype")()
+            return super().__getattribute__("_get_dtype")()
         if name == "true_dtype":
-            return super(TensorProxy, self).__getattribute__("_dtype")
+            return super().__getattribute__("_dtype")
         if name == "strides":
-            return super(TensorProxy, self).__getattribute__("strides")
+            return super().__getattribute__("strides")
 
         ctx = get_language_context()
         return partial(getattr(ctx, name), self)

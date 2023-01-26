@@ -1,13 +1,13 @@
 import builtins
+import math
 import operator
 from enum import auto, Enum
 from functools import partial, reduce
 from numbers import Number
-import math
 
-
-import thunder.core.utils as utils
 import thunder.core.dtypes as dtypes
+import thunder.core.utils as utils
+
 from .proxies import NumberProxy, proxy, TensorProxy
 from .trace import get_trace
 from .utils import check, get_numberlike_value, same_shape

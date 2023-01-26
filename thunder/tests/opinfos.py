@@ -1,21 +1,22 @@
 import math
 from collections import namedtuple
-import pytest
 from functools import partial
 
-from looseversion import LooseVersion
+import pytest
 
 # TODO: make this import conditional on Torch being available and querying if should test
 #   with torch
 import torch
+from looseversion import LooseVersion
 from torch.testing import make_tensor
 
-import thunder.core.lang as tlang
 import thunder.core.dtypes as datatypes
+import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 from thunder.langs.torch import torch_dtype
 
 from .framework import _all_device_types
+
 
 # Returns a noncontiguous (tensor with the same shape and values as t
 # The noncontiguous tensor is constructed such that elements in the innermost
@@ -94,11 +95,12 @@ class SampleInput:
 
 
 # TODO: add executor
-class DecorateInfo(object):
-    """Describes which test, or type of tests, should be wrapped in the given
-    decorator when testing an operator. Any test that matches all provided
-    arguments will be decorated. The decorator will only be applied if the
-    active_if argument is True."""
+class DecorateInfo:
+    """Describes which test, or type of tests, should be wrapped in the given decorator when testing an operator.
+
+    Any test that matches all provided arguments will be decorated. The decorator will only be applied if the active_if
+    argument is True.
+    """
 
     __slots__ = [
         "decorator",
