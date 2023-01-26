@@ -1,3 +1,5 @@
+from functools import partial
+
 import pytest
 import torch
 from torch.testing import assert_close, make_tensor
@@ -107,3 +109,34 @@ def test_var_mean(executor, device, dtype):
     thunder_result = traced_foo(a)
     torch_result = torch.var_mean(a, [0, 1], keepdim=True, correction=2)
     assert_close(thunder_result, torch_result)
+
+
+# TODO: autogenerate consistency tests using opinfos
+@executors(dtypes=(thunder.float32,))
+def test_layer_norm(executor, device, dtype):
+
+    thunder_fn = thunder.make_traced(ttorch.layer_norm, executor=executor)
+    torch_fn = torch.nn.functional.layer_norm
+    tdtype = ttorch.torch_dtype(dtype)
+
+    # TODO: improve these
+    # input_shape, normalized_shape, kwargs
+    cases = (
+        ((1, 2, 3), (1, 2, 3), {"eps": 0.5}),
+        ((2, 2, 3), (2, 3), {"eps": -0.5}),
+        ((1,), (1,), {}),
+        ((1, 2), (2,), {}),
+        # ((0, 1), (1,), {}),  # nvFuser doesn't handle tensors with zero elements
+    )
+
+    make_arg = partial(make_tensor, device=device, dtype=tdtype)
+
+    for input_shape, normalized_shape, kwargs in cases:
+        # Shape of weight and bias should be the same as normalized_shape
+        a = make_arg(input_shape)
+        weight = make_arg(normalized_shape)
+        bias = make_arg(normalized_shape)
+
+        thunder_result = thunder_fn(a, normalized_shape, weight, bias, **kwargs)
+        torch_result = torch_fn(a, normalized_shape, weight, bias, **kwargs)
+        assert_close(thunder_result, torch_result)

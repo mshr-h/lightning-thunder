@@ -535,6 +535,50 @@ def _normalize(a, norm_dims, eps):
     return out, mean, rstd
 
 
+# TODO: likely want to refactor these normalizations
+def native_layer_norm(a, normalized_shape, weight, bias, eps):
+    # Validates inputs
+    normalized_ndim = len(normalized_shape)
+    utils.check(normalized_ndim >= 1, lambda: f"Expected normalized_shape={normalized_shape} to have length >= 1!")
+    # NOTE: canonicalizes the container for comparison to a tuple since
+    # (1, 2, 3) != [1, 2, 3]
+    utils.check(
+        weight is None or weight.shape == tuple(normalized_shape),
+        lambda: f"Expected weight.shape={weight.shape} to be the same as normalized_shape={normalized_shape}!",
+    )
+    utils.check(
+        bias is None or bias.shape == tuple(normalized_shape),
+        lambda: f"Expected bias.shape={bias.shape} to be the same as normalized_shape={normalized_shape}!",
+    )
+    # TODO: review this check -- seems like it's combining too much?
+    utils.check(
+        a.ndim >= normalized_ndim and a.shape[(a.ndim - normalized_ndim) :] == tuple(normalized_shape),
+        lambda: f"TODO native_layer_norm error",
+    )
+
+    axis = a.ndim - normalized_ndim
+    reduction_dims = list(range(axis, a.ndim))
+    out, mean, rstd = _normalize(a, reduction_dims, eps)
+
+    # Handles weight and bias
+    if weight is not None:
+        out = out * weight
+    if bias is not None:
+        out = out + bias
+
+    out = tlang.maybe_convert_to_dtype(out, a.dtype)
+    # TODO: review why this conversion cpu only?
+    # if input.device.type == "cpu":
+    mean = tlang.maybe_convert_to_dtype(mean, a.dtype)
+    rstd = tlang.maybe_convert_to_dtype(rstd, a.dtype)
+
+    return out, mean, rstd
+
+
+def layer_norm(input, normalized_shape, weight=None, bias=None, eps=1e-5):
+    return native_layer_norm(input, normalized_shape, weight, bias, eps)[0]
+
+
 #
 # Matmul Ops
 #
