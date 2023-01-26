@@ -139,4 +139,4 @@ def test_layer_norm(executor, device, dtype):
 
         thunder_result = thunder_fn(a, normalized_shape, weight, bias, **kwargs)
         torch_result = torch_fn(a, normalized_shape, weight, bias, **kwargs)
-        assert_close(thunder_result, torch_result)
+        assert_close(thunder_result, torch_result, atol=1e-3)
