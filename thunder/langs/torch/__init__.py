@@ -24,6 +24,7 @@ __all__ = [
     "zeros_like",
     # Elementwise Unary Ops
     "acos",
+    "rsqrt",
     "tanh",
     # Elementwise Binary Ops
     "add",
@@ -39,7 +40,8 @@ __all__ = [
     # NN Ops
     # TODO: move to torch.nn.functional
     "dropout",
-    # Matmul Ops,
+    # Norm Ops
+    # Matmul Ops
     "linear",
     # Language context
     "TorchLangCtx",
@@ -108,6 +110,9 @@ class TorchLangCtx(object):
     def __init__(self):
         self.dtype_cls = torch.dtype
         self.tensor_cls = torch.Tensor
+
+    def __repr__(self):
+        return f"[TorchLangCtx]"
 
     def proxy(self, x, *, name):
         if isinstance(x, torch.Tensor):
@@ -200,6 +205,10 @@ def zeros_like(tensor, *, device=None, dtype=None):
 
 def acos(a):
     return tlang.acos(a)
+
+
+def rsqrt(a):
+    return tlang.rsqrt(a)
 
 
 def tanh(a):
@@ -498,6 +507,35 @@ def dropout(a, p=0.5):
 
 
 #
+# Norm Ops
+#
+
+
+def _normalize(a, norm_dims, eps):
+    """
+    Computes mean and 1/std of a tensor along norm_dims.
+    Used as a helper function for normalization layers.
+
+    Args:
+        a (Tensor): input tensor
+        norm_dims (DimsType): dimensions to normalize over
+        eps (float): epsilon for numerical stability
+
+    Returns:
+        out (Tensor): normalized tensor.
+        mean (Tensor): mean of the tensor along norm_dims.
+        rstd (Tensor): 1/std of the tensor along norm_dims.
+    """
+    norm_dims = utils.canonicalize_dims(a.ndim, norm_dims)
+    computation_dtype = utils.get_computation_dtype(a.dtype)
+    a_acc = tlang.maybe_convert_to_dtype(a, computation_dtype)
+    biased_var, mean = var_mean(a_acc, dim=norm_dims, unbiased=False, keepdim=True)
+    rstd = rsqrt(biased_var + eps)
+    out = (a - mean) * rstd
+    return out, mean, rstd
+
+
+#
 # Matmul Ops
 #
 
@@ -505,6 +543,10 @@ def dropout(a, p=0.5):
 def linear(a, w, bias=None):
     return prims.linear(a, w, bias)
 
+
+#
+# torch -> thunder object mapping
+#
 
 _torch_to_thunder_function_map = {
     torch.add: add,

@@ -56,7 +56,7 @@ def get_trace():
 def reset_trace(token):
     """Resets the tracing state."""
 
-    _trace.set(token)
+    _trace.reset(token)
 
 
 # Holds the current language context
@@ -83,13 +83,13 @@ def get_language_context():
     except LookupError:
         pass
 
-    return ctx
+    return None
 
 
 def reset_language_context(token):
     """Resets the tracing state."""
 
-    _language_ctx.set(token)
+    _language_ctx.reset(token)
 
 
 # Holds the current execution context
@@ -121,7 +121,7 @@ def get_executor_context():
 def reset_executor_context(token):
     """Resets the tracing state."""
 
-    _executor_ctx.set(token)
+    _executor_ctx.reset(token)
 
 
 class Trace:

@@ -217,6 +217,7 @@ ops_to_nvfuser_ops_map = {
     #   but prims.isfinite always expects a boolean return (consistent with
     #   Python, NumPy, JAX, and PyTorch)
     prims.Ops.ISFINITE: "isfinite",
+    prims.Ops.RSQRT: "rsqrt",
     prims.Ops.TANH: "tanh",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
@@ -241,6 +242,7 @@ ops_to_nvfuser_preprocessors_map = {
     # Elementwise unary prims
     prims.Ops.ABS: _elementwise_preprocessor,
     prims.Ops.ACOS: _elementwise_preprocessor,
+    prims.Ops.RSQRT: _elementwise_preprocessor,
     prims.Ops.TANH: _elementwise_preprocessor,
     # prims.Ops.ACOSH:_elementwise_preprocessor,
     prims.Ops.ASIN: _elementwise_preprocessor,

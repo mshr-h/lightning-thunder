@@ -49,6 +49,7 @@ __all__ = [
     "expm1",
     "floor",
     "isfinite",
+    "rsqrt",
     "tanh",
     # Elementwise binary prims
     "add",
@@ -93,6 +94,7 @@ class Ops(Enum):
     EXPM1 = auto()
     FLOOR = auto()
     ISFINITE = auto()
+    RSQRT = auto()
     TANH = auto()
     # Elementwise binary prims
     ADD = auto()
@@ -281,7 +283,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "sinh",
 # "sqrt",
 # "tan",
-# "tanh",
 # "trunc",
 
 # nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
@@ -295,13 +296,11 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "neg",
 # "real",
 # "round",
-# "rsqrt",
 # "sign",
 # "sin",
 # "sinh",
 # "sqrt",
 # "tan",
-# "tanh",
 # "trunc",
 
 # TODO: review number handlers for complex support
@@ -511,12 +510,28 @@ isfinite = make_prim(
     ),
 )
 
+# TODO: improve this
+def _rsqrt_number(x):
+    return 1 / math.sqrt(x)
+
+
+rsqrt = make_prim(
+    Ops.RSQRT,
+    "rsqrt",
+    partial(
+        _elementwise_unary_meta,
+        name="rsqrt",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
+        number_handler=_rsqrt_number,
+    ),
+)
+
 tanh = make_prim(
     Ops.TANH,
     "tanh",
     partial(
         _elementwise_unary_meta,
-        name="isfinite",
+        name="tanh",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=math.tanh,
     ),
@@ -545,7 +560,6 @@ tanh = make_prim(
 # "ne",
 # "nextafter",
 # "remainder",
-# "rsqrt",
 # "shift_left",
 # "shift_right_arithmetic",
 # "shift_right_logical",  # not implemented
