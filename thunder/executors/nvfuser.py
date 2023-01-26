@@ -196,6 +196,11 @@ def _full_preprocessor(fd, proxy_to_nvfuser_map, shape, fill_value, dtype, devic
 ops_to_nvfuser_ops_map = {
     # Data movement and transformation prims
     prims.Ops.CONVERT_ELEMENT_TYPE: _convert_element_type_translation,
+    # Tensor creation prims
+    prims.Ops.FULL: "full",
+    # Shape prims
+    prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
+    # prims.Ops.RESHAPE: "reshape", TODO: does nvFuser not have a reshape prim?
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
@@ -228,14 +233,10 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.MUL: "mul",
     prims.Ops.POW: "pow",
     prims.Ops.SUB: "sub",
-    # Shape prims
-    prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     # Reduction prims
     prims.Ops.SUM: "sum",
     prims.Ops.VAR: "var",
     nvOps.VAR_MEAN: "var_mean",
-    # Tensor creation prims
-    prims.Ops.FULL: "full",
 }
 
 ops_to_nvfuser_preprocessors_map = {

@@ -24,6 +24,7 @@ __all__ = [
     "uniform",
     # Shape operations
     "expand",
+    "reshape",
     # Elemenwise unary operations
     "abs",
     "acos",
@@ -153,6 +154,35 @@ def expand(a, *shape):
     # utils.check_valid_shape(shape_)
 
     return prims.broadcast_in_dim(a, shape_, tuple(range(offset, len(a.shape) + offset)))
+
+
+# NOTE: shape may have a single -1 value, which is a marker that the length of that dimension
+#   should be inferred
+def reshape(a, shape):
+    # Checks for -1 marker value
+    numel = 1
+    neg_one_idx = None
+    for idx, l in enumerate(shape):
+        if l >= 0:
+            numel *= l
+        else:
+            utils.check(l == -1, "Found a negative dimension length {l} in shape={shape}!")
+            utils.check(neg_one_idx is None, "Found two -1 markers in shape={shape}!")
+            neg_one_idx = idx
+
+    # Short-circuits if no shape inference is needed
+    if neg_one_idx is None:
+        return prims.reshape(a, shape)
+
+    # Constructs the inferred shape, replacing -1 with the necessary length
+    # TODO: this error message could probably be improved
+    utils.check(a.numel() % numel == 0, "Can't infer length of dimension {neg_one_idx}!")
+    remaining = a.numel() // numel
+    shape = list(shape)
+    shape[neg_one_idx] = remaining
+    # NOTE: alternatively a new tuple could be constructed as follows:
+    # shape = shape[:neg_one_idx] + (remaining,) + shape[neg_one_idx + 1:]
+    return prims.reshape(a, shape)
 
 
 def _compute_broadcast_shape(*_shapes):

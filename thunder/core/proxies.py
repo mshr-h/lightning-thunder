@@ -1,7 +1,7 @@
 import operator
 from collections import deque
 from numbers import Number
-from functools import partial
+from functools import partial, reduce
 from enum import auto, Enum
 import string
 
@@ -49,6 +49,33 @@ class NumberProxy(Proxy):
         self.python_type = python_type
         self.value = value
 
+    def __hash__(self):
+        return Proxy.__hash__(self)
+
+    def __eq__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value == other_value
+
+    def __ge__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value >= other_value
+
+    def __gt__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value > other_value
+
+    def __le__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value <= other_value
+
+    def __lt__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value < other_value
+
+    def __ne__(self, other):
+        other_value = other.value if isinstance(other, NumberProxy) else other
+        return self.value != other_value
+
 
 # NOTE: Why no bool proxy? Because bool cannot be subclassed. There are no bool
 #   instances, just True and False. Further, isinstance(True, int) is True in Python!
@@ -73,7 +100,7 @@ class IntegerProxy(NumberProxy, int):
         return f"[IntegerProxy name={self.name} value={self.value}]"
 
     def __hash__(self):
-        return super().__hash__()
+        return Proxy.__hash__(self)
 
     # NOTE: it'd be nice to define dunders to preserve proxies
     #   across calls to int() and float(), but returning "strict subclasses" of
@@ -91,28 +118,6 @@ class IntegerProxy(NumberProxy, int):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
 
-    def __eq__(self, other):
-        other_value = other.value if isinstance(other, IntegerProxy) else other
-        return self.value == other_value
-
-    def __ne__(self, other):
-        other_value = other.value if isinstance(other, IntegerProxy) else other
-        return self.value != other_value
-
-    def __le__(self, other):
-        raise NotImplementedError
-
-    def __lt__(self, other):
-        other_value = other.value if isinstance(other, IntegerProxy) else other
-        return self.value < other_value
-
-    def __ge__(self, other):
-        other_value = other.value if isinstance(other, IntegerProxy) else other
-        return self.value >= other_value
-
-    def __gt__(self, other):
-        raise NotImplementedError
-
 
 class FloatProxy(NumberProxy, float):
     def __new__(cls, *, name, value):
@@ -123,6 +128,9 @@ class FloatProxy(NumberProxy, float):
 
     def __repr__(self):
         return f"[FloatProxy name={self.name} value={self.value}]"
+
+    def __hash__(self):
+        return Proxy.__hash__(self)
 
     # NOTE: it'd be nice to define dunders to preserve proxies
     #   across calls to int() and float(), but returning "strict subclasses" of
@@ -193,6 +201,9 @@ class TensorProxy(Proxy):
     def __repr__(self):
         return f"[TensorProxy, name={self.name}, shape={self.shape}, dtype={self.dtype}, has_weak_dtype={dtypes.is_weak_dtype(self._dtype)}]"
 
+    def __hash__(self):
+        return Proxy.__hash__(self)
+
     # .dtype, registered using __getattr__
     def _get_dtype(self):
         """
@@ -201,6 +212,9 @@ class TensorProxy(Proxy):
         To acquire the actual dtype use "true_dtype"
         """
         return dtypes.to_strong_dtype(self._dtype)
+
+    def numel(self):
+        return reduce(operator.mul, self.shape, 1)
 
     # +
     def __add__(self, other):

@@ -3,6 +3,8 @@ from collections import namedtuple
 import pytest
 from functools import partial
 
+from looseversion import LooseVersion
+
 # TODO: make this import conditional on Torch being available and querying if should test
 #   with torch
 import torch
@@ -10,6 +12,7 @@ from torch.testing import make_tensor
 
 import thunder.core.lang as tlang
 import thunder.core.dtypes as datatypes
+import thunder.langs.torch as ttorch
 from thunder.langs.torch import torch_dtype
 
 from .framework import _all_device_types
@@ -410,6 +413,14 @@ ceil_opinfo = OpInfo(
             dtypes=(datatypes.float16,),
             devicetypes=("cpu",),
         ),
+        # PyTorch didn't support ceil on exact types before 1.13
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.exact,),
+            devicetypes=("cpu",),
+            active_if=LooseVersion(torch.__version__) < "1.13",
+        ),
     ),
 )
 elementwise_unary_ops.append(ceil_opinfo)
@@ -546,6 +557,14 @@ floor_opinfo = OpInfo(
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.float16,),
             devicetypes=("cpu",),
+        ),
+        # PyTorch didn't support floor on exact types before 1.13
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.exact,),
+            devicetypes=("cpu",),
+            active_if=LooseVersion(torch.__version__) < "1.13",
         ),
     ),
 )
@@ -707,3 +726,57 @@ elementwise_binary_ops.append(sub_opinfo)
 
 # Puts all opinfos into the "opinfos" list
 opinfos.extend(elementwise_binary_ops)
+
+#
+# Shape Op OpInfos
+#
+shape_ops = []
+
+
+def reshape_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # tensor shape, shape
+    cases = (
+        ((4, 2), (2, -1, 2)),
+        ((), (-1,)),  # neg index, empty
+        ((4, 7, 9, 1, 1), (1, 4, 3, -1, 1)),  # neg index
+    )
+
+    reversible_cases = (
+        ((4,), (4,)),
+        ((2, 2, 2), (4, 2)),
+        ((125,), (25, 5)),
+        ((25, 25), (1, 5, 5, 1, 5, 1, 5, 1)),
+        ((16, 32), (2, 4, 1, 4, 4, 1, 4)),
+        ((16, 12), (12, 16)),
+        ((1, 16, 12), (12, 16)),
+        ((1, 5, 1, 5), (25, 1)),
+        ((2, 4, 2), (4, 4)),
+        ((1, 4), (1, 1, 2, 1, 2)),
+        ((3, 5, 7), (7, 5, 3)),
+        ((1,), ()),  # empty
+        ((5, 0, 2, 3), (5, 0, 2, 3)),
+        ((2, 1, 0, 3, 1), (5, 0)),
+        ((1,), ()),  # empty
+        ((4, 5, 6), (4, 5, 6, 1, 1, 1)),
+        ((), (1, 1, 1, 1)),  # empty
+        ((), ()),
+    )
+
+    for tensor_shape, shape in cases:
+        yield SampleInput(make(tensor_shape), shape)
+
+    for shape0, shape1 in reversible_cases:
+        yield SampleInput(make(shape0), shape1)
+        yield SampleInput(make(shape1), shape0)
+
+
+reshape_opinfo = OpInfo(
+    tlang.reshape,
+    sample_input_generator=reshape_sample_generator,
+    torch_reference=torch.reshape,
+)
+shape_ops.append(reshape_opinfo)
+
+opinfos.extend(shape_ops)

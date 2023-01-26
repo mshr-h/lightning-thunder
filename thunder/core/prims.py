@@ -1,7 +1,7 @@
 import builtins
 import operator
 from enum import auto, Enum
-from functools import partial
+from functools import partial, reduce
 from numbers import Number
 import math
 
@@ -32,6 +32,7 @@ __all__ = [
     # Shape prims
     "broadcast_in_dim_meta",
     "broadcast_in_dim",
+    "reshape",
     # Elementwise unary prims
     "abs",
     "acos",
@@ -77,6 +78,9 @@ class Ops(Enum):
     # Tensor creation prims
     FULL = auto()
     UNIFORM = auto()
+    # Shape prims
+    BROADCAST_IN_DIM = auto()
+    RESHAPE = auto()
     # Elementwise unary prims
     ABS = auto()
     ACOS = auto()
@@ -105,8 +109,6 @@ class Ops(Enum):
     MUL = auto()
     POW = auto()
     SUB = auto()
-    # Shape prims
-    BROADCAST_IN_DIM = auto()
     # Reduction prims
     SUM = auto()
     VAR = auto()
@@ -738,6 +740,27 @@ broadcast_in_dim = make_prim(
     Ops.BROADCAST_IN_DIM,
     "broadcast_in_dim",
     broadcast_in_dim_meta,
+)
+
+
+def reshape_meta(a, shape):
+    # Validates inputs
+    utils.check(isinstance(a, TensorProxy), lambda: f"a={a} was not a TensorProxy!")
+    utils.check_valid_shape(shape)
+    numel = reduce(operator.mul, shape, 1)
+    utils.check(
+        numel == a.numel(),
+        f"Attempting to reshape a.shape={a.shape} to shape={shape}, but a.numel()={a.numel()} is different from the number of elements in shape, {numel}",
+    )
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(tensor=a, name=proxy_name, shape=shape)
+
+
+reshape = make_prim(
+    Ops.RESHAPE,
+    "reshape",
+    reshape_meta,
 )
 
 #

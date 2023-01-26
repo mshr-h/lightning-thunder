@@ -22,6 +22,8 @@ __all__ = [
     "full_like",
     "uniform",
     "zeros_like",
+    # Shape ops
+    "reshape",
     # Elementwise Unary Ops
     "acos",
     "rsqrt",
@@ -196,6 +198,15 @@ def uniform(shape, minval=0.0, maxval=1.0, *, device, dtype):
 # TODO: maybe just make this a passthrough?
 def zeros_like(tensor, *, device=None, dtype=None):
     return full_like(tensor, 0.0, device=device, dtype=dtype)
+
+
+#
+# Shape Ops
+#
+
+
+def reshape(a, shape):
+    return tlang.reshape(a, shape)
 
 
 #

@@ -43,7 +43,9 @@ def available_device_types():
     try:
         import torch
 
-        if torch.cuda.is_available():
+        # TODO: technically CUDA can be available without a CUDA device and that might
+        #   be interesting to test
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
             return ("cpu", "cuda")
         return ("cpu",)
     except ModuleNotFoundError:
@@ -262,7 +264,7 @@ class executors:
     # TODO: support other kinds of dtype specifications
     def __init__(self, *, executors=None, devicetypes=None, dtypes=None, scope=None):
         self.executors = set(executors) if executors is not None else set(_all_executors())
-        self.devicetypes = set(devicetypes) if devicetypes is not None else set(_all_device_types())
+        self.devicetypes = set(devicetypes) if devicetypes is not None else set(available_device_types())
 
         if dtypes == NOTHING:
             self.dtypes = (None,)

@@ -117,6 +117,9 @@ ops_to_torch_ops_map = {
     # Tensor creation prims
     prims.Ops.FULL: "torch.full",
     prims.Ops.UNIFORM: uniform_helper,
+    # Shape prims
+    prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
+    prims.Ops.RESHAPE: "torch.reshape",
     # Elementwise unary prims
     prims.Ops.ABS: abs_helper,
     prims.Ops.ACOS: "torch.acos",
@@ -145,8 +148,6 @@ ops_to_torch_ops_map = {
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",
     prims.Ops.SUB: "torch.sub",
-    # Shape prims
-    prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
     # Reduction prims
     prims.Ops.SUM: "torch.sum",
     prims.Ops.VAR: "torch.var",
