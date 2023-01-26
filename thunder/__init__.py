@@ -1,24 +1,24 @@
+import inspect
 import os
+import time
 from collections import deque
 from functools import wraps
-from typing import Callable, Sequence, Optional
-import time
-import inspect
+from typing import Callable, Optional, Sequence
 
-import thunder.langs as langs
 import thunder.core.dtypes as dtypes
+import thunder.core.proxies as proxies
+import thunder.langs as langs
 from thunder.__about__ import *
 from thunder.core.pytree import tree_flatten, tree_unflatten
-import thunder.core.proxies as proxies
 
 from .core.trace import (
+    get_executor_context,
     get_trace,
     new_trace,
     reset_executor_context,
     reset_language_context,
     reset_trace,
     set_executor_context,
-    get_executor_context,
     set_language_context,
 )
 
@@ -106,10 +106,10 @@ def _get_executor(executor=None):
 # TODO: consider how proxies are extensible (review JAX's proxy extension mechanism)
 # TODO: harvest arg and kwargn names upfront to avoid name collisions with proxies
 def _make_proxies(fn, trace, langctx, *args, **kwargs):
-    """
-    Proxying rules:
-        1. All number and tensor inputs are proxied, including if they're in a container.
-        2. All other inputs are passed unmodified.
+    """Proxying rules:
+
+    1. All number and tensor inputs are proxied, including if they're in a container.
+    2. All other inputs are passed unmodified.
     """
 
     sig = inspect.signature(fn)
@@ -141,7 +141,7 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
             proxyargs.append(p)
         else:
             values, structure = tree_flatten(arg)
-            converted_values = list((_convert(v) for v in values))
+            converted_values = list(_convert(v) for v in values)
 
             packed = tree_unflatten(converted_values, structure)
 
@@ -162,7 +162,7 @@ def _make_proxies(fn, trace, langctx, *args, **kwargs):
             proxykwargs[name] = p
         else:
             values, structure = tree_flatten(kwarg)
-            converted_values = list((_convert(v) for v in values))
+            converted_values = list(_convert(v) for v in values)
             packed = tree_unflatten(converted_values, structure)
             proxykwargs[name] = packed
 

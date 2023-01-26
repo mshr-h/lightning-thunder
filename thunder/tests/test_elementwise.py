@@ -1,13 +1,11 @@
-from torch.testing import assert_close
+from torch.testing import assert_close, make_tensor
 
 import thunder
 import thunder.core.lang as tlang
+import thunder.langs.torch as ttorch
 
 from .framework import executors, ops, run_snippet
 from .opinfos import elementwise_binary_ops, elementwise_unary_ops
-
-from torch.testing import assert_close, make_tensor
-import thunder.langs.torch as ttorch
 
 # Tests for elementwise binary operators
 

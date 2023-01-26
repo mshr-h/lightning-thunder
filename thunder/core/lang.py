@@ -5,7 +5,7 @@ from typing import Sequence
 import thunder.core.dtypes as dtypes
 
 # TODO: remove prims import
-from . import utils, prims
+from . import prims, utils
 from .proxies import NumberProxy, TensorProxy
 
 # This file defines Thunder's "core" language.
@@ -64,8 +64,7 @@ __all__ = [
 
 # TODO: implement ref.cast with an option to enforce safe casting
 def maybe_convert_to_dtype(a, dtype):
-    """
-    If a has the same dtype as the given dtype, returns a unmodified.
+    """If a has the same dtype as the given dtype, returns a unmodified.
 
     Otherwise returns a converted to the given dtype.
     """

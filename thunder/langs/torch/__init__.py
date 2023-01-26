@@ -1,20 +1,19 @@
 import operator
 from enum import Enum
 from functools import partial, reduce
-from typing import Callable, Optional, Sequence, Tuple
 from numbers import Number
+from typing import Callable, Optional, Sequence, Tuple
 
 import torch
 
-import thunder.core.trace as trace
-import thunder.core.utils as utils
-from thunder.core.utils import langctx
-import thunder.core.proxies as proxies
-from thunder.core.proxies import TensorProxy
 import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
 import thunder.core.prims as prims
+import thunder.core.proxies as proxies
+import thunder.core.trace as trace
+import thunder.core.utils as utils
 from thunder.core.proxies import TensorProxy
+from thunder.core.utils import langctx
 
 __all__ = [
     # Tensor creation operations
@@ -101,12 +100,12 @@ def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
 
 
-class TorchLangCtx(object):
+class TorchLangCtx:
 
     # NOTE: language context is a singleton
     def __new__(cls):
         if not hasattr(cls, "instance"):
-            cls.instance = super(TorchLangCtx, cls).__new__(cls)
+            cls.instance = super().__new__(cls)
         return cls.instance
 
     def __init__(self):
@@ -483,12 +482,10 @@ def var_mean(
 
 
 def _dropout_helper(self, val):
-    """
-    Helper function for all dropout-type operators. During training,
-    some of the elements of the input tensor are randomly masked.
+    """Helper function for all dropout-type operators. During training, some of the elements of the input tensor are
+    randomly masked.
 
     Returns the masked tensor of the boolean values.
-
     """
 
     r = uniform(self.shape, 0.0, 1.0, dtype=dtypes.float32, device=self.device)
@@ -499,7 +496,6 @@ def _dropout_helper(self, val):
 
 # full torch signature is: a, p, training, inplace
 def dropout(a, p=0.5):
-
     utils.check(
         p <= 1 and p >= 0,
         lambda: f"dropout probability has to be between 0 and 1, but got, {p}",
@@ -523,9 +519,7 @@ def dropout(a, p=0.5):
 
 
 def _normalize(a, norm_dims, eps):
-    """
-    Computes mean and 1/std of a tensor along norm_dims.
-    Used as a helper function for normalization layers.
+    """Computes mean and 1/std of a tensor along norm_dims. Used as a helper function for normalization layers.
 
     Args:
         a (Tensor): input tensor

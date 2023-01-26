@@ -1,15 +1,16 @@
 import argparse
 from itertools import product
 
-import thunder
-import thunder.tests as testing
-import thunder.core.dtypes as datatypes
-
-# Programmatically generated operator benchmarks
-
 # These benchmarks currenly rely on PyTorch
 import torch
 from torch.utils.benchmark import Timer
+
+import thunder
+import thunder.core.dtypes as datatypes
+import thunder.tests as testing
+
+# Programmatically generated operator benchmarks
+
 
 # TODO: add choice of executors
 # TODO: allow setting a specific device, not just the devicetype
@@ -22,10 +23,8 @@ def parse_args():
 
 
 def _resolve_op(name):
-    """
-    Tries to extract the operator name from the thunder namespace directly, and if that fails
-    assumes it's a core language operator.
-    """
+    """Tries to extract the operator name from the thunder namespace directly, and if that fails assumes it's a core
+    language operator."""
     try:
         getattr(thunder, name)
     except AttributeError:
@@ -33,8 +32,9 @@ def _resolve_op(name):
 
 
 def _timer_helper(fn, args, kwargs=None, iters=10):
-    """
-    A wrapper around PyTorch's timer. Returns a Measurement object, described here:
+    """A wrapper around PyTorch's timer.
+
+    Returns a Measurement object, described here:
     https://github.com/pytorch/pytorch/blob/master/torch/utils/benchmark/utils/common.py
     """
     kwargs = kwargs or {}

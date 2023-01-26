@@ -1,18 +1,15 @@
 import pytest
-from looseversion import LooseVersion
-
 import torch
-from torch.testing import assert_close
+from looseversion import LooseVersion
+from torch.testing import assert_close, make_tensor
 
 import thunder
+import thunder.core.dtypes as dtypes
 import thunder.core.lang as tlang
+import thunder.langs.torch as ttorch
 
 from .framework import executors, ops, run_snippet
 from .opinfos import opinfos
-
-from torch.testing import assert_close, make_tensor
-import thunder.langs.torch as ttorch
-import thunder.core.dtypes as dtypes
 
 # Tests for all operators
 

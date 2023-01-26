@@ -181,7 +181,7 @@ class Node:
         self.block = None
 
     def clone(self, translation_dict=None):
-        """.block of the clone will be None if block is not in translation dict"""
+        """.block of the clone will be None if block is not in translation dict."""
         if translation_dict is None:
             translation_dict = {}
         if self in translation_dict:
@@ -266,8 +266,7 @@ class Graph:
 
     def nodes(self):
         for b in self.blocks:
-            for n in self.nodes:
-                yield n
+            yield from self.nodes
 
     def print(self):
         value_counter = 1

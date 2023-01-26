@@ -1,14 +1,14 @@
 import inspect
 import os
 import sys
+from functools import wraps
+from itertools import product
+
 import pytest
 
-from itertools import product
-from functools import wraps
-
-from thunder import make_traced
 import thunder.core.dtypes as datatypes
-from thunder.core.trace import set_executor_context, reset_executor_context
+from thunder import make_traced
+from thunder.core.trace import reset_executor_context, set_executor_context
 
 __all__ = [
     "available_device_types",
@@ -18,7 +18,7 @@ __all__ = [
 ]
 
 # A marker for actually wanting NOTHING instead of specifying nothing
-class NOTHING(object):
+class NOTHING:
     pass
 
 
@@ -52,7 +52,7 @@ def available_device_types():
         ("cpu",)
 
 
-class Executor(object):
+class Executor:
     def supports_dtype(self, dtype):
         return dtype in datatypes.resolve_dtypes(self.supported_dtypes)
 
@@ -107,9 +107,7 @@ class TorchEx(Executor):
 
 
 def _all_executors():
-    """
-    Constructs a list of all Thunder executors to be used when generating tests.
-    """
+    """Constructs a list of all Thunder executors to be used when generating tests."""
     executors = []
 
     try:
@@ -130,11 +128,9 @@ def _all_executors():
 
 
 def benchmark_executors():
-    """
-    Constructs a list of executors to use when benchmarking.
+    """Constructs a list of executors to use when benchmarking.
 
-    These executors should define "get_callable", which returns a callable version of a
-    given function.
+    These executors should define "get_callable", which returns a callable version of a given function.
     """
     executors = []
 

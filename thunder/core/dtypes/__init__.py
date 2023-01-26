@@ -309,9 +309,7 @@ def _numberclass_to_numbertype(cls):
 
 
 def to_dtype(x, *, true_dtype=False):
-    """
-    Exctracts a dtype from an object or class.
-    """
+    """Exctracts a dtype from an object or class."""
 
     if isinstance(x, TensorProxy):
         if true_dtype:

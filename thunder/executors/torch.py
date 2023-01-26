@@ -2,9 +2,8 @@ import torch
 
 import thunder.core.dtypes as dtypes
 from thunder.core import prims
-from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
-
-from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
+from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
+from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 
 __all__ = [
     "torchCtx",
@@ -255,7 +254,6 @@ def _fuse_region(inputs, outputs, symbols):
 # Creates a Python callable that executes the trace using PyTorch and Python
 # NOTE: does this by compiling a function from a string
 def _fuse(trace):
-
     flat_outputs, output_structure = tree_flatten(trace.outputs)
 
     # Short-circuits if the fusion has no outputs

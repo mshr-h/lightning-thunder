@@ -1,22 +1,21 @@
-from enum import auto, Enum
-from typing import Sequence
-import time
-from functools import partial
 import copy
+import time
+from enum import auto, Enum
+from functools import partial
 from numbers import Number
+from typing import Sequence
 
 import torch
 import torch._C._nvfuser as nvfuser
 from torch._C._nvfuser import DataType, Fusion, FusionDefinition
 
-from thunder.core.pytree import tree_flatten, tree_unflatten, tree_map
 import thunder.core.dtypes as dtypes
 
 # TODO: review language and executor dependencies
 import thunder.langs.torch as ttorch
 from thunder.core import prims, utils
-from thunder.core.proxies import Proxy, NumberProxy, TensorProxy
-
+from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
+from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.executors.torch import _fuse_region as _fuse_torch_region
 
 nvTensor = torch._C._nvfuser.Tensor
@@ -331,9 +330,7 @@ def _get_nvfuser_op(fd, op):
 
 
 def _make_contiguous_strides_for(shape):
-    """
-    Returns the strides of a contiguous tensor if row_major
-    """
+    """Returns the strides of a contiguous tensor if row_major."""
     if len(shape) == 0:
         return ()
 

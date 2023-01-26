@@ -1,20 +1,20 @@
 import argparse
-import time
-from functools import partial, reduce
-import warnings
-import operator
 import math
 import multiprocessing
-from multiprocessing import Process
+import operator
 import os
-
-import thunder
-import thunder.core.lang as tlang
-import thunder.langs.torch as ttorch
+import time
+import warnings
+from functools import partial, reduce
+from multiprocessing import Process
 
 import torch
 from torch.testing import make_tensor
 from torch.utils.benchmark import Timer
+
+import thunder
+import thunder.core.lang as tlang
+import thunder.langs.torch as ttorch
 
 # This file contains custom nvFuser-related benchmarks.
 
