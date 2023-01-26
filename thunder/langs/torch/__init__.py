@@ -44,7 +44,8 @@ __all__ = [
     "_set_correction",
     "_reduction_dims",
     "mean",
-    "sum" "var",
+    "sum",
+    "var",
     "var_mean",
     # NN Ops
     # TODO: move to torch.nn.functional
