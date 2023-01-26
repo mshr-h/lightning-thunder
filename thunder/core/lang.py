@@ -17,7 +17,7 @@ from .proxies import NumberProxy, TensorProxy
 
 __all__ = [
     # Data movement and transformation operations
-    "maybe_convert_data_to_type",
+    "maybe_convert_to_dtype",
     # Tensor creation operations
     "full",
     "full_like",
@@ -41,6 +41,7 @@ __all__ = [
     "expm1",
     "floor",
     "isfinite",
+    "rsqrt",
     "tanh",
     # Elementwise binary operations
     "add",
@@ -288,6 +289,10 @@ def isfinite(a):
         return full_like(a, True, dtype=dtypes.bool8)
 
     return _elementwise_unary_helper(prims.isfinite, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a)
+
+
+def rsqrt(a):
+    return _elementwise_unary_helper(prims.rsqrt, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
 def tanh(a):

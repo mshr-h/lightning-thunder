@@ -41,11 +41,13 @@ __all__ = [
     "get_numberlike_type",
     "get_numberlike_value",
     "ELEMENTWISE_TYPE_PROMOTION_KIND",
+    "get_computation_dtype",
     "elementwise_type_promotion",
     # Shape-related functions
     "is_numbertensor",
     "same_shape",
     "canonicalize_dim",
+    "canonicalize_dims",
     "check_valid_length",
     "check_valid_shape",
     "check_no_duplicates",
@@ -330,8 +332,8 @@ _computation_dtype_map = {
 # fmt: on
 
 
-def _computation_dtype(typ):
-    return _computation_dtype_map.get(typ)
+def get_computation_dtype(typ):
+    return _computation_dtype_map.get(typ, typ)
 
 
 class ELEMENTWISE_TYPE_PROMOTION_KIND(Enum):
@@ -414,7 +416,7 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.COMPLEX_TO_FLOAT and is_complex_dtype(promotiontype):
         if is_low_precision_dtype(promotiontype):
-            return _computation_dtype(promotiontype), dtypes.corresponding_real_dtype(promotiontype)
+            return get_computation_dtype(promotiontype), dtypes.corresponding_real_dtype(promotiontype)
         return promotiontype, dtypes.corresponding_real_dtype(promotiontype)
 
     if type_promotion_kind is ELEMENTWISE_TYPE_PROMOTION_KIND.BOOL_TO_LONG and is_boolean_dtype(promotiontype):
@@ -422,7 +424,7 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
 
     # Falls through to DEFAULT
     if is_low_precision_dtype(promotiontype):
-        return _computation_dtype(promotiontype), promotiontype
+        return get_computation_dtype(promotiontype), promotiontype
     return promotiontype, promotiontype
 
 
@@ -486,6 +488,13 @@ def canonicalize_dim(rank: int, idx: int, wrap_scalar: bool = True) -> int:
     return _idx
 
 
+def canonicalize_dims(rank, indices, wrap_scalar=True):
+    if isinstance(indices, int):
+        return canonicalize_dim(rank, indices, wrap_scalar)
+
+    return tuple(canonicalize_dim(rank, x, wrap_scalar) for x in indices)
+
+
 def check_valid_length(length: int):
     """Validates that an object represents a valid dimension length."""
 
@@ -530,7 +539,7 @@ class langctx(object):
         def fn(*args, **kwargs):
             tok = trace.set_language_context(self.ctx)
             result = fn_(*args, **kwargs)
-            trace.set_language_context(tok)
+            trace.reset_language_context(tok)
             return result
 
         return fn
