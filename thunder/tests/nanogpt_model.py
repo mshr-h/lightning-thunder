@@ -149,7 +149,7 @@ class GPT(nn.Module):
 
         # report number of parameters (note we don't count the decoder parameters in lm_head)
         n_params = sum(p.numel() for p in self.transformer.parameters())
-        print("number of parameters: {:.2f}M".format(n_params / 1e6))
+        print(f"number of parameters: {n_params / 1e6:.2f}M")
 
     def forward(self, idx, targets=None):
         device = idx.device
@@ -252,7 +252,7 @@ class GPT(nn.Module):
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
-                fpn = "{}.{}".format(mn, pn) if mn else pn  # full param name
+                fpn = f"{mn}.{pn}" if mn else pn  # full param name
                 # random note: because named_modules and named_parameters are recursive
                 # we will see the same tensors p many many times. but doing it this way
                 # allows us to know which parent module any tensor p belongs to...
@@ -270,7 +270,7 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert len(inter_params) == 0, "parameters {} made it into both decay/no_decay sets!".format(str(inter_params))
+        assert len(inter_params) == 0, f"parameters {str(inter_params)} made it into both decay/no_decay sets!"
         assert (
             len(param_dict.keys() - union_params) == 0
         ), "parameters {} were not separated into either decay/no_decay set!".format(
