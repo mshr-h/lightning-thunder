@@ -8,7 +8,7 @@ import thunder
 from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
-from .graph import Block, Node, PhiValue, replace_values
+from .graph import Block, check_graph, Node, PhiValue, replace_values
 
 
 def specify_inputs(gr, inps):
@@ -77,9 +77,17 @@ def split_block(gr, bl, n):
 
     for n in nbl.nodes:
         for idx_i, i in enumerate(n.inputs):
-            if i in potential_bl_outputs:
-                n.inputs[idx_i] = get_or_create_phi(i)
-                bl.block_outputs.add(i)
+            i_or_parent = i
+            last_i_or_parent = i
+            while i_or_parent not in potential_bl_outputs and i_or_parent.parent != None:
+                last_i_or_parent = i_or_parent
+                i_or_parent = i_or_parent.parent
+            if i_or_parent in potential_bl_outputs:
+                if i_or_parent is i:
+                    n.inputs[idx_i] = get_or_create_phi(i)
+                else:
+                    last_i_or_parent.parent = get_or_create_phi(i_or_parent)
+                bl.block_outputs.add(i_or_parent)
         # for inplace ops, we also check the outputs (e.g. FOR_ITER)
         for idx_o, o in enumerate(n.outputs):
             if o in potential_bl_outputs:
@@ -140,6 +148,7 @@ def inline_method_call(gr, n):  # criterion?
         raise NotImplementedError(f"inlining {n}")
 
     nbl = split_block(gr, bl, bl.nodes[i_n + 1])
+    check_graph(gr)
     n1 = bl.nodes.pop(i_n)
     assert n1 is n
 
@@ -282,6 +291,7 @@ def merge_blocks_where_possible(gr):
             bl2 = None
         if bl2 is not None and len(bl2.jump_sources) == 1 and bl2.jump_sources[0] == bl1.nodes[-1]:
             merge_two_blocks(gr, bl1)
+            check_graph(gr)
         else:
             i_bl += 1
 

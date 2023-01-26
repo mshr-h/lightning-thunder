@@ -38,6 +38,23 @@ class MROAwareObjectRef:  # or as they call it super
         return getattr(mro[i], name)
 
 
+# Values are
+# - function arguments as inputs to the graph (including self)
+# - constants and globals
+# - intermediate results / local variables
+# - attributes of other values given in .parent
+# they can be used
+# - as inputs and outputs of nodes (but inplace is still tricky)
+# - as block_outputs (note that block_outputs can be either outputs of nodes
+#   or attribute lookups).
+# block_outputs (and only these) typically have .phi_values recorded.
+# PhiValues are the block_inputs.
+# - they have (one or multiple) block_outputs as .values, these are set at the
+#   .jump_sources (TODO: .jump_sources records None for non-node-generated).
+# - There must be a 1-1 correspondence between <Value>.phi_values-><PhiValue> and <PhiValue>.values-><Value>.
+# All block_inputs (at least before an optimization pass towards the un-ssa-ing)
+# are expected to be PhiValues and all PhiValues are expected to show up as
+# block_inputs.
 class Value:
     def __init__(
         self,
@@ -152,11 +169,20 @@ class PhiValue(Value):
             [translation_dict.get(js, js) for js in self.jump_sources],
         )
 
-    def add_missing_value(self, v, idx):
-        assert 0 <= idx < len(self.values)
-        assert self.values[idx] == None
-        self.values[idx] = v
-        v.phi_values.append(self)
+    def add_missing_value(self, v, idx=None):  # None: append
+        if idx is None:
+            assert v not in self.values
+            self.values.append(v)
+            v.phi_values.append(self)
+        else:
+            assert 0 <= idx < len(self.values)
+            assert self.values[idx] == None
+            self.values[idx] = v
+            v.phi_values.append(self)
+
+    def remove_value(self, v):
+        v.phi_values.remove(self)
+        self.values.remove(v)
 
 
 def unify_values(values, jump_sources, bl, all_predecessors_done=True):
@@ -170,7 +196,8 @@ def unify_values(values, jump_sources, bl, all_predecessors_done=True):
     return PhiValue(values, jump_sources, bl)
 
 
-# A node corresponds to one Python bytecode instruction
+# A node corresponds to one Python bytecode instruction given in .i
+# it has Values as .inputs and .outputs
 class Node:
     def __init__(self, *, i=None, inputs=None, outputs=None, line_no=None):
         self.i = i
@@ -254,6 +281,9 @@ class Block:
             self.nodes.insert(idx, n)
 
 
+# A graph contains Blocks.
+# The first block (.blocks[0]) is the entry point. Other blocks are connected
+# through jump instructions.
 class Graph:
     def __init__(self, blocks=None):
         self.blocks = [] if blocks is None else blocks
@@ -312,21 +342,19 @@ def replace_values(gr_or_bl, value_map, follow_phi_values=False):
     def map_values(v):
         if v in value_map:
             if follow_phi_values:
-                for pv in v.phi_values:
-                    pv.values = [(vv if vv is not v else value_map[v]) for vv in pv.values]
-                value_map[v].phi_values += v.phi_values
-                v.phi_values = []
+                for pv in v.phi_values[:]:
+                    pv.remove_value(v)
+                    pv.add_missing_value(value_map[v])
             return value_map[v]
         if isinstance(v.value, MROAwareObjectRef):
             v.value.obj = map_values(v.value.obj)
         if v.parent is not None:
             v.parent = map_values(v.parent)
         if isinstance(v, PhiValue):
-            new_values = [map_values(vv) for vv in v.values]
-            for ov, nv in zip(v.values, new_values):
-                ov.phi_values.remove(v)
-                nv.phi_values.append(v)
-            v.values = new_values
+            for ov in v.values:
+                nv = map_values(ov)
+                v.remove_value(ov)
+                v.add_missing_value(nv)
         return v
 
     def process_block(bl):
@@ -432,3 +460,56 @@ def clone_blocks(blocks_to_clone: list[Block], translation_dict=None):
         for i in bl.block_inputs:
             i.post_process_clone(translation_dict=translation_dict)
     return [translation_dict[bl] for bl in blocks_to_clone], translation_dict
+
+
+def check_graph(gr):
+    # some sanity checks for the values
+    import collections
+
+    phi_value_refs = collections.defaultdict(list)
+    for bl in gr.blocks:
+        known_values = set(bl.block_inputs)
+        for i in bl.block_inputs:
+            for v in i.phi_values:
+                phi_value_refs[v].append(i)
+        for n in bl.nodes:
+            n.block = bl
+            for i in n.inputs:
+                i_or_p = i
+                while not (i_or_p in known_values or i_or_p.is_const or i_or_p.is_global):
+                    if i_or_p.parent is not None:
+                        i_or_p = i_or_p.parent
+                    else:
+                        raise RuntimeError(f"unknown value {repr(i_or_p)} needed in {n}")
+
+            for o in n.outputs:
+                known_values.add(o)
+                # inplace modified values are not re-assigned. should they, likely: yes
+                if o not in n.inputs:
+                    for v in o.phi_values:
+                        phi_value_refs[v].append((o, n))
+                else:
+                    print("inplace")
+        for o in bl.block_outputs:
+            is_attr = False
+            o_or_parent = o
+            while o_or_parent not in known_values and o_or_parent.parent is not None:
+                o_or_parent = o_or_parent.parent
+                is_attr = True
+            if is_attr:
+                for v in o.phi_values:
+                    phi_value_refs[v].append((o, None))
+            assert o_or_parent in known_values
+
+    for bl in gr.blocks:
+        for i in bl.block_inputs:
+            assert isinstance(i, PhiValue)
+            assert i.block is bl
+            pvr = phi_value_refs.get(i, [])
+            assert len([v for v in i.values if not v.is_function_arg]) == len(
+                pvr
+            ), f"phi value {repr(i)} source count {len(i.values)} does not match sets {pvr}"
+            if i in phi_value_refs:  # not for function args in first block
+                del phi_value_refs[i]
+            for v in i.values:
+                assert i in v.phi_values, f"phi value {repr(i)} not in phi_values of {repr(v)}"
