@@ -362,6 +362,7 @@ def replace_values(gr_or_bl, value_map, follow_phi_values=False):
         for n in bl.nodes:
             n.inputs = [map_values(vv) for vv in n.inputs]
             n.outputs = [map_values(vv) for vv in n.outputs]
+        bl.block_outputs = {map_values(vv) for vv in bl.block_outputs}
 
     if isinstance(gr_or_bl, Graph):
         for bl in gr_or_bl.blocks:

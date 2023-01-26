@@ -268,11 +268,12 @@ def merge_two_blocks(gr, bl1):
             bl1.block_inputs.append(i)
 
     replace_values(bl2, replacements, follow_phi_values=True)
-    replace_values(bl1, replacements, follow_phi_values=True)
-    # TODO: should this happen automatically in replace_values?
-
+    # TODO: Should this happen automatically in replace_values?
+    #       Should we also replace values in bl1?
     for o in bl1.block_outputs:
-        o.phi_values = [pv for pv in o.phi_values if pv not in replacements]
+        for pv in o.phi_values:
+            if pv in replacements:
+                pv.remove_value(o)
     bl1.block_outputs = {o for o in bl1.block_outputs if o.phi_values}
     bl1.block_outputs.update(bl2.block_outputs)
 
