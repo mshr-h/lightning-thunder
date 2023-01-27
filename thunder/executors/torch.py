@@ -148,6 +148,7 @@ ops_to_torch_ops_map = {
     prims.Ops.POW: "torch.pow",
     prims.Ops.SUB: "torch.sub",
     # Reduction prims
+    prims.Ops.AMAX: "torch.amax",
     prims.Ops.SUM: "torch.sum",
     prims.Ops.VAR: "torch.var",
     # Matmul prims

@@ -114,6 +114,17 @@ def can_safe_cast_to(*, cast_to, cast_from) -> bool:
     return higher_dtype(cast_to, cast_from) == cast_to
 
 
+def can_safe_cast_number_to(num, dtype):
+    if is_complex_dtype(dtype):
+        return True
+    if is_float_dtype(dtype) and not isinstance(num, complex):
+        return True
+    if is_integer_dtype(dtype) and not isinstance(num, float) and not isinstance(num, complex):
+        return True
+
+    return False
+
+
 def get_numberlike_type(x):
     if isinstance(x, NumberProxy):
         return x.python_type

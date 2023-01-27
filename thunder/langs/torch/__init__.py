@@ -31,6 +31,7 @@ __all__ = [
     "atan",
     "atanh",
     "bitwise_not",
+    "exp",
     "rsqrt",
     "tanh",
     # Elementwise Binary Ops
@@ -43,6 +44,7 @@ __all__ = [
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
+    "amax",
     "mean",
     "sum",
     "var",
@@ -50,6 +52,7 @@ __all__ = [
     # NN Ops
     # TODO: move to torch.nn.functional
     "dropout",
+    "softmax",
     # Norm Ops
     # Matmul Ops
     "linear",
@@ -247,6 +250,10 @@ def acos(a):
     return tlang.acos(a)
 
 
+def exp(a):
+    return tlang.exp(a)
+
+
 def rsqrt(a):
     return tlang.rsqrt(a)
 
@@ -418,6 +425,18 @@ def _dim_var_dispatch(dim=None, unbiased=None):
     return dim, unbiased
 
 
+def amax(a, dim, keepdim):
+    return _reduction(
+        a,
+        prims.amax,
+        dims=dim,
+        keepdims=keepdim,
+        dtype=None,
+        has_identity=False,
+        output_dtype_kind=REDUCTION_OUTPUT_TYPE_KIND.SAME,
+    )
+
+
 def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     dtype = dtype if dtype is not None else a.dtype
     utils.check(
@@ -551,6 +570,24 @@ def dropout(a, p=0.5):
     dropout_mask = _dropout_helper(a, 1 - p)
 
     return a * dropout_mask * scale
+
+
+# CompositeImplicitAutograd - don't register decomp
+def softmax(a, dim, dtype=None):
+
+    result_dtype = dtype or a.dtype
+    computation_dtype = utils.get_computation_dtype(result_dtype)
+    a_ = tlang.maybe_convert_to_dtype(a, computation_dtype)
+
+    if a.numel() == 0:
+        a_exp = exp(a_)
+    else:
+        a_max = amax(a_, dim, keepdim=True)
+        a_exp = exp(a_ - a_max)
+
+    result = true_divide(a_exp, sum(a_exp, dim, keepdim=True))
+    converted = tlang.maybe_convert_to_dtype(result, result_dtype)
+    return converted
 
 
 #

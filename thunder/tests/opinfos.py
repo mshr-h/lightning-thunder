@@ -695,16 +695,16 @@ elementwise_binary_ops.append(mul_opinfo)
 pow_opinfo = OpInfo(
     tlang.pow,
     sample_input_generator=elementwise_binary_generator,
-    torch_reference=torch.pow,
+    torch_reference=torch._refs.pow,
     test_directives=(
         # NOTE: PyTorch doesn't support bool pow
         DecorateInfo(pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,)),
-        # NOTE: PyTorch doesn't support cpu float16 pow
+        # NOTE: PyTorch doesn't support cpu complex32 pow, and doesn't seem to promote it properly
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
             devicetypes=("cpu",),
-            dtypes=(datatypes.float16, datatypes.complex32),
+            dtypes=(datatypes.complex32,),
         ),
         # See https://github.com/csarofeen/pytorch/issues/2361
         DecorateInfo(
@@ -788,6 +788,30 @@ opinfos.extend(shape_ops)
 #
 reduction_ops = []
 
+# TODO: increase reduction samples and refacort amax and sum generators
+def amax_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, dim, keepdim
+    cases = (
+        ((4, 4), None, False),
+        ((8, 1, 6), (1,), True),
+        ((8, 7, 5, 1), (0, 1), False),
+    )
+
+    for shape, dim, keepdim in cases:
+        yield (SampleInput(make(shape), dim, keepdim))
+
+
+amax_opinfo = OpInfo(
+    ttorch.amax,
+    sample_input_generator=amax_sample_generator,
+    torch_reference=torch.amax,
+    # Complex numbers are unordered
+    dtypes=(datatypes.exact, datatypes.floating),
+)
+reduction_ops.append(amax_opinfo)
+
 
 def sum_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
@@ -833,3 +857,66 @@ sum_opinfo = OpInfo(
 reduction_ops.append(sum_opinfo)
 
 opinfos.extend(reduction_ops)
+
+#
+# Tensor Creation OpInfos
+#
+tensor_creation_ops = []
+
+# TODO: match fill values to dtype
+def full_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    # shape, fill_value
+    cases = (
+        ((4, 4), 1),
+        ((8, 1, 6), 1),
+        ((8, 7, 5, 1), 1),
+    )
+
+    for shape, fill_value in cases:
+        yield SampleInput(shape, fill_value, device=device, dtype=dtype)
+
+
+full_opinfo = OpInfo(
+    tlang.full,
+    sample_input_generator=full_sample_generator,
+    torch_reference=torch.full,
+)
+tensor_creation_ops.append(full_opinfo)
+
+opinfos.extend(tensor_creation_ops)
+
+#
+# NN Ops
+#
+nn_ops = []
+
+# TODO: improve sample generation, test dtype argument
+def softmax_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    S = 2
+    M = 5
+    # Shape, dim
+    cases = (
+        ((S,), 0),
+        ((S, S), 0),
+        ((S, S), 1),
+        ((S, S), -1),
+        ((S, M, S), 2),
+        ((), 0),
+    )
+
+    for shape, dim in cases:
+        yield SampleInput(make(shape), dim)
+
+
+softmax_opinfo = OpInfo(
+    ttorch.softmax,
+    sample_input_generator=softmax_sample_generator,
+    torch_reference=torch._refs.softmax,
+    dtypes=(datatypes.floating,),
+)
+nn_ops.append(softmax_opinfo)
+
+
+opinfos.extend(nn_ops)
