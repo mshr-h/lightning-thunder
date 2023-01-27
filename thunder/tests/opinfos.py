@@ -817,6 +817,13 @@ sum_opinfo = OpInfo(
             dtypes=(datatypes.complexfloating,),
             executors=("nvFuser",),
         ),
+        # Some PyTorch versions before PyTorch 1.13 throw a runtime error
+        #   insisting, incorrectly, that dimensions be specified by name
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            active_if=LooseVersion(torch.__version__) < "1.13",
+        ),
     ),
 )
 reduction_ops.append(sum_opinfo)
