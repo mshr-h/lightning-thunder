@@ -1,5 +1,6 @@
 import dis
 import inspect
+import types
 
 import opcode
 import torch  # # aehem.
@@ -144,6 +145,20 @@ def inline_method_call(gr, n):  # criterion?
 
         if inspect.isbuiltin(fn_value):
             raise NotImplementedError("cannot inline built-in (C-implemented) function")
+    elif n.i.opname == "CALL_FUNCTION":
+        fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
+        if fn_parent_value.value is None:
+            raise NotImplementedError("cannot inline non-explicit function")
+
+        fn_value = fn_parent_value.value
+        for al in attr_lookups:
+            fn_value = getattr(fn_value, al)
+
+        if not isinstance(fn_value, types.FunctionType):
+            raise NotImplementedError(f"inlining {n}")
+
+        mod1 = None
+        value_for_self1 = None
     else:
         raise NotImplementedError(f"inlining {n}")
 
@@ -178,10 +193,15 @@ def inline_method_call(gr, n):  # criterion?
 
     gr.blocks[i_bl + 1 : i_bl + 1] = gr1.blocks
 
+    # TODO Error checking parameters
     if gr1.ismethod:
         call_args = [value_for_self1, *n.inputs[2:]]
-    else:
+    elif n.i.opname == "CALL_METHOD":
         call_args = n.inputs[2:]
+    elif n.i.opname == "CALL_FUNCTION":
+        call_args = n.inputs[1:]
+    else:
+        raise NotImplementedError()
 
     assert len(n.outputs) == 1
     bl.block_outputs.remove(n.outputs[0])  # TODO: what with inplace!!
@@ -276,6 +296,7 @@ def merge_two_blocks(gr, bl1):
             replacements[i] = iv
         else:
             bl1.block_inputs.append(i)
+            i.block = bl1
 
     replace_values(bl2, replacements, follow_phi_values=True)
     # TODO: Should this happen automatically in replace_values?

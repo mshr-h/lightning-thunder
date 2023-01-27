@@ -574,7 +574,6 @@ def dropout(a, p=0.5):
 
 # CompositeImplicitAutograd - don't register decomp
 def softmax(a, dim, dtype=None):
-
     result_dtype = dtype or a.dtype
     computation_dtype = utils.get_computation_dtype(result_dtype)
     a_ = tlang.maybe_convert_to_dtype(a, computation_dtype)

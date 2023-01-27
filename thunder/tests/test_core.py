@@ -1,5 +1,5 @@
 import operator
-from functools import reduce, partial
+from functools import partial, reduce
 from itertools import product
 
 import pytest
@@ -7,11 +7,11 @@ import torch
 from torch.testing import assert_close, make_tensor
 
 import thunder
+import thunder.core.dtypes as datatypes
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
-import thunder.core.dtypes as datatypes
 
-from .framework import Executor, executors, NOTHING, requiresCUDA, nvFuser
+from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA
 
 
 @executors(dtypes=(thunder.float32,))
