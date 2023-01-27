@@ -710,6 +710,12 @@ pow_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser,"), dtypes=(datatypes.complex64,)
         ),
+        # PyTorch didn't have refs before 1.13
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            active_if=LooseVersion(torch.__version__) < "1.13",
+        ),
     ),
 )
 elementwise_binary_ops.append(pow_opinfo)
@@ -915,6 +921,14 @@ softmax_opinfo = OpInfo(
     sample_input_generator=softmax_sample_generator,
     torch_reference=torch._refs.softmax,
     dtypes=(datatypes.floating,),
+    test_directives=(
+        # PyTorch didn't have refs before 1.13
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            active_if=LooseVersion(torch.__version__) < "1.13",
+        ),
+    ),
 )
 nn_ops.append(softmax_opinfo)
 
