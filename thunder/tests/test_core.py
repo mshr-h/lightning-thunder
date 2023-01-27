@@ -1,5 +1,6 @@
 import operator
-from functools import reduce
+from functools import reduce, partial
+from itertools import product
 
 import pytest
 import torch
@@ -8,8 +9,9 @@ from torch.testing import assert_close, make_tensor
 import thunder
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
+import thunder.core.dtypes as datatypes
 
-from .framework import executors, NOTHING, requiresCUDA
+from .framework import Executor, executors, NOTHING, requiresCUDA, nvFuser
 
 
 @executors(dtypes=(thunder.float32,))
@@ -437,3 +439,27 @@ def test_hybrid_execution(executor, device, dtype):
     torch_result = bar(a, b, bias)
 
     assert_close(result, torch_result)
+
+
+@executors(dtypes=NOTHING)
+def test_dtype_conversion(executor: Executor, device, _):
+    if isinstance(executor, nvFuser):
+        pytest.xfail("https://github.com/csarofeen/pytorch/issues/2370")
+
+    make = partial(make_tensor, (2, 2), device=device)
+
+    def foo(a, dtype):
+        return tlang.maybe_convert_to_dtype(a, dtype)
+
+    thunder_fn = thunder.make_traced(foo, executor=executor)
+
+    strong_dtypes = set(datatypes.strong_dtypes)
+    supported_dtypes = set(datatypes.resolve_dtypes(executor.supported_dtypes))
+    dtypes = strong_dtypes.intersection(supported_dtypes)
+    for a, b in product(dtypes, dtypes):
+        a = ttorch.torch_dtype(a)
+        b = ttorch.torch_dtype(b)
+        t = make(dtype=a)
+        thunder_result = thunder_fn(t, b)
+        torch_result = t.to(b)
+        assert_close(thunder_result, torch_result)

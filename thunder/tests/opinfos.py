@@ -793,7 +793,11 @@ def sum_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
 
     # shape, dim, keepdim, dtype
-    cases = (((4, 4), None, False, None),)
+    cases = (
+        ((4, 4), None, False, None),
+        ((8, 1, 6), (1,), True, None),
+        ((8, 7, 5, 1), (0, 1), False, None),
+    )
 
     for shape, dim, keepdim, dtype in cases:
         yield (SampleInput(make(shape), dim, keepdim, dtype=dtype))
