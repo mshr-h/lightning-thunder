@@ -124,10 +124,10 @@ def _convert_element_type_translation(fd):
 # TODO: combine constants
 # NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
 #   this converts Python numbers to nvConstants
-def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs):
+def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_args, nv_kwargs):
     # Adds scalars as constants
-    flat_args, arg_structure = tree_flatten(args)
-    flat_kwargs, kwarg_structure = tree_flatten(kwargs)
+    flat_args, arg_structure = tree_flatten(nv_args)
+    flat_kwargs, kwarg_structure = tree_flatten(nv_kwargs)
 
     def _add_constant_number(x):
         if isinstance(x, Number) and not isinstance(x, NumberProxy):
@@ -143,10 +143,11 @@ def _elementwise_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs):
 
 # NOTE: nvFuser's broadcast_in_dim primitive does not accept nvScalars as arguments,
 #   so this converts nvScalars to Python numbers
-def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs):
+# TODO: rewrite this to exploit sym_args and sym_kwargs?
+def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_args, nv_kwargs):
     # Converts scalars to actual values
-    flat_args, arg_structure = tree_flatten(args)
-    flat_kwargs, kwarg_structure = tree_flatten(kwargs)
+    flat_args, arg_structure = tree_flatten(nv_args)
+    flat_kwargs, kwarg_structure = tree_flatten(nv_kwargs)
 
     def _realize_numbers(x):
         if isinstance(x, nvNumber):
@@ -166,8 +167,15 @@ def _nvScalars_to_Numbers_preprocessor(fd, proxy_to_nvfuser_map, *args, **kwargs
 #   be a nvScalar (or nvConstant?), and it accepts no device argument
 # NOTE: the full prim has a bug where it will segfault when shape is an empty sequence
 # TODO: add an assertion on device
-def _full_preprocessor(fd, proxy_to_nvfuser_map, shape, fill_value, dtype, device):
-    # TODO: NVIDIA: FIXME!
+# TODO: revise to use sym_args?
+def _full_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_args, nv_kwargs):
+    (
+        shape,
+        fill_value,
+    ) = nv_args
+    dtype = nv_kwargs["dtype"]
+
+    # FIXME: https://github.com/csarofeen/pytorch/issues/2358
     assert len(shape) > 0
 
     def _realize_number(x):
@@ -199,7 +207,6 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.FULL: "full",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
-    # prims.Ops.RESHAPE: "reshape", TODO: does nvFuser not have a reshape prim?
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
@@ -233,6 +240,7 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.POW: "pow",
     prims.Ops.SUB: "sub",
     # Reduction prims
+    prims.Ops.AMAX: "max",
     prims.Ops.SUM: "sum",
     prims.Ops.VAR: "var",
     nvOps.VAR_MEAN: "var_mean",
@@ -269,6 +277,7 @@ ops_to_nvfuser_preprocessors_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: _nvScalars_to_Numbers_preprocessor,
     # Reduction prims
+    prims.Ops.AMAX: _nvScalars_to_Numbers_preprocessor,
     prims.Ops.SUM: _nvScalars_to_Numbers_preprocessor,
     prims.Ops.VAR: _nvScalars_to_Numbers_preprocessor,
     nvOps.VAR_MEAN: _nvScalars_to_Numbers_preprocessor,
@@ -423,7 +432,7 @@ def _fuse_region(inputs, outputs, symbols):
             if nv_pre is not None:
                 # TODO: should preprocessing functions be called with the symbol's args and kwargs
                 #   or the nv args and kwargs or both?
-                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, *nv_args, **nv_kwargs)
+                nv_args, nv_kwargs = nv_pre(fd, proxy_to_nvfuser_map, sym.args, sym.kwargs, nv_args, nv_kwargs)
             nv_op = _get_nvfuser_op(fd, sym.op)
             nv_result = nv_op(*nv_args, **nv_kwargs)
 

@@ -24,7 +24,14 @@ __all__ = [
     # Shape ops
     "reshape",
     # Elementwise Unary Ops
+    "abs",
     "acos",
+    "acosh",
+    "asin",
+    "atan",
+    "atanh",
+    "bitwise_not",
+    "exp",
     "rsqrt",
     "tanh",
     # Elementwise Binary Ops
@@ -32,15 +39,20 @@ __all__ = [
     "lt",
     "mul",
     "pow",
+    "sub",
+    "true_divide",
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
+    "amax",
     "mean",
+    "sum",
     "var",
     "var_mean",
     # NN Ops
     # TODO: move to torch.nn.functional
     "dropout",
+    "softmax",
     # Norm Ops
     # Matmul Ops
     "linear",
@@ -135,8 +147,29 @@ class TorchLangCtx:
     #
     # Elementwise Unary Methods
     #
+    def abs(a):
+        return tlang.abs(a)
+
     def acos(self, a):
-        return acos(a)
+        return tlang.acos(a)
+
+    def acosh(self, a):
+        return tlang.acosh(a)
+
+    def asin(self, a):
+        return tlang.asin(a)
+
+    def atan(self, a):
+        return tlang.atan(a)
+
+    def atanh(self, a):
+        return tlang.atanh(a)
+
+    def bitwise_not(self, a):
+        return tlang.bitwise_not(a)
+
+    def exp(self, a):
+        return tlang.exp(a)
 
     #
     # Elementwise Binary Methods
@@ -217,6 +250,10 @@ def acos(a):
     return tlang.acos(a)
 
 
+def exp(a):
+    return tlang.exp(a)
+
+
 def rsqrt(a):
     return tlang.rsqrt(a)
 
@@ -242,11 +279,19 @@ def lt(a, b):
 
 
 def mul(a, b):
-    return a * b
+    return tlang.mul(a, b)
 
 
 def pow(a, b):
     return tlang.pow(a, b)
+
+
+def sub(a, b):
+    return tlang.sub(a, b)
+
+
+def true_divide(a, b):
+    return tlang.true_divide(a, b)
 
 
 #
@@ -262,18 +307,6 @@ class REDUCTION_OUTPUT_TYPE_KIND(Enum):
     ALWAYS_BOOL = (3,)
 
 
-# Maps lower precision datatypes to their corresponding computation datatypes
-_computation_dtype_map = {
-    torch.bfloat16: torch.float32,
-    torch.float16: torch.float32,
-    torch.complex32: torch.complex64,
-}
-
-
-def get_computation_dtype(dtype: torch.dtype) -> torch.dtype:
-    return _computation_dtype_map.get(dtype, dtype)
-
-
 def _reduction_dtypes(
     arg,
     output_dtype_kind: REDUCTION_OUTPUT_TYPE_KIND,
@@ -283,7 +316,7 @@ def _reduction_dtypes(
     # all the math ops (including comparisons) are still defined only for a computation type,
     # so promotion will still happen. We are doing it explicitly here
     inp_dtype = dtype if dtype is not None else arg.dtype
-    computation_dtype = get_computation_dtype(inp_dtype)
+    computation_dtype = utils.get_computation_dtype(inp_dtype)
     if (
         output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.SAME
         or output_dtype_kind == REDUCTION_OUTPUT_TYPE_KIND.COMPLEX_TO_FLOAT
@@ -322,6 +355,12 @@ def _reduction(
 ):
     # TODO: check that a is the correct type?
 
+    # reduces over all dimensions if dim=() is passed
+    if dims == () or dims == []:
+        dims = None
+    if isinstance(dims, int):
+        dims = (dims,)
+
     utils.check(
         a.ndim <= 64,
         lambda: f"Received a tensor with {a.ndim} dimensions, but only tensors with up to 64 dims are supported!",
@@ -353,7 +392,7 @@ def _reduction(
         result = prims.broadcast_in_dim(result, output_shape, broadcast_dims)
 
     if result_dtype is not None:
-        tlang.maybe_convert_to_dtype(result, result_dtype)
+        result = tlang.maybe_convert_to_dtype(result, result_dtype)
 
     return result
 
@@ -386,19 +425,23 @@ def _dim_var_dispatch(dim=None, unbiased=None):
     return dim, unbiased
 
 
-def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
-    # reduces over all dimensions if dim=() is passed
-    if dim == () or dim == []:
-        dim = None
-    if isinstance(dim, int):
-        dim = (dim,)
+def amax(a, dim, keepdim):
+    return _reduction(
+        a,
+        prims.amax,
+        dims=dim,
+        keepdims=keepdim,
+        dtype=None,
+        has_identity=False,
+        output_dtype_kind=REDUCTION_OUTPUT_TYPE_KIND.SAME,
+    )
 
+
+def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
     dtype = dtype if dtype is not None else a.dtype
-    print(f"a={a}")
-    print(f"dtype={dtype}")
     utils.check(
         not utils.is_integer_dtype(dtype) and not utils.is_boolean_dtype(dtype),
-        lambda: "Datatype should be floating point or complex",
+        lambda: f"dtype={dtype} is not a floating point or complex dtype",
     )
 
     result = _reduction(
@@ -412,10 +455,29 @@ def mean(a, dim=None, keepdim: bool = False, *, dtype=None):
 
     dims = _reduction_dims(a.shape, dim)  # type: ignore[arg-type]
     nelem = 1 if a.ndim == 0 else reduce(operator.mul, (a.shape[i] for i in dims), 1)
-    # TODO: the conversion of nelem to float won't be needed once type promotion is supported
-    result = tlang.true_divide(result, float(nelem))
+    result = result / nelem
     result_dtype = a.dtype if dtype is None else dtype
     result = tlang.maybe_convert_to_dtype(result, result_dtype)
+    return result
+
+
+def sum(a, dim=None, keepdim=False, *, dtype=None):
+    # Promotes low precision exact dtypes to int64
+    if dtype is None:
+        if utils.is_exact_dtype(a.dtype):
+            dtype = dtypes.int64
+        else:
+            dtype = a.dtype
+
+    result = _reduction(
+        a,
+        prims.sum,
+        dims=dim,
+        keepdims=keepdim,
+        dtype=dtype,
+        output_dtype_kind=REDUCTION_OUTPUT_TYPE_KIND.SAME,
+    )
+
     return result
 
 
@@ -429,9 +491,6 @@ def var(
 ):
     dim, unbiased = _dim_var_dispatch(dim, unbiased)
     correction = _set_correction(unbiased, correction)
-    # reduces over all dimensions if dim=() is passed
-    if dim == () or dim == []:
-        dim = None
 
     result = _reduction(
         a,
@@ -464,7 +523,7 @@ def var_mean(
         return intercepted(a, dim, unbiased, keepdim, correction=correction)
 
     dim, unbiased = _dim_var_dispatch(dim, unbiased)
-    v = a.var(dim, unbiased, keepdim, correction=correction)
+    v = var(a, dim, unbiased, keepdim, correction=correction)
     m = mean(a, dim, keepdim)
     return v, m
 
@@ -511,6 +570,24 @@ def dropout(a, p=0.5):
     dropout_mask = _dropout_helper(a, 1 - p)
 
     return a * dropout_mask * scale
+
+
+# CompositeImplicitAutograd - don't register decomp
+def softmax(a, dim, dtype=None):
+
+    result_dtype = dtype or a.dtype
+    computation_dtype = utils.get_computation_dtype(result_dtype)
+    a_ = tlang.maybe_convert_to_dtype(a, computation_dtype)
+
+    if a.numel() == 0:
+        a_exp = exp(a_)
+    else:
+        a_max = amax(a_, dim, keepdim=True)
+        a_exp = exp(a_ - a_max)
+
+    result = true_divide(a_exp, sum(a_exp, dim, keepdim=True))
+    converted = tlang.maybe_convert_to_dtype(result, result_dtype)
+    return converted
 
 
 #

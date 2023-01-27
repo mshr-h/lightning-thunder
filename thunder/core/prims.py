@@ -64,6 +64,7 @@ __all__ = [
     # Reduction prims
     "reduction_meta",
     "sum_meta",
+    "amax",
     "sum",
     "var",
     "var_meta",
@@ -110,6 +111,7 @@ class Ops(Enum):
     POW = auto()
     SUB = auto()
     # Reduction prims
+    AMAX = auto()
     SUM = auto()
     VAR = auto()
     # Matmul prims
@@ -799,8 +801,9 @@ def reduction_meta(a, dims, *, output_dtype=None, **kwargs):
     )
 
 
-sum_meta = reduction_meta
-sum = make_prim(Ops.SUM, "sum", sum_meta)
+# TODO: review if reduction meta is OK for amax
+amax = make_prim(Ops.AMAX, "amax", reduction_meta)
+sum = make_prim(Ops.SUM, "sum", reduction_meta)
 
 
 def var_meta(a, dims, *, correction, **kwargs):
