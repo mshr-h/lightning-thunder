@@ -695,7 +695,7 @@ elementwise_binary_ops.append(mul_opinfo)
 pow_opinfo = OpInfo(
     tlang.pow,
     sample_input_generator=elementwise_binary_generator,
-    torch_reference=torch._refs.pow,
+    torch_reference=None if LooseVersion(torch.__version__) < "1.13" else torch._refs.pow,
     test_directives=(
         # NOTE: PyTorch doesn't support bool pow
         DecorateInfo(pytest.mark.xfail, "test_core_vs_torch_consistency", dtypes=(datatypes.bool8,)),
@@ -709,12 +709,6 @@ pow_opinfo = OpInfo(
         # See https://github.com/csarofeen/pytorch/issues/2361
         DecorateInfo(
             pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser,"), dtypes=(datatypes.complex64,)
-        ),
-        # PyTorch didn't have refs before 1.13
-        DecorateInfo(
-            pytest.mark.skip,
-            "test_core_vs_torch_consistency",
-            active_if=LooseVersion(torch.__version__) < "1.13",
         ),
     ),
 )
@@ -919,16 +913,8 @@ def softmax_sample_generator(op, device, dtype, requires_grad, **kwargs):
 softmax_opinfo = OpInfo(
     ttorch.softmax,
     sample_input_generator=softmax_sample_generator,
-    torch_reference=torch._refs.softmax,
+    torch_reference=None if LooseVersion(torch.__version__) < "1.13" else torch._refs.softmax,
     dtypes=(datatypes.floating,),
-    test_directives=(
-        # PyTorch didn't have refs before 1.13
-        DecorateInfo(
-            pytest.mark.skip,
-            "test_core_vs_torch_consistency",
-            active_if=LooseVersion(torch.__version__) < "1.13",
-        ),
-    ),
 )
 nn_ops.append(softmax_opinfo)
 
