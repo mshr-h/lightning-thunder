@@ -3,13 +3,14 @@ import sys
 import pytest
 import torch
 from torch import add as tadd
-from torch.testing import assert_close
+from torch.testing import assert_close, make_tensor
 
 import thunder.core.script.frontend
 import thunder.core.script.passes
 import thunder.core.script.python_ir
 
 from . import nanogpt_model
+from .framework import requiresCUDA
 
 
 def sample_add_fn(x, y):
@@ -186,3 +187,54 @@ def test_inline_submodule_and_convert_to_thunder():
     fn = thunder.core.script.python_ir.generate_function(gr)
 
     ### now trace fn and check things work...
+
+
+def bar(a, b):
+    return torch.nn.functional.linear(a, b)
+
+
+def foo(a, c_fc_weight, c_proj_weight):
+    b = bar(a, c_fc_weight)
+    # c = new_gelu(b)
+    # d = torch.nn.functional.linear(c, c_proj_weight)
+    # e = torch.nn.functional.dropout(d)
+    # return b
+    return b
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10) or sys.version_info >= (3, 11),
+    reason="requires python3.10",
+)
+@requiresCUDA
+def test_inlining_function_and_convert_to_thunder():
+    def convert_to_thunder(fn):
+        global gr
+        gr = thunder.core.script.frontend.acquire_method(fn, verbose=False)
+
+        thunder.core.script.frontend.make_ssa(gr)
+        thunder.core.script.frontend.make_single_return(gr)
+
+        thunder.core.script.passes.inline_submodule_calls(gr)
+        thunder.core.script.passes.inline_method_call(gr, gr.blocks[0].nodes[0])
+        thunder.core.script.passes.merge_blocks_where_possible(gr)
+        thunder.core.script.graph.check_graph(gr)
+        thunder.core.script.passes.torch_to_thunder(gr)
+        thunder.core.script.graph.check_graph(gr)
+
+        thunder_fn = thunder.core.script.python_ir.generate_function(gr)
+
+        return thunder_fn
+
+    n = 4
+    a = make_tensor((n, n), dtype=torch.float32, device="cuda")
+    c_fc_weight = make_tensor((4 * n, n), dtype=torch.float32, device="cuda")
+    c_proj_weight = make_tensor((n, 4 * n), dtype=torch.float32, device="cuda")
+    thunder_foo = convert_to_thunder(foo)
+
+    thunder_fn = thunder.make_traced(thunder_foo, executor="nvfuser")
+
+    torch_result = foo(a, c_fc_weight, c_proj_weight)
+    thunder_result = thunder_fn(a, c_fc_weight, c_proj_weight)
+
+    assert_close(torch_result, thunder_result)
