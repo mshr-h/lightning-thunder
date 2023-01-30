@@ -406,8 +406,6 @@ def where(pred, a, b):
     )
     a, b = maybe_convert_to_dtype(a, promotiontype), maybe_convert_to_dtype(b, promotiontype)
 
-    print(f"promotiontype={promotiontype}")
-
     # Broadcasts
     pred, a, b = _maybe_broadcast(pred, a, b)
 
