@@ -119,7 +119,30 @@ def _convert_element_type_translation(fd):
     return _fn
 
 
-# TODO: consider refactoring the preprocessors with a common pattern to flatten/unflatten?
+# TODO: consider refactoring the preprocessors with a common pattern to bind or flatten/unflatten?
+
+# NOTE: nvFuser's reshape takes args (tensor, original_shape, new_shape)
+def _reshape_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_args, nv_kwargs):
+    # TODO: FIXME
+    assert len(nv_kwargs) == 0
+
+    nv_t, nv_shape = nv_args
+    t, _ = sym_args
+
+    original_shape = t.shape
+
+    def _realize_numbers(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    realized_shape = tuple(_realize_numbers(x) for x in nv_shape)
+
+    return (nv_t, original_shape, realized_shape), {}
+
 
 # TODO: combine constants
 # NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
@@ -207,6 +230,7 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.FULL: "full",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
+    prims.Ops.RESHAPE: "view",
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
@@ -249,6 +273,8 @@ ops_to_nvfuser_ops_map = {
 }
 
 ops_to_nvfuser_preprocessors_map = {
+    # Shape prims
+    prims.Ops.RESHAPE: _reshape_preprocessor,
     # Elementwise unary prims
     prims.Ops.ABS: _elementwise_preprocessor,
     prims.Ops.ACOS: _elementwise_preprocessor,
