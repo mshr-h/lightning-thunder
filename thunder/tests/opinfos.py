@@ -18,6 +18,11 @@ from thunder.langs.torch import torch_dtype
 from .framework import _all_device_types
 
 
+def make_number(dtype):
+    v = make_tensor((), dtype=dtype, device="cpu").item()
+    return v
+
+
 # Returns a noncontiguous (tensor with the same shape and values as t
 # The noncontiguous tensor is constructed such that elements in the innermost
 #   dimension are separated by zeros or (whenever possible) nans
@@ -733,6 +738,40 @@ opinfos.extend(elementwise_binary_ops)
 # Elementwise Ternary OpInfos
 #
 elementwise_ternary_ops = []
+
+# TODO: add number tensors for value
+# TODO: error inputs
+def masked_fill_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+    number = partial(make_number, dtype=dtype)
+
+    # pred_shape, a_shape, value
+    cases = (
+        ((2, 1, 2), (1, 2, 2), number()),
+        ((4, 6), (6, 4, 6), number()),
+        ((3,), (3,), number()),
+    )
+
+    for pred_shape, a_shape, value in cases:
+        pred, a = make(pred_shape, dtype=torch.bool), make(a_shape)
+        yield SampleInput(a, pred, value)
+
+
+masked_fill_opinfo = OpInfo(
+    ttorch.masked_fill,
+    sample_input_generator=masked_fill_sample_generator,
+    torch_reference=torch.masked_fill,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2378
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bfloat16, datatypes.float16),
+            executors=("nvFuser",),
+        ),
+    ),
+)
+elementwise_ternary_ops.append(masked_fill_opinfo)
 
 
 def where_sample_generator(op, device, dtype, requires_grad, **kwargs):
