@@ -92,6 +92,10 @@ def test_nested_make_trace(executor, device, _):
     ],
 )
 def test_transforms_identity(executor, device, _):
+    # This test ensures that identity() can be called from within a traced
+    # function without leaking the trace context.
+    # Also tests that identity() can be nested.
+    # Also tests that identity() can be used with "torch" executor.
     from thunder.core.transforms import identity, Transforms
     from thunder import _get_executor
 
