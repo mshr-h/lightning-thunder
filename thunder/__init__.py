@@ -41,6 +41,7 @@ __all__ = [
     "complex64",
     "complex128",
     # tracing functions
+    "make_trace",
     "make_traced",
 ]
 
@@ -177,6 +178,50 @@ def _construct_trace(fn, trace, proxyargs, proxykwargs):
     return trace
 
 
+def make_trace(
+    fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch
+):
+    """Converts a callable into a callable that will be traced and the trace returned.
+
+    Args:
+        fn: The callable to be traced.
+        executor: The executor to use for the trace. If None, the default executor is used.
+        language_ctx: The language context to use for the trace. If None, the default language context is used.
+
+    Example:
+        >>> import thunder
+        >>> from thunder.core import lang
+        >>> def foo(a, b):
+        ...     return lang.add(a, b)
+        >>> tracing_foo = thunder.make_trace(foo, executor="torch")
+        >>> a = torch.randn(2, 2, device='cuda')
+        >>> b = torch.randn(2, 1, device='cuda')
+        >>> trace = tracing_foo(a, b)
+    """
+    ex = _get_executor(executor)
+    langctx = language_ctx.ctx()
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            # Sets the proper tracing context
+            trace_token = new_trace()
+            executor_token = set_executor_context(ex)
+            lang_token = set_language_context(langctx)
+            trace = get_trace()
+            proxyargs, proxykwargs = _make_proxies(fn, trace, langctx, *args, **kwargs)
+            trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
+        finally:
+            # Resets the tracing context
+            reset_trace(trace_token)
+            reset_language_context(lang_token)
+            if executor_token is not None:
+                reset_executor_context(executor_token)
+        return trace
+
+    return wrapper
+
+
 def make_traced(
     fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch, _info=False, _return_fusion=False
 ) -> Callable:
@@ -196,22 +241,11 @@ def make_traced(
     """
 
     ex = _get_executor(executor)
-    langctx = language_ctx.ctx()
 
     @wraps(fn)
     def _fn(*args, **kwargs):
         acquisition_start = time.time_ns()
-
-        # Sets the proper tracing context
-        trace_token = new_trace()
-        executor_token = set_executor_context(ex)
-        lang_token = set_language_context(langctx)
-
-        trace = get_trace()
-        proxyargs, proxykwargs = _make_proxies(fn, trace, langctx, *args, **kwargs)
-
-        trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
-
+        trace = make_trace(fn, executor, language_ctx)(*args, **kwargs)
         acquisition_end = time.time_ns()
 
         translation_start = time.time_ns()
@@ -221,12 +255,6 @@ def make_traced(
         invocation_start = time.time_ns()
         result = fusion(*args, **kwargs)
         invocation_end = time.time_ns()
-
-        # Resets the tracing context
-        reset_trace(trace_token)
-        reset_language_context(lang_token)
-        if executor_token is not None:
-            reset_executor_context(executor_token)
 
         meta = None
         if _info:
