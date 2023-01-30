@@ -730,6 +730,47 @@ elementwise_binary_ops.append(sub_opinfo)
 opinfos.extend(elementwise_binary_ops)
 
 #
+# Elementwise Ternary OpInfos
+#
+elementwise_ternary_ops = []
+
+
+def where_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # pred_shape, a_shape, b_shape
+    # NOTE: shapes must be broadcastable
+    cases = (
+        ((5,), (5,), (5,)),
+        ((2, 1, 2), (1, 2, 2), (2, 2, 1)),
+    )
+
+    # NOTE: pred must have a boolean dtype
+    for pred_shape, a_shape, b_shape in cases:
+        pred, a, b = make(pred_shape, dtype=torch.bool), make(a_shape), make(b_shape)
+        yield SampleInput(pred, a, b)
+
+
+where_opinfo = OpInfo(
+    tlang.where,
+    sample_input_generator=where_sample_generator,
+    torch_reference=torch.where,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2378
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bfloat16, datatypes.float16),
+            executors=("nvFuser",),
+        ),
+    ),
+)
+elementwise_ternary_ops.append(where_opinfo)
+
+# Puts all elementwise ternary opinfos into the "opinfos" list
+opinfos.extend(elementwise_ternary_ops)
+
+#
 # Shape Op OpInfos
 #
 shape_ops = []
@@ -896,7 +937,7 @@ def softmax_sample_generator(op, device, dtype, requires_grad, **kwargs):
 
     S = 2
     M = 5
-    # Shape, dim
+    # Shape, dim, dtype
     cases = (
         ((S,), 0),
         ((S, S), 0),

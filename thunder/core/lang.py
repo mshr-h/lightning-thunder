@@ -53,6 +53,8 @@ __all__ = [
     "pow",
     "sub",
     "true_divide",
+    # Elementwise ternary operations
+    "where",
     # Language context
     "CoreLangCtx",
 ]
@@ -390,6 +392,26 @@ def sub(a, b):
 
 def true_divide(a, b):
     return _elementwise_binary_helper(prims.div, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a, b)
+
+
+#
+# Elementwise ternary operation
+#
+
+
+def where(pred, a, b):
+    # Performs type promotion
+    promotiontype, _ = utils.elementwise_type_promotion(
+        a, b, type_promotion_kind=utils.ELEMENTWISE_TYPE_PROMOTION_KIND.PRESERVE
+    )
+    a, b = maybe_convert_to_dtype(a, promotiontype), maybe_convert_to_dtype(b, promotiontype)
+
+    print(f"promotiontype={promotiontype}")
+
+    # Broadcasts
+    pred, a, b = _maybe_broadcast(pred, a, b)
+
+    return prims.where(pred, a, b)
 
 
 class CoreLangCtx:

@@ -61,6 +61,8 @@ __all__ = [
     "mul",
     "pow",
     "sub",
+    # Elementwise ternary prims
+    "where",
     # Reduction prims
     "reduction_meta",
     "sum_meta",
@@ -110,6 +112,8 @@ class Ops(Enum):
     MUL = auto()
     POW = auto()
     SUB = auto()
+    # Elementwise ternary prims
+    WHERE = auto()
     # Reduction prims
     AMAX = auto()
     SUM = auto()
@@ -627,7 +631,6 @@ def _elementwise_binary_meta(
 
     # tensor x scalar case
     tensor = a if isinstance(a, TensorProxy) else b
-    # number = b if tensor is a else a
 
     return TensorProxy(name=proxy_name, tensor=tensor, dtype=result_type)
 
@@ -727,6 +730,57 @@ sub = make_prim(
         number_handler=operator.sub,
     ),
 )
+
+#
+# Elementwise ternary prims
+#
+
+# TODO: add stride logic
+def where_meta(pred, a, b):
+    # Checks types
+    # NOTE: pred must be a tensor or bool
+    utils.check(isinstance(pred, (TensorProxy, bool)), lambda: f"Unexpected type {type(pred)} for pred={pred}!")
+    utils.check(isinstance(a, (TensorProxy, Number)), lambda: f"Unexpected type {type(a)} for a={a}!")
+    utils.check(isinstance(b, (TensorProxy, Number)), lambda: f"Unexpected type {type(b)} for b={b}!")
+
+    # Checks devices and determines result device
+    utils.check_same_device(pred, a, b)
+    resultdevice = "cpu"
+    devices = tuple(x.device for x in (pred, a, b) if isinstance(x, TensorProxy))
+    if len(devices) > 0:
+        resultdevice = devices[0]
+
+    # Checks pred dtype and determines result dtype
+    utils.check(
+        isinstance(pred, bool) or pred.dtype is dtypes.bool8,
+        lambda: f"Expected pred to have a bool dtype, but found {type(pred) if isinstance(pred, Number) else pred.dtype}!",
+    )
+    numbertype, tensordtype = utils.check_same_dtype(a, b)
+    dtype = tensordtype if tensordtype is not None else numbertype
+    resulttype = _prim_type_promotion(dtype, type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT)
+
+    # Checks shapes
+    utils.check_same_shape(pred, a, b)
+
+    # Constructs return meta
+    proxyname = get_trace().make_proxy_name()
+
+    # Handles all number case with customer number handler
+    if isinstance(pred, Number) and isinstance(a, Number) and isinstance(b, Number):
+        result = a if pred else b
+        result = resulttype(result)
+        return proxy(result, name=proxyname)
+
+    # Determines output shape
+    resultshape = None
+    shapes = tuple(x.shape for x in (pred, a, b) if isinstance(x, TensorProxy))
+    if len(shapes) > 0:
+        resultshape = shapes[0]
+
+    return TensorProxy(name=proxyname, shape=resultshape, device=resultdevice, dtype=resulttype)
+
+
+where = make_prim(Ops.WHERE, "where", where_meta)
 
 #
 # Shape prims

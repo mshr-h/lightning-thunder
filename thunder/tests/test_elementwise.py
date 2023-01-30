@@ -1,10 +1,13 @@
+from functools import partial
+
+import torch
 from torch.testing import assert_close, make_tensor
 
 import thunder
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 
-from .framework import executors, ops, run_snippet
+from .framework import executors, ops, run_snippet, NOTHING
 from .opinfos import elementwise_binary_ops, elementwise_unary_ops
 
 # Tests for elementwise binary operators
@@ -145,3 +148,57 @@ def test_add_floats(executor, device, dtype):
     thunder_result = traced_foo(0.7, a)
     torch_result = 2.0 + 0.7 + a
     assert_close(thunder_result, torch_result)
+
+
+# TODO: this test can be replaced with OpInfo generated tests (dtype None tests and error inputs tests)
+@executors(dtypes=NOTHING)
+def test_where(executor, device, dtype):
+    # Tests where type promotion and number support
+
+    thunder_fn = thunder.make_traced(tlang.where, executor=executor)
+    torch_fn = torch.where
+
+    shape = (5, 5)
+    make = partial(make_tensor, device=device)
+    pred = make(shape, dtype=torch.bool)
+
+    # int64 x float32
+    i64 = make(shape, dtype=torch.int64)
+    f32 = make(shape, dtype=torch.float32)
+
+    thunder_result = thunder_fn(pred, i64, f32)
+    torch_result = torch_fn(pred, i64, f32)
+    assert_close(thunder_result, torch_result)
+
+    # int x float32
+    thunder_result = thunder_fn(pred, 5, f32)
+    torch_result = torch_fn(pred, 5, f32)
+    assert_close(thunder_result, torch_result)
+
+    # int64 x int
+    thunder_result = thunder_fn(pred, i64, 5)
+    torch_result = torch_fn(pred, i64, 5)
+    assert_close(thunder_result, torch_result)
+
+    # int x int
+    thunder_result = thunder_fn(pred, -1, 5)
+    torch_result = torch_fn(pred, -1, 5)
+    assert_close(thunder_result, torch_result)
+
+    # int64 x float
+    thunder_result = thunder_fn(pred, i64, -2.3)
+    torch_result = torch_fn(pred, i64, -2.3)
+    assert_close(thunder_result, torch_result)
+
+    # FIXME: https://github.com/csarofeen/pytorch/issues/2380
+    # float x int
+    # thunder_result = thunder_fn(pred, 3., 5)
+    # torch_result = torch_fn(pred, 3., 5)
+    # assert_close(thunder_result, torch_result)
+
+    # TODO:
+    # float x float
+    # int x complex
+    # int64 x complex
+    # int32 x complex64
+    # predicate as number (True/False)

@@ -147,6 +147,8 @@ ops_to_torch_ops_map = {
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",
     prims.Ops.SUB: "torch.sub",
+    # Elementwise ternary prims
+    prims.Ops.WHERE: "torch.where",
     # Reduction prims
     prims.Ops.AMAX: "torch.amax",
     prims.Ops.SUM: "torch.sum",

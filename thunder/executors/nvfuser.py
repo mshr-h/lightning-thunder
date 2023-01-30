@@ -239,6 +239,8 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.MUL: "mul",
     prims.Ops.POW: "pow",
     prims.Ops.SUB: "sub",
+    # Elementwise ternary prims
+    prims.Ops.WHERE: "where",
     # Reduction prims
     prims.Ops.AMAX: "max",
     prims.Ops.SUM: "sum",

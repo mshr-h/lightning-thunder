@@ -46,11 +46,16 @@ __all__ = [
     # Shape-related functions
     "is_numbertensor",
     "same_shape",
+    "check_same_shape",
     "canonicalize_dim",
     "canonicalize_dims",
     "check_valid_length",
     "check_valid_shape",
     "check_no_duplicates",
+    # Device-related functions
+    "check_same_device",
+    # Context-related functions and decorators
+    "langctx",
 ]
 
 #
@@ -458,14 +463,19 @@ def is_numbertensor(t):
 # TODO: maybe generalize to *args like check_same_dtype
 # TODO: change to check_same_shape or add check_same_shape variant and make check_same_dtype use the same pattern
 def same_shape(a, b):
-    if len(a) != len(b):
-        return False
+    return tuple(a) == tuple(b)
 
-    for x, y in zip(a, b):
-        if x != y:
-            return False
 
-    return True
+# TODO: improve error message
+def check_same_shape(*args):
+    shapes = tuple(x.shape for x in args if isinstance(x, TensorProxy))
+    if len(shapes) > 1:
+        shape = shapes[0]
+        for othershape in shapes[1:]:
+            check(
+                same_shape(shape, othershape),
+                lambda: f"Shapes were expected to be the same, but got shapes {shape} and {othershape}!",
+            )
 
 
 # "Wraps" a dim (up to one time) for the given rank, allowing dims to be
@@ -534,6 +544,26 @@ def validate_idx(rank: int, idx: int):
 def check_no_duplicates(dims: Sequence):
     check(len(dims) == len(set(dims)), lambda: f"Duplicate value in list of dimensions {dims}!")
 
+
+#
+# Device-related functions
+#
+
+# TODO: improve device handling
+def check_same_device(*args):
+    devices = tuple(x.device for x in args if isinstance(x, TensorProxy))
+    if len(devices) > 1:
+        device = devices[0]
+        for otherdevice in devices[1:]:
+            check(
+                same_shape(device, otherdevice),
+                lambda: f"Devices were expected to be the same, but got devices {device} and {otherdevice}!",
+            )
+
+
+#
+# Context-related functions and decorators
+#
 
 # TODO: think about preserving the original function's signature
 class langctx:

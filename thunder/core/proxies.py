@@ -149,7 +149,6 @@ class FloatProxy(NumberProxy, float):
 
 # TODO: want this to pass isinstance(p, torch.Tensor) and isinstance(p, np.array) depending on
 #   language context
-# TODO: add method resolution through language context
 # TODO: maybe change "tensor" param to "like" to be clearer
 class TensorProxy(Proxy):
     """A proxy tensor."""

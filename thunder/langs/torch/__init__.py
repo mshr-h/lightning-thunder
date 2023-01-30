@@ -16,6 +16,9 @@ from thunder.core.proxies import TensorProxy
 from thunder.core.utils import langctx
 
 __all__ = [
+    # Language context
+    "ctx",
+    "TorchLangCtx",
     # Tensor creation operations
     "full",
     "full_like",
@@ -41,6 +44,8 @@ __all__ = [
     "pow",
     "sub",
     "true_divide",
+    # Elementwise Ternary Prims
+    "where",
     # Reduction Ops
     "_set_correction",
     "_reduction_dims",
@@ -56,11 +61,13 @@ __all__ = [
     # Norm Ops
     # Matmul Ops
     "linear",
-    # Language context
-    "TorchLangCtx",
 ]
 
 # The Torch language
+
+#
+# Language context
+#
 
 # TODO: language contexts like Torch could be
 #   expanded to allow datatypes that the original language didn't support
@@ -110,6 +117,10 @@ def thunder_dtype(torch_dtype):
 
 def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
+
+
+def ctx():
+    return TorchLangCtx()
 
 
 class TorchLangCtx:
@@ -203,10 +214,6 @@ class TorchLangCtx:
         return var(*args, **kwargs)
 
 
-def ctx():
-    return TorchLangCtx()
-
-
 #
 # Tensor Creation Ops
 #
@@ -292,6 +299,15 @@ def sub(a, b):
 
 def true_divide(a, b):
     return tlang.true_divide(a, b)
+
+
+#
+# Elementwise ternary prims
+#
+
+
+def where(pred, a, b):
+    return tlang.where(pred, a, b)
 
 
 #
