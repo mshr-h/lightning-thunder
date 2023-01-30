@@ -211,7 +211,6 @@ def make_traced(
         proxyargs, proxykwargs = _make_proxies(fn, trace, langctx, *args, **kwargs)
 
         trace = _construct_trace(fn, trace, proxyargs, proxykwargs)
-        print(trace)
 
         acquisition_end = time.time_ns()
 
