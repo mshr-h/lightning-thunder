@@ -178,9 +178,7 @@ def _construct_trace(fn, trace, proxyargs, proxykwargs):
     return trace
 
 
-def make_trace(
-    fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch
-):
+def make_trace(fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch):
     """Converts a callable into a callable that will be traced and the trace returned.
 
     Args:
