@@ -44,7 +44,8 @@ __all__ = [
     "pow",
     "sub",
     "true_divide",
-    # Elementwise Ternary Prims
+    # Elementwise Ternary Ops
+    "masked_fill",
     "where",
     # Reduction Ops
     "_set_correction",
@@ -304,6 +305,20 @@ def true_divide(a, b):
 #
 # Elementwise ternary prims
 #
+
+# NOTE: masked_fill is a strange wrapper around where, it probably exists only because of PyTorch's inplace pattern
+# NOTE: PyTorch's masked fill requires value be a number or number tensor
+# NOTE: PyTorch's masked fill is only defined as a tensor method that implicitly takes a as the first argument
+# NOTE: PyTorch's masked_fill_ requires the dtype of a not change, so it checks that
+#   value can be safely cast to a
+# TODO: PyTorch's masked_fill always returns a contiguous tensor
+# TODO: add number tensor support
+def masked_fill(a, mask, value):
+    if isinstance(value, TensorProxy):
+        raise NotImplementedError
+
+    result = where(mask, value, a)
+    return result
 
 
 def where(pred, a, b):
