@@ -11,7 +11,7 @@ import thunder.core.dtypes as datatypes
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 
-from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA
+from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, TorchEx
 
 
 @executors(dtypes=(thunder.float32,))
@@ -83,6 +83,45 @@ def test_nested_make_trace(executor, device, _):
     bar_trace = thunder.make_trace(bar, executor=executor)(a, b)
     assert len(bar_trace.symbols) == 1
     assert bar_trace.symbols[0].name == "mul"
+
+
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
+def test_transforms_identity(executor, device, _):
+    from thunder.core.transforms import identity, Transforms
+    from thunder import _get_executor
+
+    def func(a, b):
+        return tlang.mul(tlang.add(a, b), 1)
+
+    nested_id_func = identity(identity(identity(func)))
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+
+    nested_id_trace = thunder.make_trace(nested_id_func, executor=executor)(a, b)
+    assert len(nested_id_trace.symbols) == 1
+    assert nested_id_trace.symbols[0].op == Transforms.IdentityOp
+
+    trace = nested_id_trace.symbols[0].kwargs.get("trace", None)
+    for _ in range(2):
+        assert len(trace.symbols) == 1
+        assert trace.symbols[0].op == Transforms.IdentityOp
+        trace = trace.symbols[0].kwargs.get("trace", None)
+    assert len(trace.symbols) == 3
+    assert trace.symbols[0].name == "add"
+    assert trace.symbols[1].name == "convert_element_type"
+    assert trace.symbols[2].name == "mul"
+
+    ex = _get_executor(executor)
+    fusion = ex.fuse(nested_id_trace)
+    actual = fusion(a, b)
+    expected = thunder.make_traced(func, executor=executor)(a, b)
+    torch.testing.assert_close(actual, expected)
 
 
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers

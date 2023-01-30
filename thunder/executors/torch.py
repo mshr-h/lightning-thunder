@@ -4,6 +4,7 @@ import thunder.core.dtypes as dtypes
 from thunder.core import prims
 from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
+from thunder.core.trace import Trace
 
 __all__ = [
     "torchCtx",
@@ -315,6 +316,12 @@ def _fuse(trace):
         else:
             op_str = torch_op.__name__
             ctx[op_str] = torch_op
+
+        # NOTE: currently assumes that the trace is stored in the "trace" kwarg
+        if "trace" in torch_kwargs and any(isinstance(v, Trace) for v in torch_kwargs.values()):
+            key = result.name + "_" + op_str + "_trace"
+            ctx[key] = torch_kwargs["trace"]
+            torch_kwargs["trace"] = key
 
         arg_str = ", ".join(f"{a}" for a in torch_args)
         kwarg_str = ", ".join(f"{k}={v}" for k, v in torch_kwargs.items())
