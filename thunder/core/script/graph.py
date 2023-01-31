@@ -92,8 +92,8 @@ class Value:
             return translation_dict[self]
         parent = self.parent
         if parent:
-            if parent in self.translation_dict:
-                parent = self.translation_dict[parent]
+            if parent in translation_dict:
+                parent = translation_dict[parent]
             else:
                 parent = parent.clone(translation_dict=translation_dict)
         v = Value(
@@ -140,6 +140,9 @@ class PhiValue(Value):
         self._unfinished_clone = False
         self.block = block
         self._set_values_jump_sourcess(values, jump_sources)
+
+    # def __str__(self):
+    #    return f"PhiValue({self.values})"
 
     def _set_values_jump_sourcess(self, values, jump_sources):
         self.values = list(values)
@@ -500,7 +503,7 @@ def check_graph(gr):
             if is_attr:
                 for v in o.phi_values:
                     phi_value_refs[v].append((o, None))
-            assert o_or_parent in known_values
+            assert o_or_parent in known_values, f"{o_or_parent} (from {o}) unknown {known_values=}"
 
     for bl in gr.blocks:
         for i in bl.block_inputs:
