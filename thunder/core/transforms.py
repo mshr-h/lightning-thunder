@@ -53,13 +53,14 @@ def symbol_to_eval_map(symbol: prims.Prim):
     return _fn
 
 
-def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map):
+def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map, **kwargs):
     """Evaluate a trace.
 
     Args:
         trace: trace to evaluate
         *args: arguments to evaluate the trace with
         symbol_mapper: function that maps a symbol to a function that evaluates it
+        **kwargs: keyword arguments to evaluate the trace with
 
     Returns:
         result of evaluating the trace
@@ -77,6 +78,7 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map):
         env[v] = val
 
     safe_map(write, trace.args, args)
+    safe_map(write, trace.kwargs.values(), kwargs.values())
 
     for symbol in trace.symbols:
         args = safe_map(read, symbol.args)

@@ -93,6 +93,55 @@ def test_nested_make_trace(executor, device, _):
     assert_close(actual, expected)
 
 
+@executors(dtypes=NOTHING)
+def test_eval_trace(executor, device, _):
+    # This test ensures that eval_trace() can be called from within a traced
+    # region and all the symbols in the trace are properly evaluated.
+    from thunder import _get_executor
+    from thunder.core.transforms import eval_trace
+    from thunder.core.trace import new_trace, reset_trace
+    from thunder.core.proxies import TensorProxy
+
+    def foo(a, b, *, c=5):
+        return tlang.mul(tlang.add(a, b), c)
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+    c = 4.0
+
+    # Test eval_trace() with eager proxy execution
+    foo_trace = thunder.make_trace(foo, executor=executor)(a, b, c=c)
+    try:
+        trace_token = new_trace()
+        actual = eval_trace(foo_trace, *foo_trace.args, **foo_trace.kwargs)
+        assert isinstance(actual, TensorProxy)
+        assert actual.shape == foo_trace.outputs.shape
+        assert actual.dtype == foo_trace.outputs.dtype
+        assert actual.device == foo_trace.outputs.device
+        assert actual.name == foo_trace.outputs.name
+    finally:
+        reset_trace(trace_token)
+
+    # Test eval_trace() with retracing + fusion + execution
+    def eval_trace_as_function(trace):
+        def func(*args, **kwargs):
+            return eval_trace(trace, *args, **kwargs)
+
+        return func
+
+    foo_traced = thunder.make_traced(eval_trace_as_function(foo_trace), executor=executor)
+    actual = foo_traced(a, b, c=c)
+    expected = (a + b) * c
+    assert_close(actual, expected)
+
+    # Test eval_trace() with retracing
+    foo_trace2 = thunder.make_trace(eval_trace_as_function(foo_trace), executor=executor)(a, b, c=c)
+    # How to test that two traces are equal?
+    assert len(foo_trace2.symbols) == 2
+    assert foo_trace2.symbols[0].name == "add"
+    assert foo_trace2.symbols[1].name == "mul"
+
+
 @executors(
     dtypes=NOTHING,
     executors=[
