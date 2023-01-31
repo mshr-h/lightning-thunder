@@ -34,6 +34,7 @@ __all__ = [
     "atan",
     "atanh",
     "bitwise_not",
+    "cos",
     "exp",
     "rsqrt",
     "sin",
@@ -181,6 +182,9 @@ class TorchLangCtx:
     def bitwise_not(self, a):
         return tlang.bitwise_not(a)
 
+    def cos(self, a):
+        return tlang.cos(a)
+
     def exp(self, a):
         return tlang.exp(a)
 
@@ -257,6 +261,10 @@ def reshape(a, shape):
 
 def acos(a):
     return tlang.acos(a)
+
+
+def cos(a):
+    return tlang.cos(a)
 
 
 def exp(a):
