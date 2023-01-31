@@ -147,6 +147,20 @@ class FloatProxy(NumberProxy, float):
         return ctx.true_divide(self, other)
 
 
+class ComplexProxy(NumberProxy, complex):
+    def __new__(cls, *, name, value):
+        return complex.__new__(cls, value)
+
+    def __init__(self, *, name, value):
+        NumberProxy.__init__(self, name=name, value=value, python_type=complex)
+
+    def __repr__(self):
+        return f"[ComplexProxy name={self.name} value={self.value}]"
+
+    def __hash__(self):
+        return Proxy.__hash__(self)
+
+
 # TODO: want this to pass isinstance(p, torch.Tensor) and isinstance(p, np.array) depending on
 #   language context
 # TODO: maybe change "tensor" param to "like" to be clearer
@@ -265,6 +279,8 @@ class TensorProxy(Proxy):
 def proxy(x, *, name):
     """Creates a proxy object."""
 
+    if isinstance(x, complex):
+        return ComplexProxy(name=name, value=x)
     if isinstance(x, int):
         return IntegerProxy(name=name, value=x)
     if isinstance(x, float):

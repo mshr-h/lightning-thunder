@@ -281,6 +281,8 @@ def test_crazy_collections_in_and_out(executor, device, dtype):
         i = ka + ka  # NOTE: not returned (ignored computation)
         j = kc[0] + kc[1]
 
+        d["j"] = j
+
         return (
             a,
             (g,),
@@ -289,6 +291,7 @@ def test_crazy_collections_in_and_out(executor, device, dtype):
             g,
             b,
             e,
+            d["j"],
             (f, d, c, (d,), c, {"a": a, 5: f, "b": h}),
             (5,),
             (),
