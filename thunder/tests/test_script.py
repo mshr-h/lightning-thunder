@@ -1,16 +1,20 @@
 import sys
+from functools import partial
+import math
 
 import pytest
 import torch
+import torch.nn as nn
 from torch import add as tadd
 from torch.testing import assert_close, make_tensor
 
+import thunder.langs.torch as ttorch
 import thunder.core.script.frontend
 import thunder.core.script.passes
 import thunder.core.script.python_ir
 
 from . import nanogpt_model
-from .framework import requiresCUDA
+from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA
 
 
 def sample_add_fn(x, y):
@@ -238,3 +242,119 @@ def test_inlining_function_and_convert_to_thunder():
     thunder_result = thunder_fn(a, c_fc_weight, c_proj_weight)
 
     assert_close(torch_result, thunder_result)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_preprocess_option(executor, device, dtype):
+    def foo(a, b):
+        return torch.add(a, b)
+
+    tdtype = ttorch.torch_dtype(dtype)
+    a = make_tensor((2, 1), device=device, dtype=tdtype)
+    b = make_tensor((2, 2), device=device, dtype=tdtype)
+
+    thunder_fn = thunder.make_traced(foo, executor=executor, _preprocess=True)
+
+    thunder_result = thunder_fn(a, b)
+    torch_result = foo(a, b)
+    assert_close(thunder_result, torch_result)
+
+
+def _nanogpt_mlp_helper(device, dtype, thunder_fn, torch_fn):
+    tdtype = ttorch.torch_dtype(dtype)
+    make = partial(make_tensor, dtype=tdtype, device=device)
+
+    n = 4
+    a = make((n, n))
+    c_fc_weight = make((4 * n, n))
+    c_proj_weight = make((n, 4 * n))
+
+    thunder_result = thunder_fn(a, c_fc_weight, c_proj_weight)
+    torch_result = torch_fn(a, c_fc_weight, c_proj_weight)
+
+    assert_close(thunder_result, torch_result)
+
+
+# TODO: enable the following tests
+
+# @executors(dtypes=(thunder.float32,))
+# def test_nanogpt_mlp_functional_simplified(executor, device, dtype):
+
+#     def nanogpt_mlp_functional_simplified(a, c_fc_weight, c_proj_weight):
+#         b = torch.nn.functional.linear(a, c_fc_weight)
+#         d = torch.nn.functional.linear(b, c_proj_weight)
+#         e = torch.nn.functional.dropout(d)
+#         return e
+
+#     thunder_fn = thunder.make_traced(nanogpt_mlp_functional_simplified, executor=executor, _preprocess=True)
+#     _nanogpt_mlp_helper(device, dtype, thunder_fn, nanogpt_mlp_functional_simplified)
+
+# @executors(dtypes=(thunder.float32,))
+# def test_nanogpt_mlp_functional_inlined(executor, device, dtype):
+
+#     def nanogpt_mlp_functional_inlined(a, c_fc_weight, c_proj_weight):
+#         b = torch.nn.functional.linear(a, c_fc_weight)
+#         c = 0.5 * b * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (b + 0.044715 * torch.pow(b, 3.0))))
+#         d = torch.nn.functional.linear(c, c_proj_weight)
+#         e = torch.nn.functional.dropout(d)
+#         return e
+
+#     thunder_fn = thunder.make_traced(nanogpt_mlp_functional_inlined, executor=executor, _preprocess=True)
+#     _nanogpt_mlp_helper(device, dtype, thunder_fn, nanogpt_mlp_functional_inlined)
+
+# @executors(dtypes=(thunder.float32,))
+# def test_nanogpt_mlp_functional(executor, device, dtype):
+
+#     def new_gelu(x):
+#         return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
+
+#     def nanogpt_mlp_functional(a, c_fc_weight, c_proj_weight):
+#         b = torch.nn.functional.linear(a, c_fc_weight)
+#         c = new_gelu(b)
+#         d = torch.nn.functional.linear(c, c_proj_weight)
+#         e = torch.nn.functional.dropout(d)
+#         return e
+
+
+#     thunder_fn = thunder.make_traced(nanogpt_mlp_functional, executor=executor, _preprocess=True)
+#     _nanogpt_mlp_helper(device, dtype, thunder_fn, nanogpt_mlp_functional)
+
+# @executors(dtypes=(thunder.float32,))
+# def test_nanogpt_mlp(executor, device, dtype):
+
+#     def new_gelu(x):
+#         return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
+
+#     n = 4
+#     class MLP(nn.Module):
+
+#         def __init__(self):
+#             super().__init__()
+#             n = 4
+#             self.c_fc = nn.Linear(n, 4 * n)
+#             self.c_proj = nn.Linear(4 * n, n)
+#             self.dropout = nn.Dropout()
+
+#         def forward(self, a):
+#             b = self.c_fc(a)
+#             c = new_gelu(b)
+#             d = self.c_proj(c)
+#             e = self.dropout(d)
+#             return e
+
+#     tdtype = ttorch.torch_dtype(dtype)
+
+#     mlp = MLP()
+#     mlp.to(device, dtype=tdtype)
+
+#     thunder_fn = thunder.make_traced(mlp, executor=executor, _preprocess=True)
+
+#     make = partial(make_tensor, dtype=tdtype, device=device)
+
+#     n = 4
+#     a = make((n, n))
+
+#     thunder_result = thunder_fn(a)
+#     torch_result = mlp(a)
+
+#     assert_close(thunder_result, torch_result)
