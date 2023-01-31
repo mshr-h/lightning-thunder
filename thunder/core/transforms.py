@@ -104,9 +104,9 @@ def detached_trace():
     reset_trace(trace_token)
 
 
-def _identity_call_metafunc(*args, trace: Trace):
+def _identity_call_metafunc(*args, trace: Trace, **kwargs):
     with detached_trace():
-        return eval_trace(trace, *args)
+        return eval_trace(trace, *args, **kwargs)
 
 
 identity_call = prims.make_prim(Transforms.IdentityOp, "identity_call", _identity_call_metafunc)
@@ -126,7 +126,7 @@ def identity(func):
     return wrapper
 
 
-def _identity_call_pytorch(*args, trace: Trace):
+def _identity_call_pytorch(*args, trace: Trace, **kwargs):
     import torch
 
     def symbol_mapper(op):
@@ -139,7 +139,7 @@ def _identity_call_pytorch(*args, trace: Trace):
         return torch_op
 
     with detached_trace():
-        return eval_trace(trace, *args, symbol_mapper=symbol_mapper)
+        return eval_trace(trace, *args, **kwargs, symbol_mapper=symbol_mapper)
 
 
 # Register the identity call for PyTorch executor.
@@ -161,8 +161,8 @@ def inline_symbol_mapper(symbol: prims.Prim):
     return symbol_to_eval_map(symbol)
 
 
-def _identity_call_inline(*args, trace: Trace):
-    return eval_trace(trace, *args, symbol_mapper=inline_symbol_mapper)
+def _identity_call_inline(*args, trace: Trace, **kwargs):
+    return eval_trace(trace, *args, **kwargs, symbol_mapper=inline_symbol_mapper)
 
 
 inline_transforms_map[Transforms.IdentityOp] = _identity_call_inline

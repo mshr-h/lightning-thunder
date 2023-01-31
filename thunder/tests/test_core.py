@@ -156,15 +156,16 @@ def test_transforms_identity(executor, device, _):
     from thunder.core.transforms import identity, Transforms
     from thunder import _get_executor
 
-    def func(a, b):
-        return tlang.mul(tlang.add(a, b), 1)
+    def func(a, b, *, c=5):
+        return tlang.mul(tlang.mul(tlang.add(a, b), 1), c)
 
     nested_id_func = identity(identity(identity(func)))
 
     a = make_tensor((2, 2), device=device, dtype=torch.float32)
     b = make_tensor((2, 2), device=device, dtype=torch.float32)
+    c = 4.0
 
-    nested_id_trace = thunder.make_trace(nested_id_func, executor=executor)(a, b)
+    nested_id_trace = thunder.make_trace(nested_id_func, executor=executor)(a, b, c=c)
     assert len(nested_id_trace.symbols) == 1
     assert nested_id_trace.symbols[0].op == Transforms.IdentityOp
 
@@ -173,15 +174,16 @@ def test_transforms_identity(executor, device, _):
         assert len(trace.symbols) == 1
         assert trace.symbols[0].op == Transforms.IdentityOp
         trace = trace.symbols[0].kwargs.get("trace", None)
-    assert len(trace.symbols) == 3
+    assert len(trace.symbols) == 4
     assert trace.symbols[0].name == "add"
     assert trace.symbols[1].name == "convert_element_type"
     assert trace.symbols[2].name == "mul"
+    assert trace.symbols[3].name == "mul"
 
     ex = _get_executor(executor)
     fusion = ex.fuse(nested_id_trace)
-    actual = fusion(a, b)
-    expected = thunder.make_traced(func, executor=executor)(a, b)
+    actual = fusion(a, b, c=c)
+    expected = thunder.make_traced(func, executor=executor)(a, b, c=c)
     torch.testing.assert_close(actual, expected)
 
 
