@@ -8,59 +8,15 @@ from ..executors.torch import ops_to_torch_ops_map
 from . import prims
 from .proxies import Proxy, TensorProxy
 from .trace import get_trace, new_trace, reset_trace, Trace
+from .utils import safe_map, safe_zip, unzip2
 
 
 class Transforms(Enum):
     IdentityOp = auto()
 
 
-def safe_map(f, *args):
-    """Apply f to each element of args, which must all have the same length.
-
-    Args:
-        f: function to apply
-        *args: arguments to apply f to
-
-    Returns:
-        list of results of applying f to each element of args
-    """
-    args = list(map(list, args))
-    n = len(args[0])
-    for arg in args[1:]:
-        assert len(arg) == n, f"length mismatch: {list(map(len, args))}"
-    return list(map(f, *args))
-
-
-def safe_zip(*args):
-    """Zip args, which must all have the same length.
-
-    Args:
-        *args: arguments to zip
-
-    Returns:
-        list of zipped results
-    """
-    return safe_map(lambda *x: x, *args)
-
-
-def unzip2(pairs):
-    """Unzip a list of pairs.
-
-    Args:
-        pairs (list): list of pairs
-
-    Returns:
-        list of first elements of pairs, list of second elements of pairs
-    """
-    lst1, lst2 = [], []
-    for x1, x2 in pairs:
-        lst1.append(x1)
-        lst2.append(x2)
-    return lst1, lst2
-
-
 @lru_cache(maxsize=None)
-def symbol_to_eval_map(symbol: prims.Prim):
+def symbol_to_eval(symbol: prims.Prim):
     """Map a symbol to a function that evaluates it.
 
     Args:
@@ -82,7 +38,7 @@ def symbol_to_eval_map(symbol: prims.Prim):
     return _fn
 
 
-def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map, **kwargs):
+def eval_trace(trace, *args, symbol_mapper=symbol_to_eval, **kwargs):
     """Evaluate a trace.
 
     Args:
@@ -186,7 +142,7 @@ def inline_symbol_mapper(symbol: prims.Prim):
     if symbol.op in inline_transforms_map:
         return inline_transforms_map[symbol.op]
 
-    return symbol_to_eval_map(symbol)
+    return symbol_to_eval(symbol)
 
 
 def _identity_call_inline(*args, trace: Trace, **kwargs):
@@ -251,7 +207,7 @@ def jvp_symbol_mapper(symbol: prims.Prim):
 
         def _jvp_impl_const(symbol, *args, **kwargs):
             # TODO: this is weird, but we need to return a tuple of tuples
-            out = symbol_to_eval_map(symbol)(*args, **kwargs)
+            out = symbol_to_eval(symbol)(*args, **kwargs)
             if isinstance(out, Sequence):
                 return ((out, tuple(0 for x in out)),)
             return ((out, 0),)

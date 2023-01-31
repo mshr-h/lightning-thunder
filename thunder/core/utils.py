@@ -582,3 +582,48 @@ class langctx:
             return result
 
         return fn
+
+
+def safe_map(f, *args):
+    """Apply f to each element of args, which must all have the same length.
+
+    Args:
+        f: function to apply
+        *args: arguments to apply f to
+
+    Returns:
+        list of results of applying f to each element of args
+    """
+    args = list(map(list, args))
+    n = len(args[0])
+    for arg in args[1:]:
+        assert len(arg) == n, f"length mismatch: {list(map(len, args))}"
+    return list(map(f, *args))
+
+
+def safe_zip(*args):
+    """Zip args, which must all have the same length.
+
+    Args:
+        *args: arguments to zip
+
+    Returns:
+        list of zipped results
+    """
+    return safe_map(lambda *x: x, *args)
+
+
+def unzip2(pairs):
+    """Unzip a list of pairs.
+
+    Args:
+        pairs (list): list of pairs
+
+    Returns:
+        list of first elements of pairs, list of second elements of pairs
+    """
+    lst1, lst2 = [], []
+    for x1, x2 in pairs:
+        lst1.append(x1)
+        lst2.append(x2)
+    return lst1, lst2
