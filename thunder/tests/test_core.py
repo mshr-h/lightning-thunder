@@ -68,6 +68,8 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
 def test_nested_make_trace(executor, device, _):
     # This test ensures that make_trace() can be called from within a traced
     # function without leaking the trace context.
+    from thunder import _get_executor
+
     def foo(a, b):
         return tlang.add(a, b)
 
@@ -83,6 +85,12 @@ def test_nested_make_trace(executor, device, _):
     bar_trace = thunder.make_trace(bar, executor=executor)(a, b)
     assert len(bar_trace.symbols) == 1
     assert bar_trace.symbols[0].name == "mul"
+
+    ex = _get_executor(executor)
+    fusion = ex.fuse(bar_trace)
+    actual = fusion(a, b)
+    expected = a * b
+    assert_close(actual, expected)
 
 
 @executors(
