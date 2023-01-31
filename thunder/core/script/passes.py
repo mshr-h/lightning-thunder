@@ -61,34 +61,36 @@ def split_block(gr, bl, n):
     nbl.jump_sources.append(bl_jump_node)
     gr.blocks.insert(i + 1, nbl)
 
-    nbl_block_inputs = {}
     potential_bl_outputs = {i for i in bl.block_inputs}
     for n in bl.nodes:
         for o in n.outputs:
             potential_bl_outputs.add(o)
     for i in bl.block_inputs:
         potential_bl_outputs.add(i)
+    value_map = {}
 
     def get_or_create_phi(v):
-        phi_value = nbl_block_inputs.get(v)
-        if phi_value is None:
+        if v in value_map:
+            return value_map[v]
+        if v.is_const or v.is_global:
+            return v
+        if v in potential_bl_outputs:  # priority follow parent vs. phi_value?
             phi_value = PhiValue([v], [bl_jump_node], nbl)
             nbl.block_inputs.append(phi_value)
-        return phi_value
+            bl.block_outputs.add(v)
+            value_map[v] = phi_value
+            return phi_value
+        if v.parent is not None:
+            # this adds v.parent to the value_map, so that is used
+            # for the clone's parent
+            get_or_create_phi(v.parent)
+            return v.clone(translation_dict=value_map)
+        raise ValueError(f"unknwn value {v}")
 
     for n in nbl.nodes:
-        for idx_i, i in enumerate(n.inputs):
-            i_or_parent = i
-            last_i_or_parent = i
-            while i_or_parent not in potential_bl_outputs and i_or_parent.parent != None:
-                last_i_or_parent = i_or_parent
-                i_or_parent = i_or_parent.parent
-            if i_or_parent in potential_bl_outputs:
-                if i_or_parent is i:
-                    n.inputs[idx_i] = get_or_create_phi(i)
-                else:
-                    last_i_or_parent.parent = get_or_create_phi(i_or_parent)
-                bl.block_outputs.add(i_or_parent)
+        n.inputs = [get_or_create_phi(i) for i in n.inputs]
+        for o in n.outputs:
+            value_map[o] = o
         # for inplace ops, we also check the outputs (e.g. FOR_ITER)
         for idx_o, o in enumerate(n.outputs):
             if o in potential_bl_outputs:
