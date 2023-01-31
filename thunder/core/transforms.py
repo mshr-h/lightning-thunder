@@ -31,6 +31,18 @@ def safe_map(f, *args):
     return list(map(f, *args))
 
 
+def safe_zip(*args):
+    """Zip args, which must all have the same length.
+
+    Args:
+        *args: arguments to zip
+
+    Returns:
+        list of zipped results
+    """
+    return safe_map(lambda *x: x, *args)
+
+
 @lru_cache(maxsize=None)
 def symbol_to_eval_map(symbol: prims.Prim):
     """Map a symbol to a function that evaluates it.
