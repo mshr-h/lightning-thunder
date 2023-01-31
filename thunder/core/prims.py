@@ -51,6 +51,7 @@ __all__ = [
     "floor",
     "isfinite",
     "rsqrt",
+    "sin",
     "tanh",
     # Elementwise binary prims
     "add",
@@ -102,6 +103,7 @@ class Ops(Enum):
     FLOOR = auto()
     ISFINITE = auto()
     RSQRT = auto()
+    SIN = auto()
     TANH = auto()
     # Elementwise binary prims
     ADD = auto()
@@ -287,7 +289,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "round",
 # "sign",
 # "signbit",
-# "sin",
 # "sinh",
 # "sqrt",
 # "tan",
@@ -305,7 +306,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "real",
 # "round",
 # "sign",
-# "sin",
 # "sinh",
 # "sqrt",
 # "tan",
@@ -531,6 +531,17 @@ rsqrt = make_prim(
         name="rsqrt",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
         number_handler=_rsqrt_number,
+    ),
+)
+
+sin = make_prim(
+    Ops.SIN,
+    "sin",
+    partial(
+        _elementwise_unary_meta,
+        name="sin",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.sin,
     ),
 )
 

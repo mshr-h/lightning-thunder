@@ -36,6 +36,7 @@ __all__ = [
     "bitwise_not",
     "exp",
     "rsqrt",
+    "sin",
     "tanh",
     # Elementwise Binary Ops
     "add",
@@ -264,6 +265,10 @@ def exp(a):
 
 def rsqrt(a):
     return tlang.rsqrt(a)
+
+
+def sin(a):
+    return tlang.sin(a)
 
 
 def tanh(a):

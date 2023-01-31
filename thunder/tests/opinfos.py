@@ -619,6 +619,22 @@ rsqrt_opinfo = OpInfo(
 )
 elementwise_unary_ops.append(rsqrt_opinfo)
 
+sin_opinfo = OpInfo(
+    tlang.sin,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.sin,
+    test_directives=(
+        # NOTE: Torch doesn't support CPU float16 or complex32 sin
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(sin_opinfo)
+
 tanh_opinfo = OpInfo(
     tlang.tanh,
     sample_input_generator=elementwise_unary_generator,
