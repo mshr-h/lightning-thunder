@@ -1,6 +1,6 @@
 from numbers import Number
 
-from thunder.core.proxies import TensorProxy
+from thunder.core.proxies import NumberProxy, TensorProxy
 
 __all__ = [
     "dtype",
@@ -317,6 +317,8 @@ def to_dtype(x, *, true_dtype=False):
         return x.dtype
     if isinstance(x, dtype):
         return x
+    if isinstance(x, NumberProxy):
+        return x.python_type
     if isinstance(x, Number):
         return _numberclass_to_numbertype(type(x))
     if issubclass(x, Number):
