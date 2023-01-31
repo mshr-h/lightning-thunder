@@ -64,6 +64,35 @@ def test_integer_isinstance_mimicry(executor, device, dtype):
         pass
 
 
+@executors(dtypes=NOTHING)
+def test_nested_make_trace(executor, device, _):
+    # This test ensures that make_trace() can be called from within a traced
+    # function without leaking the trace context.
+    from thunder import _get_executor
+
+    def foo(a, b):
+        return tlang.add(a, b)
+
+    def bar(a, b):
+        foo_trace = thunder.make_trace(foo, executor=executor)(a, b)
+        assert len(foo_trace.symbols) == 1
+        assert foo_trace.symbols[0].name == "add"
+        return tlang.mul(a, b)
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+
+    bar_trace = thunder.make_trace(bar, executor=executor)(a, b)
+    assert len(bar_trace.symbols) == 1
+    assert bar_trace.symbols[0].name == "mul"
+
+    ex = _get_executor(executor)
+    fusion = ex.fuse(bar_trace)
+    actual = fusion(a, b)
+    expected = a * b
+    assert_close(actual, expected)
+
+
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
 @executors(dtypes=NOTHING)
 def test_integer_return(executor, device, _):
