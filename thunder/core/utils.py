@@ -50,6 +50,7 @@ __all__ = [
     "canonicalize_dim",
     "canonicalize_dims",
     "check_valid_length",
+    "check_valid_permutation",
     "check_valid_shape",
     "check_no_duplicates",
     # Device-related functions
@@ -520,6 +521,15 @@ def check_valid_length(length: int):
     """Validates that an object represents a valid dimension length."""
 
     check(length >= 0, lambda: f"Found invalid length {length}!")
+
+
+def check_valid_permutation(rank: int, perm):
+    """
+    Validates that perm is a permutation of length rank.
+    """
+
+    check(isinstance(perm, Sequence), lambda: f"Expected perm={perm} to be a Sequence!")
+    check(tuple(sorted(perm)) == tuple(range(0, rank)), lambda: f"Expected perm={perm} to be a valid permutation!")
 
 
 def check_valid_shape(shape):

@@ -33,6 +33,7 @@ __all__ = [
     "broadcast_in_dim_meta",
     "broadcast_in_dim",
     "reshape",
+    "transpose",
     # Elementwise unary prims
     "abs",
     "acos",
@@ -85,6 +86,7 @@ class Ops(Enum):
     # Shape prims
     BROADCAST_IN_DIM = auto()
     RESHAPE = auto()
+    TRANSPOSE = auto()
     # Elementwise unary prims
     ABS = auto()
     ACOS = auto()
@@ -829,6 +831,25 @@ reshape = make_prim(
     "reshape",
     reshape_meta,
 )
+
+
+def transpose_meta(a, permutation):
+    utils.check(isinstance(a, TensorProxy), lambda: f"Expected a={a} to be a TensorProxy!")
+    utils.check(
+        a.ndim == len(permutation),
+        lambda: f"Expected the length ({len(permutation)}) of the permutation={permutation} to be the number of dimensions ({a.ndim}) of a={a}",
+    )
+    utils.check_valid_permutation(a.ndim, permutation)
+
+    new_shape = [0] * a.ndim
+    for idx, dim in enumerate(permutation):
+        new_shape[idx] = a.shape[dim]
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(tensor=a, name=proxy_name, shape=new_shape)
+
+
+transpose = make_prim(Ops.TRANSPOSE, "transpose", transpose_meta)
 
 #
 # Reduction prims

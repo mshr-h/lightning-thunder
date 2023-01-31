@@ -4,11 +4,9 @@ from enum import auto, Enum
 from functools import partial
 from numbers import Number
 from typing import Sequence
+from looseversion import LooseVersion
 
 import torch
-import torch._C._nvfuser as nvfuser
-from torch._C._nvfuser import DataType, Fusion, FusionDefinition
-
 import thunder.core.dtypes as dtypes
 
 # TODO: review language and executor dependencies
@@ -18,8 +16,20 @@ from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.executors.torch import _fuse_region as _fuse_torch_region
 
-nvTensor = torch._C._nvfuser.Tensor
-nvNumber = torch._C._nvfuser.Scalar
+# Imports nvFuser
+# NOTE: nvFuser API changed after PyTorch 1.13
+if LooseVersion(torch.__version__) >= "2.0":
+    import nvfuser
+    from nvfuser._C import DataType, Fusion, FusionDefinition
+
+    nvTensor = nvfuser._C.Tensor
+    nvNumber = nvfuser._C.Scalar
+else:
+    import torch._C._nvfuser as nvfuser
+    from torch._C._nvfuser import DataType, Fusion, FusionDefinition
+
+    nvTensor = torch._C._nvfuser.Tensor
+    nvNumber = torch._C._nvfuser.Scalar
 
 __all__ = [
     "nvFuserCtx",
@@ -231,6 +241,8 @@ ops_to_nvfuser_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     prims.Ops.RESHAPE: "view",
+    # NOTE: nvFuser exposes the "transpose" prim as "permute"
+    prims.Ops.TRANSPOSE: "permute",
     # Elementwise unary prims
     prims.Ops.ABS: "abs",
     prims.Ops.ACOS: "acos",
@@ -276,6 +288,7 @@ ops_to_nvfuser_ops_map = {
 ops_to_nvfuser_preprocessors_map = {
     # Shape prims
     prims.Ops.RESHAPE: _reshape_preprocessor,
+    prims.Ops.TRANSPOSE: _nvScalars_to_Numbers_preprocessor,
     # Elementwise unary prims
     prims.Ops.ABS: _elementwise_preprocessor,
     prims.Ops.ACOS: _elementwise_preprocessor,

@@ -880,6 +880,56 @@ reshape_opinfo = OpInfo(
 )
 shape_ops.append(reshape_opinfo)
 
+
+def transpose_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # tensor shape, dim0, dim1
+    cases = (
+        ((4, 3, 2), 0, -1),
+        ((4, 3, 2), 0, -2),
+        ((4, 3, 2), 1, 2),
+        ((1, 2), 0, -1),
+        ((5,), 0, 0),
+    )
+
+    for shape, dim0, dim1 in cases:
+        yield SampleInput(make(shape), dim0, dim1)
+
+
+transpose_torch_opinfo = OpInfo(
+    ttorch.transpose,
+    name="torch_transpose",
+    sample_input_generator=transpose_torch_sample_generator,
+    torch_reference=torch.transpose,
+)
+shape_ops.append(transpose_torch_opinfo)
+
+
+def transpose_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, perm
+    cases = (
+        ((4, 7, 8), (0, 1, 2)),
+        ((4, 7, 8), (1, 2, 0)),
+        ((4, 7, 8), (2, 1, 0)),
+        ((4, 7, 8), (0, 2, 1)),
+        ((4, 7, 8), (0, -1, 1)),
+        ((4, 7), (1, 0)),
+    )
+
+    for shape, perm in cases:
+        yield SampleInput(make(shape), perm)
+
+
+transpose_opinfo = OpInfo(
+    tlang.transpose,
+    sample_input_generator=transpose_sample_generator,
+    torch_reference=torch.permute,
+)
+shape_ops.append(transpose_opinfo)
+
 opinfos.extend(shape_ops)
 
 #
