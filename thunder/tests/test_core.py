@@ -227,7 +227,6 @@ def test_transforms_inline(executor, device, _):
     assert not any(symbol.op == Transforms.IdentityOp for symbol in transformed_trace.symbols)
 
 
-
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
 @executors(dtypes=NOTHING)
 def test_integer_return(executor, device, _):
