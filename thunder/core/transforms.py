@@ -1,9 +1,9 @@
 from contextlib import contextmanager
 from enum import auto, Enum
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Any, Callable, Dict, Sequence
 
-from .. import make_trace
+from .. import make_trace, make_traced
 from ..executors.torch import ops_to_torch_ops_map
 from . import prims
 from .proxies import Proxy, TensorProxy
@@ -29,6 +29,34 @@ def safe_map(f, *args):
     for arg in args[1:]:
         assert len(arg) == n, f"length mismatch: {list(map(len, args))}"
     return list(map(f, *args))
+
+
+def safe_zip(*args):
+    """Zip args, which must all have the same length.
+
+    Args:
+        *args: arguments to zip
+
+    Returns:
+        list of zipped results
+    """
+    return safe_map(lambda *x: x, *args)
+
+
+def unzip2(pairs):
+    """Unzip a list of pairs.
+
+    Args:
+        pairs (list): list of pairs
+
+    Returns:
+        list of first elements of pairs, list of second elements of pairs
+    """
+    lst1, lst2 = [], []
+    for x1, x2 in pairs:
+        lst1.append(x1)
+        lst2.append(x2)
+    return lst1, lst2
 
 
 @lru_cache(maxsize=None)
@@ -70,7 +98,7 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map, **kwargs):
 
     def read(x: Proxy):
         if isinstance(x, Proxy):
-            return env[x] if type(x) is TensorProxy else x.value
+            return env[x]
         else:
             return x
 
@@ -180,3 +208,90 @@ def inline(func):
         return eval_trace(trace, *args, **kwargs, symbol_mapper=inline_symbol_mapper)
 
     return wrapper
+
+
+# JVP transform
+# -------------
+
+
+def sin_jvp(a, ȧ):
+    return prims.sin(a), prims.cos(a) * ȧ
+
+
+def mul_jvp(a, b, ȧ, ḃ):
+    return a * b, a * ḃ + b * ȧ
+
+
+def add_jvp(a, b, ȧ, ḃ):
+    return a + b, ȧ + ḃ
+
+
+jvp_impls: Dict[prims.Prim, Callable] = dict()
+
+jvp_impls[prims.Ops.SIN] = sin_jvp
+jvp_impls[prims.Ops.MUL] = mul_jvp
+jvp_impls[prims.Ops.ADD] = add_jvp
+
+
+def jvp_symbol_mapper(symbol: prims.Prim):
+    """Maps a symbol to a JVP function that evaluates it.
+
+    Args:
+        symbol (prims.Prim): Symbol to evaluate.
+
+    Raises:
+        NotImplementedError: If the JVP for the symbol is not implemented.
+
+    Returns:
+        Callable: JVP function that evaluates the symbol.
+    """
+    # NOTE: I'm sorry for this code, but it's the best I could do.
+    # if symbol.args doesn't have subclasses of Proxy, then we need to return a zero tangent
+    if not any(isinstance(arg, Proxy) for arg in symbol.args):
+
+        def _jvp_impl_const(symbol, *args, **kwargs):
+            # TODO: this is weird, but we need to return a tuple of tuples
+            out = symbol_to_eval_map(symbol)(*args, **kwargs)
+            if isinstance(out, Sequence):
+                return ((out, tuple(0 for x in out)),)
+            return ((out, 0),)
+
+        return partial(_jvp_impl_const, symbol)
+
+    # Normal case, we have a proxy tangent
+    jvp_impl = jvp_impls.get(symbol.op)
+    if jvp_impl is None:
+        raise NotImplementedError(f"JVP for {symbol.op} is not implemented")
+
+    def _jvp_impl(*args, **kwargs):
+        primals, tangents = unzip2(args)
+        assert len(kwargs) == 0, "JVP for kwargs is not implemented"
+        return (jvp_impl(*primals, *tangents, **kwargs),)
+
+    return _jvp_impl
+
+
+# Note that this is eagerly evaluated transform, there's no jvp_call primitive yet.
+def jvp(func, primals, tangents, executor="torch"):
+    """Computes the Jacobian-vector product of a Thunder function.
+
+    Args:
+        func (Callable): A Thunder function to be transformed.
+        primals (_type_): Primals of the function.
+        tangents (_type_): Tangents of the function.
+        executor (str, optional): Executor to use. Defaults to "torch".
+
+    Returns:
+        The result of the Jacobian-vector product.
+    """
+    trace = make_trace(func, executor=executor)(*primals)
+
+    def jvp_func(*primals_and_tangents):
+        _primals, _tangents = primals_and_tangents[: len(primals)], primals_and_tangents[len(primals) :]
+        primals_tangents_pairs = safe_zip(_primals, _tangents)
+        outs = eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
+        return outs
+
+    jvp_trace = make_trace(jvp_func, executor=executor)(*primals, *tangents)
+    jvp_traced = make_traced(partial(eval_trace, jvp_trace), executor=executor)
+    return jvp_traced(*primals, *tangents)
