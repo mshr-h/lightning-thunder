@@ -10,6 +10,7 @@ import thunder.core.proxies as proxies
 import thunder.langs as langs
 from thunder.__about__ import *
 from thunder.core.pytree import tree_flatten, tree_unflatten
+import thunder.core.script as script
 
 from .core.trace import (
     get_executor_context,
@@ -220,8 +221,31 @@ def make_trace(fn: Callable, executor: Optional[str] = None, language_ctx=langs.
     return wrapper
 
 
+# Preprocesses function
+# Currently tries to map torch.foo lookups to thunder.torch.foo lookups
+def preprocess(fn):
+
+    gr = script.frontend.acquire_method(fn, verbose=False)
+
+    script.frontend.make_ssa(gr)
+    script.frontend.make_single_return(gr)
+
+    script.passes.inline_submodule_calls(gr)
+    script.passes.merge_blocks_where_possible(gr)
+    script.passes.torch_to_thunder(gr)
+
+    thunder_fn = script.python_ir.generate_function(gr)
+
+    return thunder_fn
+
+
 def make_traced(
-    fn: Callable, executor: Optional[str] = None, language_ctx=langs.torch, _info=False, _return_fusion=False
+    fn: Callable,
+    executor: Optional[str] = None,
+    language_ctx=langs.torch,
+    _info=False,
+    _return_fusion=False,
+    _preprocess=False,
 ) -> Callable:
     """Converts a callable in a callable that will be traced and then executed.
 
@@ -239,6 +263,9 @@ def make_traced(
     """
 
     ex = _get_executor(executor)
+
+    if _preprocess:
+        fn = preprocess(fn)
 
     @wraps(fn)
     def _fn(*args, **kwargs):
