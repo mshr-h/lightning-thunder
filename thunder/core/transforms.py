@@ -1,12 +1,13 @@
-from . import prims
-from .. import make_trace
-from ..executors.torch import ops_to_torch_ops_map
-from .proxies import Proxy, TensorProxy
-from .trace import Trace, get_trace, new_trace, reset_trace
 from contextlib import contextmanager
 from enum import auto, Enum
 from functools import lru_cache
-from typing import Any, Sequence
+from typing import Any, Callable, Dict, Sequence
+
+from .. import make_trace
+from ..executors.torch import ops_to_torch_ops_map
+from . import prims
+from .proxies import Proxy, TensorProxy
+from .trace import get_trace, new_trace, reset_trace, Trace
 
 
 class Transforms(Enum):
@@ -141,4 +142,41 @@ def _identity_call_pytorch(*args, trace: Trace):
         return eval_trace(trace, *args, symbol_mapper=symbol_mapper)
 
 
+# Register the identity call for PyTorch executor.
 ops_to_torch_ops_map[Transforms.IdentityOp] = _identity_call_pytorch
+
+
+# Inline transform
+# ----------------
+# The inline transform is a special case of the identity transform.
+# It is used to inline the transformation of a function in the trace without
+# removing separate transform primitives from the trace.
+inline_transforms_map: Dict[prims.Prim, Callable] = dict()
+
+
+def inline_symbol_mapper(symbol: prims.Prim):
+    if symbol.op in inline_transforms_map:
+        return inline_transforms_map[symbol.op]
+
+    return symbol_to_eval_map(symbol)
+
+
+def _identity_call_inline(*args, trace: Trace):
+    return eval_trace(trace, *args, symbol_mapper=inline_symbol_mapper)
+
+
+inline_transforms_map[Transforms.IdentityOp] = _identity_call_inline
+
+
+def inline(func):
+    """Inline transform for a Thunder function.
+
+    Args:
+        func (Callable): A Thunder function to be transformed.
+    """
+
+    def wrapper(*args, **kwargs):
+        trace = make_trace(func, executor="torch")(*args, **kwargs)
+        return eval_trace(trace, *args, **kwargs, symbol_mapper=inline_symbol_mapper)
+
+    return wrapper

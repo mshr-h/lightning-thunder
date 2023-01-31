@@ -185,6 +185,47 @@ def test_transforms_identity(executor, device, _):
     torch.testing.assert_close(actual, expected)
 
 
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
+def test_transforms_inline(executor, device, _):
+    # This test ensures that inline() can be called from within a traced
+    # function removing (inlining) all identity() transforms.
+    # Also tests that inline() can be nested.
+    # Also tests that inline() can be used with "torch" executor.
+    from thunder.core.transforms import identity, inline, Transforms
+    from thunder import _get_executor
+
+    def func(a, b):
+        return tlang.mul(tlang.add(a, b), 1)
+
+    nested_id_func = identity(identity(identity(func)))
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+
+    inlined_nested_id_trace = thunder.make_trace(inline(nested_id_func), executor=executor)(a, b)
+    assert len(inlined_nested_id_trace.symbols) == 3
+    assert not any(symbol.op == Transforms.IdentityOp for symbol in inlined_nested_id_trace.symbols)
+    assert inlined_nested_id_trace.symbols[0].name == "add"
+    assert inlined_nested_id_trace.symbols[1].name == "convert_element_type"
+    assert inlined_nested_id_trace.symbols[2].name == "mul"
+
+    transforms = (inline, identity, inline, inline, identity, identity, inline)
+    for transform in transforms:
+        transformed_func = transform(func)
+
+    # Since the outer-most transform is inline, the trace should not contain
+    # any identity transforms.
+    transformed_trace = thunder.make_trace(transformed_func, executor=executor)(a, b)
+    assert len(transformed_trace.symbols) == 3
+    assert not any(symbol.op == Transforms.IdentityOp for symbol in transformed_trace.symbols)
+
+
+
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
 @executors(dtypes=NOTHING)
 def test_integer_return(executor, device, _):
