@@ -82,7 +82,7 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval_map, **kwargs):
 
     def read(x: Proxy):
         if isinstance(x, Proxy):
-            return env[x] if type(x) is TensorProxy else x.value
+            return env[x]
         else:
             return x
 
