@@ -120,6 +120,8 @@ ops_to_torch_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
     prims.Ops.RESHAPE: "torch.reshape",
+    # NOTE: PyTorch's transpose is not equivalent to the transpose prim
+    prims.Ops.TRANSPOSE: "torch.permute",
     # Elementwise unary prims
     prims.Ops.ABS: abs_helper,
     prims.Ops.ACOS: "torch.acos",
@@ -197,6 +199,7 @@ def _extract_name(x):
     return str(x)
 
 
+# TODO: probably want to call operations in a no grad context?
 # TODO: refactor _fuse_region to be called by a common executor utility to generate fusions
 def _fuse_region(inputs, outputs, symbols):
     # Defines utilities

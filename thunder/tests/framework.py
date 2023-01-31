@@ -3,6 +3,7 @@ import os
 import sys
 from functools import wraps
 from itertools import product
+from looseversion import LooseVersion
 
 import pytest
 
@@ -118,7 +119,12 @@ def _all_executors():
         pass
 
     try:
-        import torch._C._nvfuser
+        import torch
+
+        if LooseVersion(torch.__version__) >= "2.0":
+            import nvfuser
+        else:
+            import torch._C._nvfuser
 
         executors.append(nvFuser())
     except ModuleNotFoundError:
@@ -135,7 +141,12 @@ def benchmark_executors():
     executors = []
 
     try:
-        import torch._C._nvfuser
+        import torch
+
+        if LooseVersion(torch.__version__) >= "2.0":
+            import nvfuser
+        else:
+            import torch._C._nvfuser
 
         executors.append(nvFuser())
     except ModuleNotFoundError:

@@ -26,6 +26,7 @@ __all__ = [
     "zeros_like",
     # Shape ops
     "reshape",
+    "transpose",
     # Elementwise Unary Ops
     "abs",
     "acos",
@@ -252,6 +253,15 @@ def zeros_like(tensor, *, device=None, dtype=None):
 
 def reshape(a, shape):
     return tlang.reshape(a, shape)
+
+
+def transpose(a, dim0, dim1):
+    dim0, dim1 = utils.canonicalize_dims(a.ndim, (dim0, dim1))
+
+    permutation = list(range(0, a.ndim))
+    permutation[dim0] = dim1
+    permutation[dim1] = dim0
+    return tlang.transpose(a, permutation)
 
 
 #

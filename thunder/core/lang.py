@@ -25,6 +25,7 @@ __all__ = [
     # Shape operations
     "expand",
     "reshape",
+    "transpose",
     # Elemenwise unary operations
     "abs",
     "acos",
@@ -185,6 +186,11 @@ def reshape(a, shape):
     # NOTE: alternatively a new tuple could be constructed as follows:
     # shape = shape[:neg_one_idx] + (remaining,) + shape[neg_one_idx + 1:]
     return prims.reshape(a, shape)
+
+
+def transpose(a, permutation):
+    permutation = utils.canonicalize_dims(a.ndim, permutation)
+    return prims.transpose(a, permutation)
 
 
 def _compute_broadcast_shape(*_shapes):
