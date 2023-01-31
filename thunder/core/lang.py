@@ -43,6 +43,7 @@ __all__ = [
     "floor",
     "isfinite",
     "rsqrt",
+    "sin",
     "tanh",
     # Elementwise binary operations
     "add",
@@ -324,6 +325,10 @@ def isfinite(a):
 
 def rsqrt(a):
     return _elementwise_unary_helper(prims.rsqrt, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def sin(a):
+    return _elementwise_unary_helper(prims.sin, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
 def tanh(a):

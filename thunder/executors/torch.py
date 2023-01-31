@@ -138,6 +138,7 @@ ops_to_torch_ops_map = {
     prims.Ops.FLOOR: "torch.floor",
     prims.Ops.ISFINITE: "torch.isfinite",
     prims.Ops.RSQRT: "torch.rsqrt",
+    prims.Ops.SIN: "torch.sin",
     prims.Ops.TANH: "torch.tanh",
     # Elementwise binary prims
     prims.Ops.ADD: add_helper,

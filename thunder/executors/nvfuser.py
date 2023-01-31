@@ -253,6 +253,7 @@ ops_to_nvfuser_ops_map = {
     #   Python, NumPy, JAX, and PyTorch)
     prims.Ops.ISFINITE: "isfinite",
     prims.Ops.RSQRT: "rsqrt",
+    prims.Ops.SIN: "sin",
     prims.Ops.TANH: "tanh",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
@@ -279,6 +280,7 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.ABS: _elementwise_preprocessor,
     prims.Ops.ACOS: _elementwise_preprocessor,
     prims.Ops.RSQRT: _elementwise_preprocessor,
+    prims.Ops.SIN: _elementwise_preprocessor,
     prims.Ops.TANH: _elementwise_preprocessor,
     # prims.Ops.ACOSH:_elementwise_preprocessor,
     prims.Ops.ASIN: _elementwise_preprocessor,
