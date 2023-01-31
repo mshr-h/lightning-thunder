@@ -11,7 +11,7 @@ import thunder.core.dtypes as datatypes
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
 
-from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA
+from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, TorchEx
 
 
 @executors(dtypes=(thunder.float32,))
@@ -91,6 +91,166 @@ def test_nested_make_trace(executor, device, _):
     actual = fusion(a, b)
     expected = a * b
     assert_close(actual, expected)
+
+
+@executors(dtypes=NOTHING)
+def test_eval_trace(executor, device, _):
+    # This test ensures that eval_trace() can be called from within a traced
+    # region and all the symbols in the trace are properly evaluated.
+    from thunder import _get_executor
+    from thunder.core.transforms import eval_trace
+    from thunder.core.trace import new_trace, reset_trace
+    from thunder.core.proxies import TensorProxy
+
+    def foo(a, b, *, c=5):
+        return tlang.mul(tlang.add(a, b), c)
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+    c = 4.0
+
+    # Test eval_trace() with eager proxy execution
+    foo_trace = thunder.make_trace(foo, executor=executor)(a, b, c=c)
+    try:
+        trace_token = new_trace()
+        actual = eval_trace(foo_trace, *foo_trace.args, **foo_trace.kwargs)
+        assert isinstance(actual, TensorProxy)
+        assert actual.shape == foo_trace.outputs.shape
+        assert actual.dtype == foo_trace.outputs.dtype
+        assert actual.device == foo_trace.outputs.device
+        assert actual.name == foo_trace.outputs.name
+    finally:
+        reset_trace(trace_token)
+
+    # Test eval_trace() with retracing + fusion + execution
+    def eval_trace_as_function(trace):
+        def func(*args, **kwargs):
+            return eval_trace(trace, *args, **kwargs)
+
+        return func
+
+    foo_traced = thunder.make_traced(eval_trace_as_function(foo_trace), executor=executor)
+    actual = foo_traced(a, b, c=c)
+    expected = (a + b) * c
+    assert_close(actual, expected)
+
+    # Test eval_trace() with retracing
+    foo_trace2 = thunder.make_trace(eval_trace_as_function(foo_trace), executor=executor)(a, b, c=c)
+    # How to test that two traces are equal?
+    assert len(foo_trace2.symbols) == 2
+    assert foo_trace2.symbols[0].name == "add"
+    assert foo_trace2.symbols[1].name == "mul"
+
+
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
+def test_transforms_identity(executor, device, _):
+    # This test ensures that identity() can be called from within a traced
+    # function without leaking the trace context.
+    # Also tests that identity() can be nested.
+    # Also tests that identity() can be used with "torch" executor.
+    from thunder.core.transforms import identity, Transforms
+    from thunder import _get_executor
+
+    def func(a, b, *, c=5):
+        return tlang.mul(tlang.mul(tlang.add(a, b), 1), c)
+
+    nested_id_func = identity(identity(identity(func)))
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+    c = 4.0
+
+    nested_id_trace = thunder.make_trace(nested_id_func, executor=executor)(a, b, c=c)
+    assert len(nested_id_trace.symbols) == 1
+    assert nested_id_trace.symbols[0].op == Transforms.IdentityOp
+
+    trace = nested_id_trace.symbols[0].kwargs.get("trace", None)
+    for _ in range(2):
+        assert len(trace.symbols) == 1
+        assert trace.symbols[0].op == Transforms.IdentityOp
+        trace = trace.symbols[0].kwargs.get("trace", None)
+    assert len(trace.symbols) == 4
+    assert trace.symbols[0].name == "add"
+    assert trace.symbols[1].name == "convert_element_type"
+    assert trace.symbols[2].name == "mul"
+    assert trace.symbols[3].name == "mul"
+
+    ex = _get_executor(executor)
+    fusion = ex.fuse(nested_id_trace)
+    actual = fusion(a, b, c=c)
+    expected = thunder.make_traced(func, executor=executor)(a, b, c=c)
+    torch.testing.assert_close(actual, expected)
+
+
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
+def test_transforms_inline(executor, device, _):
+    # This test ensures that inline() can be called from within a traced
+    # function removing (inlining) all identity() transforms.
+    # Also tests that inline() can be nested.
+    # Also tests that inline() can be used with "torch" executor.
+    from thunder.core.transforms import identity, inline, Transforms
+    from thunder import _get_executor
+
+    def func(a, b):
+        return tlang.mul(tlang.add(a, b), 1)
+
+    nested_id_func = identity(identity(identity(func)))
+
+    a = make_tensor((2, 2), device=device, dtype=torch.float32)
+    b = make_tensor((2, 2), device=device, dtype=torch.float32)
+
+    inlined_nested_id_trace = thunder.make_trace(inline(nested_id_func), executor=executor)(a, b)
+    assert len(inlined_nested_id_trace.symbols) == 3
+    assert not any(symbol.op == Transforms.IdentityOp for symbol in inlined_nested_id_trace.symbols)
+    assert inlined_nested_id_trace.symbols[0].name == "add"
+    assert inlined_nested_id_trace.symbols[1].name == "convert_element_type"
+    assert inlined_nested_id_trace.symbols[2].name == "mul"
+
+    transforms = (inline, identity, inline, inline, identity, identity, inline)
+    for transform in transforms:
+        transformed_func = transform(func)
+
+    # Since the outer-most transform is inline, the trace should not contain
+    # any identity transforms.
+    transformed_trace = thunder.make_trace(transformed_func, executor=executor)(a, b)
+    assert len(transformed_trace.symbols) == 3
+    assert not any(symbol.op == Transforms.IdentityOp for symbol in transformed_trace.symbols)
+
+
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
+def test_transforms_jvp(executor, device, _):
+    from thunder.core.transforms import jvp, Transforms
+    from thunder import _get_executor
+
+    def func(a, b):
+        c = tlang.sin(a)
+        return tlang.mul(tlang.add(c, b), 1)
+
+    a = torch.ones(2, 3, device=device, dtype=torch.float32)
+    b = torch.ones(2, 3, device=device, dtype=torch.float32) * 2
+
+    primals = (a, b)
+    tangents = (a, b)
+    out_p, out_t = jvp(func, primals, tangents)
+    expected_out_p = torch.sin(a) + b
+    expected_out_t = torch.cos(a) + b
+    assert_close(out_p, expected_out_p)
+    assert_close(out_t, expected_out_t)
 
 
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
