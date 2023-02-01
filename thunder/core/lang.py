@@ -66,8 +66,8 @@ __all__ = [
 #
 
 
-# TODO: implement ref.cast with an option to enforce safe casting
-def maybe_convert_to_dtype(a, dtype):
+# TODO: may want to revise enforce_safe_casting to be more like NumPy's
+def maybe_convert_to_dtype(a, dtype, *, enforce_safe_casting=False):
     """If a has the same dtype as the given dtype, returns a unmodified.
 
     Otherwise returns a converted to the given dtype.
@@ -88,6 +88,12 @@ def maybe_convert_to_dtype(a, dtype):
         )
 
     if not utils.are_same_dtypes(a, dtype):
+        if enforce_safe_casting:
+            utils.check(
+                utils.can_safe_cast_to(cast_from=utils.to_dtype(a), cast_to=dtype),
+                lambda: f"Can't safe case from a={a} with dtype {utils.to_dtype(a)} to {dtype}!",
+            )
+
         return prims.convert_element_type(a, dtype)
 
     return a

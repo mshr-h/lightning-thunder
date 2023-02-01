@@ -1,3 +1,5 @@
+import operator
+
 import torch
 
 import thunder.core.dtypes as dtypes
@@ -80,6 +82,16 @@ def broadcast_in_dim(a, shape, broadcast_dims):
     return v.expand(shape)
 
 
+def slice_helper(a, start_indices, end_indices, *, strides=None):
+    _strides = strides if strides is not None else [1] * len(start_indices)
+
+    slices = []
+    for start, stop, step in zip(start_indices, end_indices, _strides):
+        slices.append(slice(start, stop, step))
+
+    return operator.getitem(a, slices)
+
+
 def is_tensor(a):
     return isinstance(a, torch.Tensor)
 
@@ -120,6 +132,7 @@ ops_to_torch_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
     prims.Ops.RESHAPE: "torch.reshape",
+    prims.Ops.SLICE: slice_helper,
     # NOTE: PyTorch's transpose is not equivalent to the transpose prim
     prims.Ops.TRANSPOSE: "torch.permute",
     # Elementwise unary prims

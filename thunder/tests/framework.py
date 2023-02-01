@@ -16,6 +16,7 @@ __all__ = [
     "executors",
     "ops",
     "NOTHING",
+    "JAX_AVAILABLE",
 ]
 
 # A marker for actually wanting NOTHING instead of specifying nothing

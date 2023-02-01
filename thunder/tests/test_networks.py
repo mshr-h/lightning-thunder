@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.testing import assert_close, make_tensor
 
 import thunder
@@ -18,8 +19,6 @@ from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, Torc
 #   comparison
 @executors(dtypes=(thunder.float32,))
 def test_nanogpt_mlp_functional(executor, device, dtype):
-
-    # NOTE: MLP class for reference
     def new_gelu(x):
         return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
 

@@ -1,6 +1,7 @@
 import math
 from collections import namedtuple
 from functools import partial
+import numpy as np
 
 import pytest
 
@@ -12,10 +13,12 @@ from torch.testing import make_tensor
 
 import thunder.core.dtypes as datatypes
 import thunder.core.lang as tlang
+import thunder.core.prims as prims
 import thunder.langs.torch as ttorch
 from thunder.langs.torch import torch_dtype
+from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 
-from .framework import _all_device_types
+from .framework import _all_device_types, JAX_AVAILABLE
 
 
 def make_number(dtype):
@@ -48,6 +51,41 @@ def noncontiguous_like(t):
     return result
 
 
+_torch_to_numpy_dtype_map = {
+    torch.bool: np.bool_,
+    torch.uint8: np.uint8,
+    torch.int8: np.int8,
+    torch.int16: np.int16,
+    torch.int32: np.int32,
+    torch.int64: np.int64,
+    torch.float16: np.float16,
+    torch.float32: np.float32,
+    torch.float64: np.float64,
+    torch.complex64: np.complex64,
+    torch.complex128: np.complex128,
+}
+
+_torch_to_jax_dtype_map = None
+if JAX_AVAILABLE:
+    import jax
+    import jax.numpy as jnp
+
+    _torch_to_jax_dtype_map = {
+        torch.bool: jnp.bool_,
+        torch.uint8: jnp.uint8,
+        torch.int8: jnp.int8,
+        torch.int16: jnp.int16,
+        torch.int32: jnp.int32,
+        torch.int64: jnp.int64,
+        torch.bfloat16: jnp.bfloat16,
+        torch.float16: jnp.float16,
+        torch.float32: jnp.float32,
+        torch.float64: jnp.float64,
+        torch.complex64: jnp.complex64,
+        torch.complex128: jnp.complex128,
+    }
+
+
 class SampleInput:
     """Represents sample inputs to a function."""
 
@@ -65,28 +103,6 @@ class SampleInput:
         arg_string = ", ".join(tuple(str(a) for a in self.args))
         return f"[SampleInput args=({arg_string})]"
 
-    # Applies the transform f(t) -> t to each tensor and dtype in the SampleInput
-    def transform(self, f):
-        def tt(t):
-            def _tt(t):
-                with torch.no_grad():
-                    return f(t)
-
-            if isinstance(t, torch.Tensor):
-                return _tt(t)
-            elif isinstance(t, torch.dtype):
-                return _tt(t)
-            elif isinstance(t, list):
-                return list(map(tt, t))
-            elif isinstance(t, tuple):
-                return tuple(map(tt, t))
-            elif isinstance(t, dict):
-                return {k: tt(v) for k, v in t.items()}
-            else:
-                return t
-
-        return SampleInput(tt(self.args), tt(self.kwargs))
-
     def noncontiguous(self):
         def to_noncontiguous(t):
             if isinstance(t, torch.Tensor):
@@ -96,7 +112,20 @@ class SampleInput:
 
             return t
 
-        return self.transform(to_noncontiguous)
+        args, kwargs = tree_map(to_noncontiguous, self.args), tree_map(to_noncontiguous, self.kwargs)
+        return SampleInput(*args, **kwargs)
+
+    def jax(self):
+        def to_jax(t):
+            if isinstance(t, torch.Tensor):
+                return t.cpu().numpy()
+            if isinstance(t, torch.dtype):
+                return _torch_to_jax_dtype_map[t]
+
+            return t
+
+        args, kwargs = tree_map(to_jax, self.args), tree_map(to_jax, self.kwargs)
+        return SampleInput(*args, **kwargs)
 
 
 # TODO: add executor
@@ -163,6 +192,7 @@ class OpInfo:
         operator_variant=None,
         torch_reference=None,
         numpy_reference=None,
+        jax_reference=None,
         test_directives=(),
         domain=(None, None),
     ):
@@ -176,6 +206,7 @@ class OpInfo:
         self.operator_variant = operator_variant
         self.torch_reference = torch_reference
         self.numpy_reference = numpy_reference
+        self.jax_reference = jax_reference
         self.test_directives = test_directives
         self.domain = Domain(*domain)
 
@@ -879,6 +910,28 @@ reshape_opinfo = OpInfo(
     torch_reference=torch.reshape,
 )
 shape_ops.append(reshape_opinfo)
+
+
+# TODO: add stride testing
+def slice_prim_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, start_indices, end_indices
+    cases = (
+        ((5, 7, 8), (1, 0, 3), (2, 6, 8)),
+        ((3,), (1,), (2,)),
+    )
+
+    for shape, start_indices, end_indices in cases:
+        yield SampleInput(make(shape), start_indices, end_indices)
+
+
+slice_prim_opinfo = OpInfo(
+    prims.slice_prim,
+    sample_input_generator=slice_prim_sample_generator,
+    jax_reference=jax.lax.slice if JAX_AVAILABLE else None,
+)
+shape_ops.append(slice_prim_opinfo)
 
 
 def transpose_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):

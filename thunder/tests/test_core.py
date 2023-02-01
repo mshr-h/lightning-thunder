@@ -10,6 +10,7 @@ import thunder
 import thunder.core.dtypes as datatypes
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
+import thunder.core.utils as utils
 
 from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, TorchEx
 
@@ -649,6 +650,9 @@ def test_dtype_conversion(executor: Executor, device, _):
     supported_dtypes = set(datatypes.resolve_dtypes(executor.supported_dtypes))
     dtypes = strong_dtypes.intersection(supported_dtypes)
     for a, b in product(dtypes, dtypes):
+        # if not utils.can_safe_cast_to(cast_from=a, cast_to=b):
+        #     continue
+
         a = ttorch.torch_dtype(a)
         b = ttorch.torch_dtype(b)
         t = make(dtype=a)

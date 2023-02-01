@@ -159,10 +159,14 @@ class TorchLangCtx:
     # Tensor methods
     #
 
+    # Attribute accesses
+    def size(self, a):
+        return a.shape
+
     #
     # Elementwise Unary Methods
     #
-    def abs(a):
+    def abs(self, a):
         return tlang.abs(a)
 
     def acos(self, a):

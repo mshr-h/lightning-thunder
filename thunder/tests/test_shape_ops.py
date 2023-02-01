@@ -15,8 +15,7 @@ if JAX_AVAILABLE:
 import numpy as np
 
 
-# TODO: extend OpInfos with a jax_reference option and refactor this test to be
-#   auto-generated
+# TODO: move this to an opinfo test comparing against jax
 # TODO: these test cases could be improved upon
 @executors(dtypes=(thunder.float32,))
 @requiresJAX
