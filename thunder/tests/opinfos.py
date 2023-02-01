@@ -912,6 +912,27 @@ reshape_opinfo = OpInfo(
 shape_ops.append(reshape_opinfo)
 
 
+def slice_in_dim_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, start_index, limit_index, stride, dim
+    cases = (
+        ((4, 6, 7), 1, 3, 2, 1),
+        ((4, 6, 7), 0, -1, 3, 2),
+    )
+
+    for shape, start_idx, limit_idx, stride, dim in cases:
+        yield SampleInput(make(shape), start_idx, limit_idx, stride, dim)
+
+
+slice_in_dim = OpInfo(
+    tlang.slice_in_dim,
+    sample_input_generator=slice_in_dim_sample_generator,
+    jax_reference=jax.lax.slice_in_dim if JAX_AVAILABLE else None,
+)
+shape_ops.append(slice_in_dim)
+
+
 # TODO: add stride testing
 def slice_prim_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
@@ -932,6 +953,59 @@ slice_prim_opinfo = OpInfo(
     jax_reference=jax.lax.slice if JAX_AVAILABLE else None,
 )
 shape_ops.append(slice_prim_opinfo)
+
+
+def split_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, size_or_sections, dim
+    cases = (
+        ((4, 6, 7), 2, 0),
+        ((4, 6, 7), 3, 0),
+        ((4, 6, 7), 3, -1),
+        ((4, 6, 7), 9, 1),
+        ((4, 6, 7), (1, 2, 1, 2), 1),
+        ((4, 6, 7), (3, 1, 2, 0, 0, 1), -1),
+    )
+
+    for shape, size_or_sections, dim in cases:
+        yield SampleInput(make(shape), size_or_sections, dim)
+
+
+split_opinfo = OpInfo(
+    ttorch.split,
+    sample_input_generator=split_sample_generator,
+    torch_reference=torch.split,
+)
+shape_ops.append(split_opinfo)
+
+
+def tensor_split_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, indices_or_sections, dim
+    cases = (
+        ((4, 6, 7), 2, 1),
+        ((4, 6, 7), 2, 2),
+        ((4, 6, 7), 3, 0),
+        ((4, 6, 7), 5, -1),
+        ((4, 6, 7), (0, 1), 1),
+        ((4, 6, 7), (1, 5, 6), 2),
+        ((4, 6, 7), (1, 5, 9, 9), 2),
+        ((4, 6, 7), (1, 5, 6, 7), 2),
+        ((4, 6, 7), (0, 0, 1, 1, 2), -2),
+    )
+
+    for shape, indices_or_sections, dim in cases:
+        yield SampleInput(make(shape), indices_or_sections, dim)
+
+
+tensor_split_opinfo = OpInfo(
+    ttorch.tensor_split,
+    sample_input_generator=tensor_split_sample_generator,
+    torch_reference=torch.tensor_split,
+)
+shape_ops.append(tensor_split_opinfo)
 
 
 def transpose_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):
@@ -1069,6 +1143,7 @@ tensor_creation_ops = []
 def full_sample_generator(op, device, dtype, requires_grad, **kwargs):
     # shape, fill_value
     cases = (
+        # ((), .5),  # FIXME: https://github.com/csarofeen/pytorch/issues/2358
         ((4, 4), 1),
         ((8, 1, 6), 1),
         ((8, 7, 5, 1), 1),
