@@ -4,9 +4,11 @@ import operator
 from enum import auto, Enum
 from functools import partial, reduce
 from numbers import Number
+from typing import Sequence
 
 import thunder.core.dtypes as dtypes
 import thunder.core.utils as utils
+
 
 from .proxies import NumberProxy, proxy, TensorProxy
 from .trace import get_trace
@@ -33,6 +35,7 @@ __all__ = [
     "broadcast_in_dim_meta",
     "broadcast_in_dim",
     "reshape",
+    "slice",
     "transpose",
     # Elementwise unary prims
     "abs",
@@ -86,6 +89,7 @@ class Ops(Enum):
     # Shape prims
     BROADCAST_IN_DIM = auto()
     RESHAPE = auto()
+    SLICE = auto()
     TRANSPOSE = auto()
     # Elementwise unary prims
     ABS = auto()
@@ -831,6 +835,38 @@ reshape = make_prim(
     "reshape",
     reshape_meta,
 )
+
+# TODO: add error messages
+def slice_meta(a, start_indices, end_indices, strides=None):
+
+    if strides is not None:
+        raise NotImplemented
+
+    # Checks types
+    utils.check(isinstance(a, TensorProxy), lambda: f"")
+    utils.check(isinstance(start_indices, Sequence), lambda: f"")
+    utils.check(isinstance(start_indices, Sequence), lambda: f"")
+
+    # Checks all same length
+    utils.check(a.ndim == len(start_indices) == len(end_indices), lambda: f"")
+
+    new_shape = []
+    for x, y, z in zip(start_indices, a.shape, end_indices):
+        utils.check(x >= 0, lambda: f"")
+        utils.check(x <= y, lambda: f"")
+        utils.check(x < z, lambda: f"")
+
+        utils.check(z >= 0, lambda: f"")
+        utils.check(z <= y, lambda: f"")
+
+        new_shape.append(math.floor((y - x) / z))
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(tensor=a, name=proxy_name, shape=new_shape)
+
+
+# NOTE: slice is named "slice_prim" and not "slice" because it conflicts with Python's "slice" builtin
+slice_prim = make_prim(Ops.SLICE, "slice", slice_meta)
 
 
 def transpose_meta(a, permutation):

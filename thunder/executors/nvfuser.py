@@ -241,6 +241,8 @@ ops_to_nvfuser_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     prims.Ops.RESHAPE: "view",
+    # See https://github.com/csarofeen/pytorch/issues/2396 for slice request
+    # prims.Ops.SLICE
     # NOTE: nvFuser exposes the "transpose" prim as "permute"
     prims.Ops.TRANSPOSE: "permute",
     # Elementwise unary prims
