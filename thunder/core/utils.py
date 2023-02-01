@@ -510,6 +510,20 @@ def canonicalize_dim(rank: int, idx: int, wrap_scalar: bool = True) -> int:
     return _idx
 
 
+def canonicalize_dim_idx(dim_length, idx):
+    check(dim_length >= 0, lambda: f"The length of a dimension ({dim_length}) cannot be negative!")
+
+    # NOTE: consider adding a flag for when idx >= dim_length
+    #   Ops like torch.tensor_split allow indices greater than the length of a dimension to be specified
+    if idx >= 0:
+        return idx
+
+    if idx < 0:
+        return idx + dim_length
+
+    return idx
+
+
 def canonicalize_dims(rank, indices, wrap_scalar=True):
     if isinstance(indices, int):
         return canonicalize_dim(rank, indices, wrap_scalar)

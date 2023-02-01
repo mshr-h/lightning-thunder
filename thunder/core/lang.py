@@ -1,6 +1,7 @@
 from functools import reduce
 from numbers import Number
 from typing import Sequence
+import copy
 
 import thunder.core.dtypes as dtypes
 
@@ -25,6 +26,7 @@ __all__ = [
     # Shape operations
     "expand",
     "reshape",
+    "slice_in_dim",
     "transpose",
     # Elemenwise unary operations
     "abs",
@@ -192,6 +194,38 @@ def reshape(a, shape):
     # NOTE: alternatively a new tuple could be constructed as follows:
     # shape = shape[:neg_one_idx] + (remaining,) + shape[neg_one_idx + 1:]
     return prims.reshape(a, shape)
+
+
+# https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.slice_in_dim.html
+# NOTE: this implementation derived from
+#   https://jax.readthedocs.io/en/latest/_modules/jax/_src/lax/slicing.html#slice_in_dim
+def slice_in_dim(a, start_index, limit_index, stride=1, dim=0):
+
+    len_dim = a.shape[dim]
+    start_index = utils.canonicalize_dim_idx(len_dim, start_index)
+    limit_index = utils.canonicalize_dim_idx(len_dim, limit_index)
+
+    # Handles the start idx being greater than the dimension length by returning
+    #   a tensor with no elements
+    if start_index >= len_dim:
+        shape = list(a.shape)
+        shape[dim] = 0
+        return full(shape, 0, device=a.device, dtype=a.dtype)
+
+    # Handles the limit idx being greater than the dimension length by clamping it
+    if limit_index >= len_dim:
+        limit_index = len_dim
+
+    # Constructs args for the slice prim
+    start_indices = [0] * a.ndim
+    limit_indices = list(a.shape)
+    strides = [1] * a.ndim
+
+    start_indices[dim] = start_index
+    limit_indices[dim] = limit_index
+    strides[dim] = stride
+
+    return prims.slice_prim(a, start_indices, limit_indices, strides)
 
 
 def transpose(a, permutation):

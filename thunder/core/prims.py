@@ -836,30 +836,45 @@ reshape = make_prim(
     reshape_meta,
 )
 
-# TODO: add error messages
+# TODO: be clear about what the prim can handle and what it can't
+# NOTE: the stride parameter here refers to the stride of the slice, not the tensor's
+#   strides
 def slice_meta(a, start_indices, end_indices, strides=None):
-
-    if strides is not None:
-        raise NotImplemented
-
     # Checks types
-    utils.check(isinstance(a, TensorProxy), lambda: f"")
-    utils.check(isinstance(start_indices, Sequence), lambda: f"")
-    utils.check(isinstance(start_indices, Sequence), lambda: f"")
+    utils.check(isinstance(a, TensorProxy), lambda: f"Expected a={a} to be a TensorProxy!")
+    utils.check(isinstance(start_indices, Sequence), lambda: f"Expected start_indices={start_indices} to be a Sequence")
+    utils.check(isinstance(end_indices, Sequence), lambda: f"Expected end_indices={end_indices} to be a Sequence")
 
     # Checks all same length
-    utils.check(a.ndim == len(start_indices) == len(end_indices), lambda: f"")
+    utils.check(
+        a.ndim == len(start_indices) == len(end_indices),
+        lambda: f"Expected the length of start_indices ({len(start_indices)}) to be the same as the length of end_indices ({len(end_indices)})",
+    )
 
     new_shape = []
     for x, y, z in zip(start_indices, a.shape, end_indices):
-        utils.check(x >= 0, lambda: f"")
-        utils.check(x <= y, lambda: f"")
-        utils.check(x < z, lambda: f"")
+        utils.check(x >= 0, lambda: f"Expected all the indices in start_indices={start_indices} to be weakly positive!")
+        utils.check(
+            x <= y,
+            lambda: f"Expected all the indices in start_indices={start_indices} to be weakly less than the length of the corresponding dimension in a.shape={a.shape}",
+        )
+        utils.check(
+            x <= z,
+            lambda: f"Expected all the indices in start_indices={start_indices} to be weakly less than the indices in end_indices={end_indices}",
+        )
 
-        utils.check(z >= 0, lambda: f"")
-        utils.check(z <= y, lambda: f"")
+        utils.check(z >= 0, lambda: f"Expected all the indices in end_indices={end_indices} to be weakly positive")
+        utils.check(
+            z <= y,
+            lambda: f"Expected all the indices in end_indices={end_indices} to be weakly less than the length of the corresponding dimension in a.shape={a.shape}",
+        )
 
-        new_shape.append(math.floor((y - x) / z))
+        # Avoids division by zero
+        # NOTE: when z == 0 then x == 0, too
+        if z == 0:
+            new_shape.append(0)
+        else:
+            new_shape.append(math.floor((y - x) / z))
 
     proxy_name = get_trace().make_proxy_name()
     return TensorProxy(tensor=a, name=proxy_name, shape=new_shape)

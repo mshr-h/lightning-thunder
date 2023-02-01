@@ -26,6 +26,8 @@ __all__ = [
     "zeros_like",
     # Shape ops
     "reshape",
+    "split",
+    "tensor_split",
     "transpose",
     # Elementwise Unary Ops
     "abs",
@@ -164,6 +166,13 @@ class TorchLangCtx:
         return a.shape
 
     #
+    # Shape Methods
+    #
+
+    def split(self, a, sizes_or_sections, dim=0):
+        return _split_disambiguator(a, sizes_or_sections, dim)
+
+    #
     # Elementwise Unary Methods
     #
     def abs(self, a):
@@ -257,6 +266,140 @@ def zeros_like(tensor, *, device=None, dtype=None):
 
 def reshape(a, shape):
     return tlang.reshape(a, shape)
+
+
+# TODO: consider revising this to just call _split_indices
+# Splits a tensor along a split dimension dim into n tensors
+# If input is divisible by n then every tensor will have the same length along the split dimension
+# If input is not divisible by n, then the first int(input.size(dim) % n) tensors will have length
+#   int(input.size(dim) / n) + 1 along the split dimension, and the remaining tensors will have
+#   length int(input.size(dim) / n) along the split dimension
+def _split_n(a, n, dim=0):
+    dim = utils.canonicalize_dim(a.ndim, dim)
+
+    splits = []
+    dim_length = a.shape[dim]
+    min_split_size = dim_length // n
+    num_splits_one_extra = dim_length % n
+    start_idx = 0
+    for split_idx in range(n):
+        split_size = min_split_size + 1 if (split_idx < num_splits_one_extra) else min_split_size
+        s = tlang.slice_in_dim(a, start_idx, start_idx + split_size, dim=dim)
+        splits.append(s)
+        start_idx = start_idx + split_size
+
+    return tuple(splits)
+
+
+# TODO: could this (and other things) be revised to combine the slice_in_dim calls?
+# Splits a tensor along a split dimension dim at the indices in indices
+def _split_indices(a, indices, dim=0):
+    dim = utils.canonicalize_dim(a.ndim, dim)
+
+    splits = []
+    start_idx = 0
+    for idx in indices:
+        splits.append(tlang.slice_in_dim(a, start_idx, idx, dim=dim))
+        start_idx = idx
+
+    splits.append(tlang.slice_in_dim(a, start_idx, a.shape[dim], dim=dim))
+    return tuple(splits)
+
+
+def _split_disambiguator(*args, **kwargs):
+    return split(*args, **kwargs)
+
+
+# See https://pytorch.org/docs/master/generated/torch.split.html
+# NOTE: split is not tensor_split
+#   Like tensor_split, split can work with a number or a sequence
+#   If given a number, it creates tensors of equal length along the
+#   split dimension, and if this is not possible then only the
+#   last tensor will have a shorter length along the split
+#   dimension.
+#   If given a sequence, then the values in the sequence
+#   define the lengths of the split dimension, not the indices
+#   at which to split, and the values must sum to the length of the dimension.
+def split(a, size_or_sections, dim=0):
+
+    # TODO: see note in tensor_split
+    if isinstance(size_or_sections, TensorProxy):
+        raise NotImplemented
+
+    dim = utils.canonicalize_dim(a.ndim, dim)
+
+    utils.check(
+        size_or_sections,
+        (Number, Sequence),
+        lambda: f"size_or_sections={size_or_sections} should be a Number or a Sequence!",
+    )
+
+    # TODO: consider revising this to just call _split_indices
+    if isinstance(size_or_sections, Number):
+        target_length = size_or_sections
+
+        # Short-circuits special-case of zero
+        if target_length == 0:
+            utils.check(
+                a.shape[dim] == 0,
+                lambda: f"When size_or_sections={size_or_sections} is zero then the length of the split dimension ({a.shape[dim]}) must also be zero",
+            )
+            return full_like(a)
+
+        last_length = a.shape[dim] % target_length
+        num_splits = a.shape[dim] // target_length
+        cur_idx = 0
+        splits = []
+
+        for _ in range(num_splits):
+            splits.append(tlang.slice_in_dim(a, cur_idx, cur_idx + target_length, dim=dim))
+            cur_idx = cur_idx + target_length
+
+        # Handles tail
+        if last_length > 0:
+            splits.append(tlang.slice_in_dim(a, cur_idx, a.shape[dim], dim=dim))
+
+        return splits
+
+    # NOTE: isinstance(size_or_sections, Sequence)
+    # Converts lengths to indices
+
+    s = reduce(operator.add, size_or_sections, 0)
+    utils.check(
+        s == a.shape[dim],
+        lambda: f"size_or_sections={size_or_sections} must sum to the length of the split dimension ({len(a.shape[dim])})",
+    )
+
+    # NOTE: because split requires overspecifying the lengths, the final split is ignored
+    cur = 0
+    indices = []
+    for l in size_or_sections[: len(size_or_sections) - 1]:
+        cur += l
+        indices.append(cur)
+
+    return _split_indices(a, indices, dim)
+
+
+# See https://pytorch.org/docs/master/generated/torch.tensor_split.html
+def tensor_split(a, indices_or_sections, dim=0):
+
+    # TODO: consider if we even should support this, it could introduce data-dependent control flow
+    # NOTE: this will also catch number tensors
+    if isinstance(indices_or_sections, TensorProxy):
+        raise NotImplemented
+
+    utils.check(
+        indices_or_sections,
+        (Number, Sequence),
+        lambda: f"indices_or_sections={indices_or_sections} should be a Number or a Sequence!",
+    )
+
+    # TODO: maybe revise _split_n to a call to _split_indices
+    if isinstance(indices_or_sections, Number):
+        return _split_n(a, indices_or_sections, dim)
+
+    # NOTE: isinstance(indices_or_sections, Sequence)
+    return _split_indices(a, indices_or_sections, dim)
 
 
 def transpose(a, dim0, dim1):
