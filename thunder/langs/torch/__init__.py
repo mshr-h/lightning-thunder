@@ -25,10 +25,12 @@ __all__ = [
     "uniform",
     "zeros_like",
     # Shape ops
+    "contiguous",
     "reshape",
     "split",
     "tensor_split",
     "transpose",
+    "view",
     # Elementwise Unary Ops
     "abs",
     "acos",
@@ -67,6 +69,7 @@ __all__ = [
     # Norm Ops
     # Matmul Ops
     "linear",
+    "matmul",
 ]
 
 # The Torch language
@@ -162,15 +165,28 @@ class TorchLangCtx:
     #
 
     # Attribute accesses
-    def size(self, a):
-        return a.shape
+    def size(self, a, dim=None):
+        if dim is None:
+            return a.shape
+        return a.shape[dim]
 
     #
     # Shape Methods
     #
 
+    def contiguous(self, a):
+        return _contiguous_disambiguator(a)
+
+    # TODO: refactor so disambiguator's aren't needed
     def split(self, a, sizes_or_sections, dim=0):
         return _split_disambiguator(a, sizes_or_sections, dim)
+
+    def transpose(self, a, dim0, dim1):
+        return _transpose_disambiguator(a, dim0, dim1)
+
+    def view(self, a, *shape):
+        shape = utils.extract_shape_from_varargs(shape)
+        return _view_disambiguator(a, shape)
 
     #
     # Elementwise Unary Methods
@@ -227,11 +243,28 @@ class TorchLangCtx:
         return tlang.true_divide(a, b)
 
     #
+    # Elementwise ternary methods
+    #
+
+    def masked_fill(a, mask, value):
+        return maksed_fill_disambiguator(a, mask, value)
+
+    #
     # Reduction Methods
     #
 
     def var(self, *args, **kwargs):
         return var(*args, **kwargs)
+
+    #
+    # Matmul methods
+    #
+
+    def linear(self, *args, **kwargs):
+        return linear_disambiguator(*args, **kwargs)
+
+    def matmul(self, *args, **kwargs):
+        return matmul_disambiguator(*args, **kwargs)
 
 
 #
@@ -262,6 +295,15 @@ def zeros_like(tensor, *, device=None, dtype=None):
 #
 # Shape Ops
 #
+
+
+def _contiguous_disambiguator(a):
+    return contiguous(a)
+
+
+# TODO: create proper contiguous with stride modeling and memory format support
+def contiguous(a):
+    return a
 
 
 def reshape(a, shape):
@@ -402,6 +444,10 @@ def tensor_split(a, indices_or_sections, dim=0):
     return _split_indices(a, indices_or_sections, dim)
 
 
+def _transpose_disambiguator(*args, **kwargs):
+    return transpose(*args, **kwargs)
+
+
 def transpose(a, dim0, dim1):
     dim0, dim1 = utils.canonicalize_dims(a.ndim, (dim0, dim1))
 
@@ -409,6 +455,15 @@ def transpose(a, dim0, dim1):
     permutation[dim0] = dim1
     permutation[dim1] = dim0
     return tlang.transpose(a, permutation)
+
+
+def _view_disambiguator(*args, **kwargs):
+    return view(*args, **kwargs)
+
+
+# TODO: review view functionalization
+def view(a, shape):
+    return reshape(a, shape)
 
 
 #
@@ -475,6 +530,11 @@ def true_divide(a, b):
 #
 # Elementwise ternary prims
 #
+
+
+def masked_fill_disambiguator(a, mask, value):
+    return masked_fill(a, mask, value)
+
 
 # NOTE: masked_fill is a strange wrapper around where, it probably exists only because of PyTorch's inplace pattern
 # NOTE: PyTorch's masked fill requires value be a number or number tensor
@@ -864,10 +924,34 @@ def layer_norm(input, normalized_shape, weight=None, bias=None, eps=1e-5):
 #
 # Matmul Ops
 #
+def linear_disambiguator(*args, **kwargs):
+    return linear(*args, **kwargs)
 
 
 def linear(a, w, bias=None):
     return prims.linear(a, w, bias)
+
+
+def matmul_disambiguator(*args, **kwargs):
+    return matmul(*args, **kwargs)
+
+
+# NOTE: this wrapper for prim matmul just broadcasts batch dimensions
+def matmul(a, b):
+    a_batch_dims = a.shape[:2]
+    b_batch_dims = b.shape[:2]
+
+    batch_dims_broadcast = list(tlang.compute_broadcast_shape(a_batch_dims, b_batch_dims))
+
+    a_broadcast_shape = batch_dims_broadcast + a.shape[-2:]
+    if not utils.same_shape(a_broadcast_shape, a.shape):
+        a = tlang.expand(a, a_broadcast_shape)
+
+    b_broadcast_shape = batch_dims_broadcast + b.shape[-2:]
+    if not utils.same_shape(b_broadcast_shape, b.shape):
+        b = tlang.expand(b, b_broadcast_shape)
+
+    return prims.matmul(a, b)
 
 
 #

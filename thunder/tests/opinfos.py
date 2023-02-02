@@ -966,6 +966,7 @@ def split_sample_generator(op, device, dtype, requires_grad, **kwargs):
         ((4, 6, 7), 9, 1),
         ((4, 6, 7), (1, 2, 1, 2), 1),
         ((4, 6, 7), (3, 1, 2, 0, 0, 1), -1),
+        ((4, 4, 12), 4, 2),
     )
 
     for shape, size_or_sections, dim in cases:

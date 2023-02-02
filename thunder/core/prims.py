@@ -77,6 +77,7 @@ __all__ = [
     "var_meta",
     # Matmul prims
     "linear",
+    "matmul",
 ]
 
 
@@ -128,6 +129,7 @@ class Ops(Enum):
     VAR = auto()
     # Matmul prims
     LINEAR = auto()
+    MATMUL = auto()
 
 
 # maps from operators to their meta functions
@@ -823,7 +825,7 @@ def reshape_meta(a, shape):
     numel = reduce(operator.mul, shape, 1)
     utils.check(
         numel == a.numel(),
-        f"Attempting to reshape a.shape={a.shape} to shape={shape}, but a.numel()={a.numel()} is different from the number of elements in shape, {numel}",
+        lambda: f"Attempting to reshape a.shape={a.shape} to shape={shape}, but a.numel()={a.numel()} is different from the number of elements in shape, {numel}",
     )
 
     proxy_name = get_trace().make_proxy_name()
@@ -840,41 +842,42 @@ reshape = make_prim(
 # NOTE: the stride parameter here refers to the stride of the slice, not the tensor's
 #   strides
 def slice_meta(a, start_indices, end_indices, strides=None):
+    if strides is None:
+        strides = [1] * a.ndim
+
     # Checks types
     utils.check(isinstance(a, TensorProxy), lambda: f"Expected a={a} to be a TensorProxy!")
     utils.check(isinstance(start_indices, Sequence), lambda: f"Expected start_indices={start_indices} to be a Sequence")
     utils.check(isinstance(end_indices, Sequence), lambda: f"Expected end_indices={end_indices} to be a Sequence")
+    utils.check(isinstance(strides, Sequence), lambda: f"Expected strides={strides} to be None or a Sequence")
 
     # Checks all same length
     utils.check(
-        a.ndim == len(start_indices) == len(end_indices),
-        lambda: f"Expected the length of start_indices ({len(start_indices)}) to be the same as the length of end_indices ({len(end_indices)})",
+        a.ndim == len(start_indices) == len(end_indices) == len(strides),
+        lambda: f"Expected the tensor's rank ({a.ndim}) to be equal to the length of start_indices ({len(start_indices)}), the length of end_indices ({len(end_indices)}), and the length of strides ({len(strides)})",
     )
 
+    # Validates start, end, and stride values, and computes the new shape
     new_shape = []
-    for x, y, z in zip(start_indices, a.shape, end_indices):
-        utils.check(x >= 0, lambda: f"Expected all the indices in start_indices={start_indices} to be weakly positive!")
+    for start, stop, shape, stride in zip(start_indices, end_indices, a.shape, strides):
         utils.check(
-            x <= y,
+            start >= 0, lambda: f"Expected all the indices in start_indices={start_indices} to be weakly positive!"
+        )
+        utils.check(
+            start <= shape,
             lambda: f"Expected all the indices in start_indices={start_indices} to be weakly less than the length of the corresponding dimension in a.shape={a.shape}",
         )
         utils.check(
-            x <= z,
+            start <= stop,
             lambda: f"Expected all the indices in start_indices={start_indices} to be weakly less than the indices in end_indices={end_indices}",
         )
-
-        utils.check(z >= 0, lambda: f"Expected all the indices in end_indices={end_indices} to be weakly positive")
         utils.check(
-            z <= y,
+            stop <= shape,
             lambda: f"Expected all the indices in end_indices={end_indices} to be weakly less than the length of the corresponding dimension in a.shape={a.shape}",
         )
+        utils.check(stride >= 1, lambda: f"Expected all the strides in strides={strides} to be strictly positive!")
 
-        # Avoids division by zero
-        # NOTE: when z == 0 then x == 0, too
-        if z == 0:
-            new_shape.append(0)
-        else:
-            new_shape.append(math.floor((y - x) / z))
+        new_shape.append(math.floor((stop - start) / stride))
 
     proxy_name = get_trace().make_proxy_name()
     return TensorProxy(tensor=a, name=proxy_name, shape=new_shape)
@@ -1020,3 +1023,38 @@ def linear_meta(a, w, bias):
 
 
 linear = make_prim(Ops.LINEAR, "linear", linear_meta)
+
+
+# TODO: review matmul prims
+def matmul_meta(a, b):
+    # Checks types
+    utils.check(isinstance(a, TensorProxy), lambda: f"a={a} was not a TensorProxy")
+    utils.check(isinstance(b, TensorProxy), lambda: f"b={b} was not a TensorProxy")
+
+    if a.ndim < 2 or b.ndim < 2:
+        raise NotImplemented
+
+    utils.check(a.device == b.device, lambda: f"Expected a.device={a.device} and b.device={b.device} to be the same")
+
+    utils.check(
+        dtypes.are_same_dtypes(a, b), lambda: f"Expected a.dtype={a.dtype} and b.dtype={b.dtype} to be the same"
+    )
+
+    utils.check(
+        utils.same_shape(a.shape[:2], b.shape[:2]),
+        lambda: f"Expected the batch dimensions of a ({a.shape[:2],}) and the batch dimensions of b ({b.shape[:2]}) to be the same",
+    )
+
+    utils.check(
+        a.shape[-1] == b.shape[-2],
+        lambda: f"Expected the the last two dimensions of a ({a.shape[-2:]}) be matrix multipiable with the last two dimensions of b ({b.shape[-2:]})",
+    )
+
+    shape = a.shape[:2]
+    shape.append(a.shape[-2])
+    shape.append(b.shape[-1])
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=shape, device=a.device, dtype=a.dtype)
+
+
+matmul = make_prim(Ops.MATMUL, "matmul", matmul_meta)

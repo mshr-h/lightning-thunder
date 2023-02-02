@@ -259,6 +259,11 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
 
+    # @
+    def __matmul__(self, other):
+        ctx = get_language_context()
+        return ctx.matmul(self, other)
+
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
     #  by the language context. Just returning that method wouldn't work, however,
     #  since the TensorProxy, passed as self here, wouldn't be passed through to the

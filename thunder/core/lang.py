@@ -24,7 +24,9 @@ __all__ = [
     "full_like",
     "uniform",
     # Shape operations
+    "compute_broadcast_shape",
     "expand",
+    "maybe_broadcast",
     "reshape",
     "slice_in_dim",
     "transpose",
@@ -137,11 +139,7 @@ def uniform(shape, minval=0.0, maxval=1.0, *, dtype, device):
 
 
 def expand(a, *shape):
-    # NOTE: cannot use utils.extract_shape_from_varargs here
-    # because that also validates the shape, but the shape
-    # given to expand may be "invalid"
-    if len(shape) == 1 and isinstance(shape[0], Sequence):
-        shape = tuple(shape[0])
+    shape = utils.extract_shape_from_varargs(shape)
 
     # TODO: improve this error message with error context
     utils.check(
@@ -233,7 +231,7 @@ def transpose(a, permutation):
     return prims.transpose(a, permutation)
 
 
-def _compute_broadcast_shape(*_shapes):
+def compute_broadcast_shape(*_shapes):
     """Computes the common shape with the fewest dimensions that all input shapes can be broadcast to."""
     shapes = tuple(x for x in filter(lambda x: x is not None, _shapes))
 
@@ -261,20 +259,20 @@ def _compute_broadcast_shape(*_shapes):
 
 # TODO: add scalar support
 # TODO: review hasattr pattern
-def _maybe_broadcast(*args):
+def maybe_broadcast(*args):
     """Returns tensors with the same shape, possibly broadcasting inputs to the result shape."""
 
     # Computes common shape
-    common_shape = _compute_broadcast_shape(*map(lambda t: t.shape if hasattr(t, "shape") else None, args))
+    common_shape = compute_broadcast_shape(*map(lambda t: t.shape if hasattr(t, "shape") else None, args))
 
-    def __maybe_broadcast(x, shape):
+    def _maybe_broadcast(x, shape):
         if hasattr(x, "shape"):
             if not utils.same_shape(x.shape, common_shape):
                 return expand(x, common_shape)
 
         return x
 
-    return tuple(__maybe_broadcast(x, common_shape) for x in args)
+    return tuple(_maybe_broadcast(x, common_shape) for x in args)
 
 
 #
@@ -391,7 +389,7 @@ def tanh(a):
 def _elementwise_binary_helper(prim, type_promotion_kind, a, b, *, supported_dtypes=None):
     computation_dtype, result_dtype = utils.elementwise_type_promotion(a, b, type_promotion_kind=type_promotion_kind)
 
-    a, b = _maybe_broadcast(a, b)
+    a, b = maybe_broadcast(a, b)
 
     if supported_dtypes is not None:
         utils.check(
@@ -458,7 +456,7 @@ def where(pred, a, b):
     a, b = maybe_convert_to_dtype(a, promotiontype), maybe_convert_to_dtype(b, promotiontype)
 
     # Broadcasts
-    pred, a, b = _maybe_broadcast(pred, a, b)
+    pred, a, b = maybe_broadcast(pred, a, b)
 
     return prims.where(pred, a, b)
 
