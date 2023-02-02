@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from enum import auto, Enum
 from functools import lru_cache, partial
 from typing import Any, Callable, Dict, Sequence
@@ -6,8 +5,8 @@ from typing import Any, Callable, Dict, Sequence
 from .. import make_trace, make_traced
 from ..executors.torch import ops_to_torch_ops_map
 from . import prims
-from .proxies import Proxy, TensorProxy
-from .trace import get_trace, new_trace, reset_trace, Trace
+from .proxies import Proxy
+from .trace import get_trace, Trace
 from .utils import safe_map, safe_zip, unzip2
 
 
@@ -79,13 +78,6 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval, **kwargs):
     if not isinstance(trace.outputs, Sequence):
         return read(trace.outputs)
     return safe_map(read, trace.outputs)
-
-
-@contextmanager
-def detached_trace():
-    trace_token = new_trace()
-    yield
-    reset_trace(trace_token)
 
 
 def _identity_call_metafunc(*args, trace: Trace, **kwargs):
