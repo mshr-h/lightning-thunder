@@ -9,7 +9,7 @@ import thunder
 from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
-from .graph import Block, check_graph, Node, PhiValue, replace_values
+from .graph import Block, Node, PhiValue, replace_values
 
 
 def specify_inputs(gr, inps):
@@ -164,9 +164,7 @@ def inline_method_call(gr, n):  # criterion?
     else:
         raise NotImplementedError(f"inlining {n}")
 
-    check_graph(gr)
     nbl = split_block(gr, bl, bl.nodes[i_n + 1])
-    check_graph(gr)
     n1 = bl.nodes.pop(i_n)
     assert n1 is n
 
@@ -325,7 +323,6 @@ def merge_blocks_where_possible(gr):
             bl2 = None
         if bl2 is not None and len(bl2.jump_sources) == 1 and bl2.jump_sources[0] == bl1.nodes[-1]:
             merge_two_blocks(gr, bl1)
-            check_graph(gr)
         else:
             i_bl += 1
 
