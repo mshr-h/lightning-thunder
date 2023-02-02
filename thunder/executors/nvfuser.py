@@ -23,11 +23,12 @@ from packaging.version import Version
 nvfuser_version = Version("0.0.0")
 if LooseVersion(torch.__version__) >= "2.0":
     import nvfuser
+
     if hasattr(nvfuser, "version"):
-      nvfuser_version = nvfuser.version()
-      from nvfuser import DataType, FusionDefinition
+        nvfuser_version = nvfuser.version()
+        from nvfuser import DataType, FusionDefinition
     else:
-      from nvfuser._C import DataType, Fusion, FusionDefinition
+        from nvfuser._C import DataType, Fusion, FusionDefinition
 
     nvTensor = nvfuser._C.Tensor
     nvNumber = nvfuser._C.Scalar
