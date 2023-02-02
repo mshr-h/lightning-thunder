@@ -229,9 +229,7 @@ def _jvp_call_metafunc(primals, tangents, trace: Trace, detached: bool, **kwargs
             primals_and_tangents[len(primals) :],
         )
         primals_tangents_pairs = safe_zip(_primals, _tangents)
-        outs = eval_trace(
-            trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper
-        )
+        outs = eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
         return outs
 
     ctx = detached_trace() if detached else nullcontext()
@@ -239,9 +237,7 @@ def _jvp_call_metafunc(primals, tangents, trace: Trace, detached: bool, **kwargs
         return jvp_func(*primals, *tangents)
 
 
-jvp_call = prims.make_prim(
-    Transforms.JvpOp, "jvp_call", partial(_jvp_call_metafunc, detached=True)
-)
+jvp_call = prims.make_prim(Transforms.JvpOp, "jvp_call", partial(_jvp_call_metafunc, detached=True))
 inline_transforms_map[Transforms.JvpOp] = partial(_jvp_call_metafunc, detached=False)
 
 

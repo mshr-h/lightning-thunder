@@ -284,9 +284,7 @@ def test_transforms_jvp(executor, device, _):
 
     primals = (a, b)
     tangents = (a, b)
-    out_p, out_t = thunder.make_traced(
-        inline(identity(jvp(identity(func)))), executor=executor
-    )(primals, tangents)
+    out_p, out_t = thunder.make_traced(inline(identity(jvp(identity(func)))), executor=executor)(primals, tangents)
     expected_out_p = torch.sin(a) + b
     expected_out_t = torch.cos(a) + b
     assert_close(out_p, expected_out_p)
