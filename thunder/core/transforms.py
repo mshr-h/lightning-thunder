@@ -3,7 +3,7 @@ from functools import lru_cache, partial
 from typing import Any, Callable, Dict, Sequence
 
 from .. import make_trace, make_traced
-from ..executors.pytorch import ops_to_torch_ops_map
+from ..executors.torch import ops_to_torch_ops_map
 from . import prims
 from .proxies import Proxy
 from .trace import detached_trace, get_trace, Trace
@@ -96,7 +96,7 @@ def identity(func):
     """
 
     def wrapper(*args, **kwargs):
-        trace = make_trace(func)(*args, **kwargs)
+        trace = make_trace(func, executor="torch")(*args, **kwargs)
         return identity_call(*args, **kwargs, trace=trace)
 
     return wrapper
@@ -152,7 +152,7 @@ def inline(func):
     """
 
     def wrapper(*args, **kwargs):
-        trace = make_trace(func)(*args, **kwargs)
+        trace = make_trace(func, executor="torch")(*args, **kwargs)
         return eval_trace(trace, *args, **kwargs, symbol_mapper=inline_symbol_mapper)
 
     return wrapper

@@ -274,7 +274,7 @@ def test_transforms_jvp(executor, device, _):
 def test_get_executor(executor, device, _):
     from thunder import _get_executor
     from thunder.executors.nvfuser import nvFuserCtx
-    from thunder.executors.pytorch import torchCtx
+    from thunder.executors.torch import torchCtx
 
     with pytest.raises(ValueError, match="No executor specified!"):
         _get_executor(None)

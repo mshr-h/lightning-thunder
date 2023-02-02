@@ -98,7 +98,7 @@ class TorchEx(Executor):
 
     def get_executor_context(self):
         if self.ctx is None:
-            from thunder.executors.pytorch import torchCtx
+            from thunder.executors.torch import torchCtx
 
             self.ctx = torchCtx()
 
