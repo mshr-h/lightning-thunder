@@ -77,7 +77,7 @@ def _get_executor(executor=None):
 
     if executor == "torch":
         try:
-            from .executors.torch import torchCtx
+            from .executors.pytorch import torchCtx
 
             return torchCtx()
         except ModuleNotFoundError:

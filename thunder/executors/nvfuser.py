@@ -14,7 +14,7 @@ import thunder.langs.torch as ttorch
 from thunder.core import prims, utils
 from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
-from thunder.executors.torch import _fuse_region as _fuse_torch_region
+from thunder.executors.pytorch import _fuse_region as _fuse_torch_region
 
 # Imports nvFuser
 # NOTE: nvFuser API changed after PyTorch 1.13
