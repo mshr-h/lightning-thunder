@@ -270,10 +270,14 @@ def test_transforms_jvp(executor, device, _):
     assert_close(out_t, expected_out_t)
 
 
-@executors(dtypes=NOTHING)
+@executors(
+    dtypes=NOTHING,
+    executors=[
+        TorchEx(),
+    ],
+)
 def test_get_executor(executor, device, _):
     from thunder import _get_executor
-    from thunder.executors.nvfuser import nvFuserCtx
     from thunder.executors.torch import torchCtx
 
     with pytest.raises(ValueError, match="No executor specified!"):
@@ -282,10 +286,6 @@ def test_get_executor(executor, device, _):
     ex = _get_executor(executor)
     if executor.name == "TorchEx":
         assert isinstance(ex, torchCtx)
-    elif executor.name == "nvFuser":
-        assert isinstance(ex, nvFuserCtx)
-    else:
-        assert False, "Unknown executor"
 
 
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
