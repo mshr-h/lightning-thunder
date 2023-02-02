@@ -141,15 +141,13 @@ class PhiValue(Value):
         self.block = block
         self._set_values_jump_sourcess(values, jump_sources)
 
-    # def __str__(self):
-    #    return f"PhiValue({self.values})"
-
     def _set_values_jump_sourcess(self, values, jump_sources):
+        assert len(values) == len(jump_sources)
         self.values = list(values)
         for v in self.values:
             if v is not None:
                 v.phi_values.append(self)
-        self.jump_sources = jump_sources
+        self.jump_sources = jump_sources[:]
 
     def clone(self, translation_dict=None):
         # due to loops in the Graph, this is complicated:
@@ -158,7 +156,7 @@ class PhiValue(Value):
         if translation_dict is None:
             translation_dict = {}
         if self in translation_dict:
-            return self
+            return translation_dict[self]
         v = PhiValue(self.values, self.jump_sources, translation_dict[self.block])
         v._unfinished_clone = True
         translation_dict[self] = v
@@ -172,20 +170,24 @@ class PhiValue(Value):
             [translation_dict.get(js, js) for js in self.jump_sources],
         )
 
-    def add_missing_value(self, v, idx=None):  # None: append
+    def add_missing_value(self, v, idx=None, jump_source=None):  # None: append
         if idx is None:
             assert v not in self.values
             self.values.append(v)
             v.phi_values.append(self)
+            self.jump_sources.append(jump_source)
         else:
             assert 0 <= idx < len(self.values)
-            assert self.values[idx] == None
+            assert self.values[idx] is None
+            assert jump_source is None
             self.values[idx] = v
             v.phi_values.append(self)
 
     def remove_value(self, v):
+        idx = self.values.index(v)
         v.phi_values.remove(self)
-        self.values.remove(v)
+        del self.values[idx]
+        del self.jump_sources[idx]
 
 
 def unify_values(values, jump_sources, bl, all_predecessors_done=True):
@@ -246,6 +248,8 @@ class Block:
         self.is_ssa = is_ssa
         self.jump_sources = []
         self.nodes = []
+        self.block_inputs = []
+        self.block_outputs = {}
 
     def __str__(self):
         return "\n".join([f"  Block (reached from {self.jump_sources})"] + ["    " + str(n) for n in self.nodes])
@@ -346,18 +350,22 @@ def replace_values(gr_or_bl, value_map, follow_phi_values=False):
         if v in value_map:
             if follow_phi_values:
                 for pv in v.phi_values[:]:
+                    assert len(pv.values) == len(pv.jump_sources)
                     pv.remove_value(v)
                     pv.add_missing_value(value_map[v])
+                    assert len(pv.values) == len(pv.jump_sources)
             return value_map[v]
         if isinstance(v.value, MROAwareObjectRef):
             v.value.obj = map_values(v.value.obj)
         if v.parent is not None:
             v.parent = map_values(v.parent)
         if isinstance(v, PhiValue):
+            assert len(v.values) == len(v.jump_sources)
             for ov in v.values:
                 nv = map_values(ov)
                 v.remove_value(ov)
                 v.add_missing_value(nv)
+            assert len(v.values) == len(v.jump_sources)
         return v
 
     def process_block(bl):
@@ -508,7 +516,8 @@ def check_graph(gr):
     for bl in gr.blocks:
         for i in bl.block_inputs:
             assert isinstance(i, PhiValue)
-            assert i.block is bl
+            assert len(i.jump_sources) == len(i.values)
+            # assert i.block is bl
             pvr = phi_value_refs.get(i, [])
             assert len([v for v in i.values if not v.is_function_arg]) == len(
                 pvr
@@ -517,3 +526,5 @@ def check_graph(gr):
                 del phi_value_refs[i]
             for v in i.values:
                 assert i in v.phi_values, f"phi value {repr(i)} not in phi_values of {repr(v)}"
+
+    assert not phi_value_refs, f"phi_values not found {phi_value_refs}"

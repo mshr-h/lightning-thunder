@@ -82,7 +82,7 @@ def broadcast_in_dim(a, shape, broadcast_dims):
     return v.expand(shape)
 
 
-def slice_helper(a, start_indices, end_indices, *, strides=None):
+def slice_helper(a, start_indices, end_indices, strides=None):
     _strides = strides if strides is not None else [1] * len(start_indices)
 
     slices = []
@@ -172,6 +172,7 @@ ops_to_torch_ops_map = {
     prims.Ops.VAR: "torch.var",
     # Matmul prims
     prims.Ops.LINEAR: "torch.nn.functional.linear",
+    prims.Ops.MATMUL: "torch.matmul",
 }
 
 # NOTE: this class is here to help with proper printing

@@ -15,6 +15,25 @@ import thunder.core.utils as utils
 from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, TorchEx
 
 
+@executors(dtypes=NOTHING)
+def test_detached_trace(executor, device, _):
+    # This test ensures that the detached_trace context manager works as expected.
+    #   It should be possible to enter a detached trace, and then exit it, and
+    #   the trace should be restored to its original state.
+    from thunder.core.trace import get_trace, new_trace, reset_trace, detached_trace
+
+    try:
+        trace_token = new_trace()
+        outer_trace = get_trace()
+        assert outer_trace is not None
+        assert outer_trace is trace_token.var.get()
+        with detached_trace():
+            assert get_trace() is not None
+            assert get_trace() is not outer_trace
+    finally:
+        reset_trace(trace_token)
+
+
 @executors(dtypes=(thunder.float32,))
 def test_integer_isinstance_mimicry(executor, device, dtype):
     # isinstance() works as expected
@@ -611,6 +630,23 @@ def test_fusion_reuse(executor, device, dtype):
     fusion_result = fusion(*args, **kwargs)
     torch_result = foo(*args, b=b, flag=True)
     assert_close(fusion_result, torch_result)
+
+    # Tests with PyTorch fallback
+    def bar(a, b):
+        c = a @ b
+        return c + c
+
+    traced_bar = thunder.make_traced(bar, executor=executor, _return_fusion=True)
+
+    a = make_tensor((4, 16), device=device, dtype=tdtype)
+    b = make_tensor((16, 8), device=device, dtype=tdtype)
+
+    thunder_result, fusion = traced_bar(a, b)
+    torch_result = bar(a, b)
+    assert_close(torch_result, thunder_result)
+
+    fusion_result = fusion(a, b)
+    assert_close(torch_result, fusion_result)
 
 
 # TODO: probably only want to run this on nvFuser

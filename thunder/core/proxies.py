@@ -7,7 +7,7 @@ from numbers import Number
 
 import thunder.core.dtypes as dtypes
 
-from .trace import get_language_context, get_trace
+from .trace import get_language_context
 
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
@@ -258,6 +258,11 @@ class TensorProxy(Proxy):
     def __truediv__(self, other):
         ctx = get_language_context()
         return ctx.true_divide(self, other)
+
+    # @
+    def __matmul__(self, other):
+        ctx = get_language_context()
+        return ctx.matmul(self, other)
 
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
     #  by the language context. Just returning that method wouldn't work, however,

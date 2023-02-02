@@ -44,6 +44,7 @@ __all__ = [
     "get_computation_dtype",
     "elementwise_type_promotion",
     # Shape-related functions
+    "extract_shape_from_varargs",
     "is_numbertensor",
     "same_shape",
     "check_same_shape",
@@ -450,6 +451,27 @@ def elementwise_type_promotion(*args, type_promotion_kind: ELEMENTWISE_TYPE_PROM
 #
 
 
+def extract_shape_from_varargs(shape):
+    """
+    Returns a shape from varargs.
+    In PyTorch, operations that accept shapes often accept them as varargs, like
+    foo(*shape). However a user can pass the shape as a sequence of integers,
+    like this:
+      foo(1, 2, 3)
+    or as a sequence of integers
+      foo((1, 2, 3))
+    In the first case shape will be a tuple of integers, and in the second case it's a tuple
+    containing a tuple of integers. This validates those inputs and canonicalizes them
+    to a tuple of integers.
+    """
+
+    # Handles tuple unwrapping
+    if len(shape) == 1 and isinstance(shape[0], Sequence):
+        shape = shape[0]
+
+    return shape
+
+
 def is_numbertensor(t):
     """True if the input is a "number tensor" -- a single element tensor with an empty shape.
 
@@ -508,6 +530,20 @@ def canonicalize_dim(rank: int, idx: int, wrap_scalar: bool = True) -> int:
     )
 
     return _idx
+
+
+def canonicalize_dim_idx(dim_length, idx):
+    check(dim_length >= 0, lambda: f"The length of a dimension ({dim_length}) cannot be negative!")
+
+    # NOTE: consider adding a flag for when idx >= dim_length
+    #   Ops like torch.tensor_split allow indices greater than the length of a dimension to be specified
+    if idx >= 0:
+        return idx
+
+    if idx < 0:
+        return idx + dim_length
+
+    return idx
 
 
 def canonicalize_dims(rank, indices, wrap_scalar=True):

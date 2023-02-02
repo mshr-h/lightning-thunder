@@ -541,7 +541,12 @@ def _fuse_region(inputs, outputs, symbols):
 
     # Creates call to fusion
     result_str = ", ".join(tuple(_extract_name(out) for out in outputs))
-    cstr += f"\n{tab}{result_str}, = _fusion(({arg_str},))"
+
+    # Handles no inputs
+    if len(inputs) == 0:
+        cstr += f"\n{tab}{result_str}, = _fusion(())"
+    else:
+        cstr += f"\n{tab}{result_str}, = _fusion(({arg_str},))"
 
     # Converts tensors to numbers, where appropriate
     out_strs = []
