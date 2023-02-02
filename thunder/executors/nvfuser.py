@@ -483,7 +483,7 @@ def _fuse_region(inputs, outputs, symbols):
 
             # Associates proxies to the nvFuser results
             # NOTE: it's assumed that NV operations produce results with proxies as leaves
-            proxies, _ = tree_flatten(sym.result)
+            proxies, _ = tree_flatten(sym.outputs)
             nvs, _ = tree_flatten(nv_result)
             for p, nv in zip(proxies, nvs):
                 if p in proxy_to_nvfuser_map:
@@ -669,7 +669,7 @@ def _fuse(trace):
         for p in proxies:
             _update_consumers(p, sym)
 
-        flat_outputs, _ = tree_flatten(sym.result)
+        flat_outputs, _ = tree_flatten(sym.outputs)
         for p in (o for o in flat_outputs if isinstance(o, Proxy)):
             _update_producers(p, sym)
 

@@ -234,7 +234,7 @@ def _fuse_region(inputs, outputs, symbols):
         torch_args = tree_map(_get_torch, sym.args)
         torch_kwargs = tree_map(_get_torch, sym.kwargs)
         torch_op = _get_torch_op(sym.op)
-        result = sym.result
+        result = sym.outputs[0]
 
         if not isinstance(result, Proxy):
             raise NotImplementedError
@@ -322,7 +322,7 @@ def _fuse(trace):
         torch_args = tree_map(_get_torch, sym.args)
         torch_kwargs = tree_map(_get_torch, sym.kwargs)
         torch_op = _get_torch_op(sym.op)
-        result = sym.result
+        result = sym.outputs[0]
 
         if not isinstance(result, Proxy):
             raise NotImplementedError
