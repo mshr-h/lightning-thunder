@@ -220,10 +220,10 @@ def thunder_NanoGPTBlock_forward_functional(
     ln_2_weight,
     ln_2_bias,
     ln_2_eps,
-    c_fc_weight,
-    c_fc_bias,
-    c_proj_weight,
-    c_proj_bias,
+    mlp_c_fc_weight,
+    mlp_c_fc_bias,
+    mlp_c_proj_weight,
+    mlp_c_proj_bias,
 ):
 
     b = ttorch.layer_norm(a, ln_1_normalized_shape, ln_1_weight, ln_1_bias, ln_1_eps)
@@ -239,7 +239,7 @@ def thunder_NanoGPTBlock_forward_functional(
     )
 
     c = ttorch.layer_norm(a, ln_2_normalized_shape, ln_2_weight, ln_2_bias, ln_2_eps)
-    a = a + thunder_NanoGPTMLP_forward_functional(c, c_fc_weight, c_fc_bias, c_proj_weight, c_proj_bias)
+    a = a + thunder_NanoGPTMLP_forward_functional(c, mlp_c_fc_weight, mlp_c_fc_bias, mlp_c_proj_weight, mlp_c_proj_bias)
 
     return a
 

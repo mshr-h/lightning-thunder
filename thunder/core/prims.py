@@ -1041,8 +1041,8 @@ def matmul_meta(a, b):
     )
 
     utils.check(
-        utils.same_shape(a.shape[:2], b.shape[:2]),
-        lambda: f"Expected the batch dimensions of a ({a.shape[:2],}) and the batch dimensions of b ({b.shape[:2]}) to be the same",
+        utils.same_shape(a.shape[:-2], b.shape[:-2]),
+        lambda: f"Expected the batch dimensions of a ({a.shape[:-2],}) and the batch dimensions of b ({b.shape[:-2]}) to be the same",
     )
 
     utils.check(
@@ -1050,7 +1050,7 @@ def matmul_meta(a, b):
         lambda: f"Expected the the last two dimensions of a ({a.shape[-2:]}) be matrix multipiable with the last two dimensions of b ({b.shape[-2:]})",
     )
 
-    shape = a.shape[:2]
+    shape = list(a.shape[:-2])
     shape.append(a.shape[-2])
     shape.append(b.shape[-1])
     proxy_name = get_trace().make_proxy_name()

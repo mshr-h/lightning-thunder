@@ -9,12 +9,14 @@ from functools import partial, reduce
 from multiprocessing import Process
 
 import torch
-from torch.testing import make_tensor
-from torch.utils.benchmark import Timer
+from torch.testing import make_tensor, assert_close
+import torch.nn as nn
+import torch.nn.functional as F
 
 import thunder
 import thunder.core.lang as tlang
 import thunder.langs.torch as ttorch
+import thunder.core.dtypes as dtypes
 
 # This file contains custom nvFuser-related benchmarks.
 
@@ -545,22 +547,24 @@ def simple_kwarg_conditional(iters, make_arg):
 # TODO: maybe put these in their own file?
 
 
+def new_gelu(a):
+    return 0.5 * a * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (a + 0.044715 * torch.pow(a, 3.0))))
+
+
+def thunder_new_gelu(a):
+    return 0.5 * a * (1.0 + ttorch.tanh(math.sqrt(2.0 / math.pi) * (a + 0.044715 * ttorch.pow(a, 3.0))))
+
+
 def _nanogpt_new_gelu_vs_pt2_factory(shape, *, iters, make_arg):
     def gen():
         a = make_arg(shape)
         return (a,), {}
 
-    def new_gelu(a):
-        return 0.5 * a * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (a + 0.044715 * torch.pow(a, 3.0))))
-
-    def new_gelu_thunder(a):
-        return 0.5 * a * (1.0 + ttorch.tanh(math.sqrt(2.0 / math.pi) * (a + 0.044715 * ttorch.pow(a, 3.0))))
-
     pt2_fn = torch.compile(new_gelu)
 
     shape_str = "x".join(str(l) for l in shape)
     name = f"nanogpt_gelu_{shape_str}"
-    _benchmark(name, gen=gen, iters=iters, thunder_fn=new_gelu_thunder, other_name="pt2", other_fn=pt2_fn)
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_new_gelu, other_name="pt2", other_fn=pt2_fn)
 
 
 def nanogpt_new_gelu_64x64(iters, make_arg):
@@ -573,6 +577,216 @@ def nanogpt_new_gelu_512x512(iters, make_arg):
 
 def nanogpt_new_gelu_1024x1024(iters, make_arg):
     _nanogpt_new_gelu_vs_pt2_factory((1024, 1024), iters=iters, make_arg=make_arg)
+
+
+class NanoGPTMLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
+        self.dropout = nn.Dropout()
+
+    def forward(self, a):
+        b = self.c_fc(a)
+        c = new_gelu(b)
+        d = self.c_proj(c)
+        e = self.dropout(d)
+        return e
+
+
+def NanoGPTMLP_forward_functional(a, c_fc_weight, c_fc_bias, c_proj_weight, c_proj_bias):
+    b = torch.nn.functional.linear(a, c_fc_weight, c_fc_bias)
+    c = new_gelu(b)
+    d = torch.nn.functional.linear(c, c_proj_weight, c_proj_bias)
+    e = torch.nn.functional.dropout(d)
+    return e
+
+
+def thunder_NanoGPTMLP_forward_functional(a, c_fc_weight, c_fc_bias, c_proj_weight, c_proj_bias):
+    b = ttorch.linear(a, c_fc_weight, c_fc_bias)
+    c = thunder_new_gelu(b)
+    d = ttorch.linear(c, c_proj_weight, c_proj_bias)
+    e = ttorch.dropout(d)
+    return e
+
+
+def _nanogpt_mlp_factory(n, *, dtype, iters, make_arg):
+    class Config:
+        pass
+
+    config = Config()
+    config.n_embd = n
+    config.n_head = n
+    config.block_size = n
+
+    tdtype = ttorch.torch_dtype(dtype)
+    mlp = NanoGPTMLP(config).to("cuda", dtype=tdtype)
+
+    def gen():
+        a = make_arg((n, n))
+        return (a, mlp.c_fc.weight, mlp.c_fc.bias, mlp.c_proj.weight, mlp.c_proj.bias), {}
+
+    thunder_fn = thunder_NanoGPTMLP_forward_functional
+    pt_fn = NanoGPTMLP_forward_functional
+    pt2_fn = torch.compile(NanoGPTMLP_forward_functional)
+
+    shape_str = f"{n}x{n}"
+    name = f"nanogpt_mlp_{shape_str}_{dtype}"
+
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
+
+
+def nanogpt_mlp_64x64_float32(iters, make_arg):
+    _nanogpt_mlp_factory(64, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+
+
+def nanogpt_mlp_1024x1024_float32(iters, make_arg):
+    _nanogpt_mlp_factory(1024, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+
+
+class NanoGPTCausalSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        assert config.n_embd % config.n_head == 0
+        # key, query, value projections for all heads, but in a batch
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd)
+        # output projection
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+
+        # TODO: re-enable me
+        # regularization
+        # self.attn_dropout = nn.Dropout(config.dropout)
+        # self.resid_dropout = nn.Dropout(config.dropout)
+
+        # causal mask to ensure that attention is only applied to the left in the input sequence
+        self.register_buffer(
+            "bias",
+            torch.tril(torch.ones(config.block_size, config.block_size)).view(
+                1, 1, config.block_size, config.block_size
+            ),
+        )
+
+        self.n_head = config.n_head
+        self.n_embd = config.n_embd
+
+    def forward(self, x):
+        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
+
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+
+        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+
+        # TODO: re-enable me when indexing is supported
+        # att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
+
+        att = F.softmax(att, dim=-1)
+        att = self.attn_dropout(att)
+        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+
+        # output projection
+        y = self.c_proj(y)
+        y = self.resid_dropout(y)
+
+        return y
+
+
+def NanoGPTCausalSelfAttention_forward_functional(
+    x, c_attn_weight, c_attn_bias, n_embd, n_head, bias, c_proj_weight, c_proj_bias
+):
+    B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
+
+    # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+    q, k, v = torch.nn.functional.linear(x, c_attn_weight, c_attn_bias).split(n_embd, dim=2)
+    k = k.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+    q = q.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+    v = v.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+
+    # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+
+    # att = att.masked_fill(bias[:, :, :T, :T] == 0, float("-inf"))
+
+    att = torch.softmax(att, dim=-1)
+    att = torch.nn.functional.dropout(att)
+    y = att @ v
+    y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+    y = torch.nn.functional.linear(y, c_proj_weight, c_proj_bias)
+    y = torch.nn.functional.dropout(y)
+
+    return y
+
+
+def thunder_NanoGPTCausalSelfAttention_forward_functional(
+    x, c_attn_weight, c_attn_bias, n_embd, n_head, bias, c_proj_weight, c_proj_bias
+):
+    B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
+
+    # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+    q, k, v = ttorch.linear(x, c_attn_weight, c_attn_bias).split(n_embd, dim=2)
+    k = k.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+    q = q.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+    v = v.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+
+    # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+
+    # att = att.masked_fill(bias[:, :, :T, :T] == 0, float("-inf"))
+
+    att = ttorch.softmax(att, dim=-1)
+    att = ttorch.dropout(att)
+    y = att @ v
+    y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+    y = ttorch.linear(y, c_proj_weight, c_proj_bias)
+    y = ttorch.dropout(y)
+
+    return y
+
+
+def _nanogpt_csa_factory(n, *, dtype, iters, make_arg):
+    class Config:
+        pass
+
+    config = Config()
+    config.n_embd = n
+    config.n_head = n
+    config.block_size = n
+
+    tdtype = ttorch.torch_dtype(dtype)
+    csa = NanoGPTCausalSelfAttention(config).to("cuda", dtype=tdtype)
+
+    def gen():
+        a = make_arg((2, n, n))
+        return (
+            a,
+            csa.c_attn.weight,
+            csa.c_attn.bias,
+            config.n_embd,
+            config.n_head,
+            csa.bias,
+            csa.c_proj.weight,
+            csa.c_proj.bias,
+        ), {}
+
+    thunder_fn = thunder_NanoGPTCausalSelfAttention_forward_functional
+    pt_fn = NanoGPTCausalSelfAttention_forward_functional
+    pt2_fn = torch.compile(NanoGPTCausalSelfAttention_forward_functional)
+
+    shape_str = f"2x{n}x{n}"
+    name = f"nanogpt_csa_{shape_str}_{dtype}"
+
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
+
+
+def nanogpt_csa_2x512x512_float32(iters, make_arg):
+    _nanogpt_csa_factory(512, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
 
 
 benchmarks = {
@@ -599,6 +813,9 @@ benchmarks = {
     "nanogpt_new_gelu_64x64": nanogpt_new_gelu_64x64,
     "nanogpt_new_gelu_512x512": nanogpt_new_gelu_512x512,
     "nanogpt_new_gelu_1024x1024": nanogpt_new_gelu_1024x1024,
+    "nanogpt_mlp_64x64_float32": nanogpt_mlp_64x64_float32,
+    "nanogpt_mlp_1024x1024_float32": nanogpt_mlp_1024x1024_float32,
+    "nanogpt_csa_2x512x512_float32": nanogpt_csa_2x512x512_float32,
 }
 
 
