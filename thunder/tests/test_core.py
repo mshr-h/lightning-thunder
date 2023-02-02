@@ -616,6 +616,23 @@ def test_fusion_reuse(executor, device, dtype):
     torch_result = foo(*args, b=b, flag=True)
     assert_close(fusion_result, torch_result)
 
+    # Tests with PyTorch fallback
+    def bar(a, b):
+        c = a @ b
+        return c + c
+
+    traced_bar = thunder.make_traced(bar, executor=executor, _return_fusion=True)
+
+    a = make_tensor((4, 16), device=device, dtype=tdtype)
+    b = make_tensor((16, 8), device=device, dtype=tdtype)
+
+    thunder_result, fusion = traced_bar(a, b)
+    torch_result = bar(a, b)
+    assert_close(torch_result, thunder_result)
+
+    fusion_result = fusion(a, b)
+    assert_close(torch_result, fusion_result)
+
 
 # TODO: probably only want to run this on nvFuser
 # TODO: maybe move to special test_nvfuser?

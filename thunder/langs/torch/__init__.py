@@ -938,16 +938,16 @@ def matmul_disambiguator(*args, **kwargs):
 
 # NOTE: this wrapper for prim matmul just broadcasts batch dimensions
 def matmul(a, b):
-    a_batch_dims = a.shape[:2]
-    b_batch_dims = b.shape[:2]
+    a_batch_dims = a.shape[:-2]
+    b_batch_dims = b.shape[:-2]
 
     batch_dims_broadcast = list(tlang.compute_broadcast_shape(a_batch_dims, b_batch_dims))
 
-    a_broadcast_shape = batch_dims_broadcast + a.shape[-2:]
+    a_broadcast_shape = batch_dims_broadcast + list(a.shape[-2:])
     if not utils.same_shape(a_broadcast_shape, a.shape):
         a = tlang.expand(a, a_broadcast_shape)
 
-    b_broadcast_shape = batch_dims_broadcast + b.shape[-2:]
+    b_broadcast_shape = batch_dims_broadcast + list(b.shape[-2:])
     if not utils.same_shape(b_broadcast_shape, b.shape):
         b = tlang.expand(b, b_broadcast_shape)
 
