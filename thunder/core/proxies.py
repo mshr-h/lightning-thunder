@@ -7,7 +7,7 @@ from numbers import Number
 
 import thunder.core.dtypes as dtypes
 
-from .trace import get_language_context, get_trace
+from .trace import get_language_context
 
 # This file defines Thunder's most basic proxies, stand-ins for other Python objects that
 #   record Python interactions for the tracing context.
