@@ -1,6 +1,7 @@
 # import contextvars  # TODO: review this (vs threadlocal?) -- currently used to set the current trace
 import string
 from collections import deque
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 # This file defines the tracing context, methods for acquiring it, and related classes.
@@ -39,8 +40,6 @@ def new_trace():
     return _trace.set(Trace())
 
 
-# TODO: add ability to get a temporary "anonymous" trace
-# TODO: possibly add a kwarg to control this behavior
 def get_trace():
     """Gets the current trace, returning None if there is no current trace."""
 
@@ -57,6 +56,21 @@ def reset_trace(token):
     """Resets the tracing state."""
 
     _trace.reset(token)
+
+
+@contextmanager
+def detached_trace():
+    """Context manager that detaches the current trace.
+
+    This is useful for code that should not be traced, but that is called from
+    traced code. For example, if you have a function that is traced, and that
+    function calls a function that should not be traced, you can use this context
+    manager to detach the current trace before calling the function that should
+    not be traced.
+    """
+    trace_token = new_trace()
+    yield
+    reset_trace(trace_token)
 
 
 # Holds the current language context

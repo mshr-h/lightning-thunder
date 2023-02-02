@@ -15,6 +15,25 @@ import thunder.core.utils as utils
 from .framework import Executor, executors, NOTHING, nvFuser, requiresCUDA, TorchEx
 
 
+@executors(dtypes=NOTHING)
+def test_detached_trace(executor, device, _):
+    # This test ensures that the detached_trace context manager works as expected.
+    #   It should be possible to enter a detached trace, and then exit it, and
+    #   the trace should be restored to its original state.
+    from thunder.core.trace import get_trace, new_trace, reset_trace, detached_trace
+
+    try:
+        trace_token = new_trace()
+        outer_trace = get_trace()
+        assert outer_trace is not None
+        assert outer_trace is trace_token.var.get()
+        with detached_trace():
+            assert get_trace() is not None
+            assert get_trace() is not outer_trace
+    finally:
+        reset_trace(trace_token)
+
+
 @executors(dtypes=(thunder.float32,))
 def test_integer_isinstance_mimicry(executor, device, dtype):
     # isinstance() works as expected
