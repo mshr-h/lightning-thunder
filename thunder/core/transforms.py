@@ -6,7 +6,7 @@ from .. import make_trace, make_traced
 from ..executors.torch import ops_to_torch_ops_map
 from . import prims
 from .proxies import Proxy
-from .trace import get_trace, Trace
+from .trace import detached_trace, get_trace, Trace
 from .utils import safe_map, safe_zip, unzip2
 
 
