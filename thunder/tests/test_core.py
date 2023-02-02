@@ -98,7 +98,6 @@ def test_nested_make_trace(executor, device, _):
 def test_eval_trace(executor, device, _):
     # This test ensures that eval_trace() can be called from within a traced
     # region and all the symbols in the trace are properly evaluated.
-    from thunder import _get_executor
     from thunder.core.transforms import eval_trace
     from thunder.core.trace import new_trace, reset_trace
     from thunder.core.proxies import TensorProxy
@@ -200,7 +199,6 @@ def test_transforms_inline(executor, device, _):
     # Also tests that inline() can be nested.
     # Also tests that inline() can be used with "torch" executor.
     from thunder.core.transforms import identity, inline, Transforms
-    from thunder import _get_executor
 
     def func(a, b):
         return tlang.mul(tlang.add(a, b), 1)
@@ -235,8 +233,7 @@ def test_transforms_inline(executor, device, _):
     ],
 )
 def test_transforms_jvp(executor, device, _):
-    from thunder.core.transforms import jvp, Transforms
-    from thunder import _get_executor
+    from thunder.core.transforms import jvp
 
     def func(a, b):
         c = tlang.sin(a)
@@ -252,6 +249,24 @@ def test_transforms_jvp(executor, device, _):
     expected_out_t = torch.cos(a) + b
     assert_close(out_p, expected_out_p)
     assert_close(out_t, expected_out_t)
+
+
+@executors(dtypes=NOTHING)
+def test_get_executor(executor, device, _):
+    from thunder import _get_executor
+    from thunder.executors.nvfuser import nvFuserCtx
+    from thunder.executors.torch import torchCtx
+
+    with pytest.raises(ValueError, match="No executor specified!"):
+        _get_executor(None)
+
+    ex = _get_executor(executor)
+    if executor.name == "TorchEx":
+        assert isinstance(ex, torchCtx)
+    elif executor.name == "nvFuser":
+        assert isinstance(ex, nvFuserCtx)
+    else:
+        assert False, "Unknown executor"
 
 
 # TODO: subsume this by test_elementwise when sample inputs are expanded to include more numbers
