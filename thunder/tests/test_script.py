@@ -183,10 +183,13 @@ def test_inline_submodule_and_convert_to_thunder():
     gr = thunder.core.script.frontend.acquire_method(model.forward, verbose=False)
     thunder.core.script.frontend.make_ssa(gr)
     thunder.core.script.frontend.make_single_return(gr)
-
+    thunder.core.script.graph.check_graph(gr)
     thunder.core.script.passes.inline_submodule_calls(gr)
+    thunder.core.script.graph.check_graph(gr)
     thunder.core.script.passes.merge_blocks_where_possible(gr)
+    thunder.core.script.graph.check_graph(gr)
     thunder.core.script.passes.torch_to_thunder(gr)
+    thunder.core.script.graph.check_graph(gr)
 
     fn = thunder.core.script.python_ir.generate_function(gr)
 

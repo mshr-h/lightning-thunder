@@ -406,10 +406,8 @@ def make_single_return(gr):
             jump_node.jump_targets = [((0, 0), ret_bl)]
             ret_bl.jump_sources.append(jump_node)
             # TODO: this should really be a method of PhiValue!
-            ret_input.jump_sources.append(jump_node)
+            ret_input.add_missing_value(b.nodes[-1].inputs[0], jump_source=jump_node)
             assert len(b.nodes[-1].inputs) == 1
-            ret_input.values.append(b.nodes[-1].inputs[0])
-            b.nodes[-1].inputs[0].phi_values.append(ret_input)
             assert len(b.block_outputs) == 0
             b.block_outputs = {b.nodes[-1].inputs[0]}
             del b.nodes[-1]
