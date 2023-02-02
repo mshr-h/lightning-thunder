@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from enum import auto, Enum
 from functools import lru_cache, partial
 from typing import Any, Callable, Dict, Sequence
@@ -12,6 +13,7 @@ from .utils import safe_map, safe_zip, unzip2
 
 class Transforms(Enum):
     IdentityOp = auto()
+    JvpOp = auto()
 
 
 @lru_cache(maxsize=None)
@@ -213,14 +215,60 @@ def jvp_symbol_mapper(symbol: prims.Prim):
 
     def _jvp_impl(*args, **kwargs):
         primals, tangents = unzip2(args)
-        assert len(kwargs) == 0, "JVP for kwargs is not implemented"
         return (jvp_impl(*primals, *tangents, **kwargs),)
 
     return _jvp_impl
 
 
-# Note that this is eagerly evaluated transform, there's no jvp_call primitive yet.
-def jvp(func, primals, tangents, executor="torch"):
+def _jvp_call_metafunc(primals, tangents, trace: Trace, detached: bool, **kwargs):
+    assert len(kwargs) == 0, "JVP for kwargs is not implemented"
+
+    def jvp_func(*primals_and_tangents):
+        _primals, _tangents = (
+            primals_and_tangents[: len(primals)],
+            primals_and_tangents[len(primals) :],
+        )
+        primals_tangents_pairs = safe_zip(_primals, _tangents)
+        outs = eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
+        return outs
+
+    ctx = detached_trace() if detached else nullcontext()
+    with ctx:
+        return jvp_func(*primals, *tangents)
+
+
+jvp_call = prims.make_prim(Transforms.JvpOp, "jvp_call", partial(_jvp_call_metafunc, detached=True))
+inline_transforms_map[Transforms.JvpOp] = partial(_jvp_call_metafunc, detached=False)
+
+
+def _identity_call_jvp(*primals_and_tangents, trace: Trace, **kwargs):
+    half = len(primals_and_tangents) // 2
+    primals, tangents = primals_and_tangents[:half], primals_and_tangents[half:]
+    return _jvp_call_metafunc(primals, tangents, trace, detached=False, **kwargs)
+
+
+jvp_impls[Transforms.IdentityOp] = _identity_call_jvp
+
+
+def jvp(func):
+    """Jacobian-vector product transform for a Thunder function.
+
+    Args:
+        func (Callable): A Thunder function to be transformed.
+
+    Returns:
+        Callable: A function that computes the Jacobian-vector product
+            taking primals and tangents as arguments.
+    """
+
+    def wrapper(primals, tangents):
+        trace = make_trace(func)(*primals)
+        return jvp_call(primals, tangents, trace=trace)
+
+    return wrapper
+
+
+def jvp_eager(func, primals, tangents, executor="torch"):
     """Computes the Jacobian-vector product of a Thunder function.
 
     Args:

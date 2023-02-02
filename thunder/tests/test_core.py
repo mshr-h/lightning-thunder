@@ -247,12 +247,9 @@ def test_transforms_inline(executor, device, _):
 
 @executors(
     dtypes=NOTHING,
-    executors=[
-        TorchEx(),
-    ],
 )
-def test_transforms_jvp(executor, device, _):
-    from thunder.core.transforms import jvp
+def test_transforms_jvp_eager(executor, device, _):
+    from thunder.core.transforms import jvp_eager
 
     def func(a, b):
         c = tlang.sin(a)
@@ -263,7 +260,29 @@ def test_transforms_jvp(executor, device, _):
 
     primals = (a, b)
     tangents = (a, b)
-    out_p, out_t = jvp(func, primals, tangents)
+    out_p, out_t = jvp_eager(func, primals, tangents, executor=executor)
+    expected_out_p = torch.sin(a) + b
+    expected_out_t = torch.cos(a) + b
+    assert_close(out_p, expected_out_p)
+    assert_close(out_t, expected_out_t)
+
+
+@executors(
+    dtypes=NOTHING,
+)
+def test_transforms_jvp(executor, device, _):
+    from thunder.core.transforms import jvp, inline, identity
+
+    def func(a, b):
+        c = tlang.sin(a)
+        return tlang.mul(tlang.add(c, b), 1)
+
+    a = torch.ones(2, 3, device=device, dtype=torch.float32)
+    b = torch.ones(2, 3, device=device, dtype=torch.float32) * 2
+
+    primals = (a, b)
+    tangents = (a, b)
+    out_p, out_t = thunder.make_traced(inline(identity(jvp(identity(func)))), executor=executor)(primals, tangents)
     expected_out_p = torch.sin(a) + b
     expected_out_t = torch.cos(a) + b
     assert_close(out_p, expected_out_p)
