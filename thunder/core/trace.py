@@ -129,7 +129,7 @@ def get_executor_context():
     except LookupError:
         pass
 
-    return ctx
+    return None
 
 
 def reset_executor_context(token):
