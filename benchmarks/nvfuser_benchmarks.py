@@ -610,39 +610,37 @@ def thunder_NanoGPTMLP_forward_functional(a, c_fc_weight, c_fc_bias, c_proj_weig
     return e
 
 
+# TODO: update factory to accept different model sizes
 def _nanogpt_mlp_factory(n, *, dtype, iters, make_arg):
     class Config:
         pass
 
+    # These numbers from the "gpt" config
     config = Config()
-    config.n_embd = n
-    config.n_head = n
-    config.block_size = n
+    config.n_embd = 768
+    config.n_head = 12
+    config.block_size = 1024
 
     tdtype = ttorch.torch_dtype(dtype)
     mlp = NanoGPTMLP(config).to("cuda", dtype=tdtype)
 
     def gen():
-        a = make_arg((n, n))
+        a = make_arg((n, config.n_embd))
         return (a, mlp.c_fc.weight, mlp.c_fc.bias, mlp.c_proj.weight, mlp.c_proj.bias), {}
 
     thunder_fn = thunder_NanoGPTMLP_forward_functional
     pt_fn = NanoGPTMLP_forward_functional
     pt2_fn = torch.compile(NanoGPTMLP_forward_functional)
 
-    shape_str = f"{n}x{n}"
+    shape_str = f"{n}x768"
     name = f"nanogpt_mlp_{shape_str}_{dtype}"
 
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
 
 
-def nanogpt_mlp_64x64_float32(iters, make_arg):
-    _nanogpt_mlp_factory(64, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
-
-
-def nanogpt_mlp_1024x1024_float32(iters, make_arg):
-    _nanogpt_mlp_factory(1024, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+def nanogpt_mlp_8x768_float32(iters, make_arg):
+    _nanogpt_mlp_factory(8, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
 
 
 class NanoGPTCausalSelfAttention(nn.Module):
@@ -749,20 +747,22 @@ def thunder_NanoGPTCausalSelfAttention_forward_functional(
     return y
 
 
+# TODO: allow other gpt sizes to be specified
 def _nanogpt_csa_factory(n, *, dtype, iters, make_arg):
     class Config:
         pass
 
     config = Config()
-    config.n_embd = n
-    config.n_head = n
-    config.block_size = n
+    config.n_embd = 768
+    config.n_head = 12
+    config.block_size = 1024
+    config.dropout = True
 
     tdtype = ttorch.torch_dtype(dtype)
     csa = NanoGPTCausalSelfAttention(config).to("cuda", dtype=tdtype)
 
     def gen():
-        a = make_arg((2, n, n))
+        a = make_arg((2, n, config.n_embd))
         return (
             a,
             csa.c_attn.weight,
@@ -778,15 +778,166 @@ def _nanogpt_csa_factory(n, *, dtype, iters, make_arg):
     pt_fn = NanoGPTCausalSelfAttention_forward_functional
     pt2_fn = torch.compile(NanoGPTCausalSelfAttention_forward_functional)
 
-    shape_str = f"2x{n}x{n}"
+    shape_str = f"2x{n}x768"
     name = f"nanogpt_csa_{shape_str}_{dtype}"
 
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
 
 
-def nanogpt_csa_2x512x512_float32(iters, make_arg):
-    _nanogpt_csa_factory(512, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+# TODO: revise with real shapes
+def nanogpt_csa_2x8x768_float32(iters, make_arg):
+    _nanogpt_csa_factory(8, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+
+
+class NanoGPTBlock(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(config.n_embd)
+        self.attn = NanoGPTCausalSelfAttention(config)
+        self.ln_2 = nn.LayerNorm(config.n_embd)
+        self.mlp = NanoGPTMLP(config)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
+
+def NanoGPTBlock_forward_functional(
+    a,
+    ln_1_normalized_shape,
+    ln_1_weight,
+    ln_1_bias,
+    ln_1_eps,
+    csa_c_attn_weight,
+    csa_c_attn_bias,
+    n_embd,
+    n_head,
+    csa_bias,
+    csa_c_proj_weight,
+    csa_c_proj_bias,
+    ln_2_normalized_shape,
+    ln_2_weight,
+    ln_2_bias,
+    ln_2_eps,
+    mlp_c_fc_weight,
+    mlp_c_fc_bias,
+    mlp_c_proj_weight,
+    mlp_c_proj_bias,
+):
+    b = torch.nn.functional.layer_norm(a, ln_1_normalized_shape, ln_1_weight, ln_1_bias, ln_1_eps)
+    a = a + NanoGPTCausalSelfAttention_forward_functional(
+        b,
+        csa_c_attn_weight,
+        csa_c_attn_bias,
+        n_embd,
+        n_head,
+        csa_bias,
+        csa_c_proj_weight,
+        csa_c_proj_bias,
+    )
+
+    c = torch.nn.functional.layer_norm(a, ln_2_normalized_shape, ln_2_weight, ln_2_bias, ln_2_eps)
+    a = a + NanoGPTMLP_forward_functional(c, mlp_c_fc_weight, mlp_c_fc_bias, mlp_c_proj_weight, mlp_c_proj_bias)
+
+    return a
+
+
+def thunder_NanoGPTBlock_forward_functional(
+    a,
+    ln_1_normalized_shape,
+    ln_1_weight,
+    ln_1_bias,
+    ln_1_eps,
+    csa_c_attn_weight,
+    csa_c_attn_bias,
+    n_embd,
+    n_head,
+    csa_bias,
+    csa_c_proj_weight,
+    csa_c_proj_bias,
+    ln_2_normalized_shape,
+    ln_2_weight,
+    ln_2_bias,
+    ln_2_eps,
+    mlp_c_fc_weight,
+    mlp_c_fc_bias,
+    mlp_c_proj_weight,
+    mlp_c_proj_bias,
+):
+
+    b = ttorch.layer_norm(a, ln_1_normalized_shape, ln_1_weight, ln_1_bias, ln_1_eps)
+    a = a + thunder_NanoGPTCausalSelfAttention_forward_functional(
+        b,
+        csa_c_attn_weight,
+        csa_c_attn_bias,
+        n_embd,
+        n_head,
+        csa_bias,
+        csa_c_proj_weight,
+        csa_c_proj_bias,
+    )
+
+    c = ttorch.layer_norm(a, ln_2_normalized_shape, ln_2_weight, ln_2_bias, ln_2_eps)
+    a = a + thunder_NanoGPTMLP_forward_functional(c, mlp_c_fc_weight, mlp_c_fc_bias, mlp_c_proj_weight, mlp_c_proj_bias)
+
+    return a
+
+
+# TODO: allow other gpt sizes to be specified
+def _nanogpt_block_factory(n, *, dtype, iters, make_arg):
+    class Config:
+        pass
+
+    config = Config()
+    config.n_embd = 768
+    config.n_head = 12
+    config.block_size = 1024
+    config.dropout = True
+
+    tdtype = ttorch.torch_dtype(dtype)
+    block = NanoGPTBlock(config).to("cuda", dtype=tdtype)
+
+    def gen():
+        a = make_arg((2, n, config.n_embd))
+        return (
+            a,
+            block.ln_1.normalized_shape,
+            block.ln_1.weight,
+            block.ln_1.bias,
+            block.ln_1.eps,
+            block.attn.c_attn.weight,
+            block.attn.c_attn.bias,
+            config.n_embd,
+            config.n_head,
+            block.attn.bias,
+            block.attn.c_proj.weight,
+            block.attn.c_proj.bias,
+            block.ln_2.normalized_shape,
+            block.ln_2.weight,
+            block.ln_2.bias,
+            block.ln_2.eps,
+            block.mlp.c_fc.weight,
+            block.mlp.c_fc.bias,
+            block.mlp.c_proj.weight,
+            block.mlp.c_proj.bias,
+        ), {}
+
+    thunder_fn = thunder_NanoGPTBlock_forward_functional
+    pt_fn = NanoGPTBlock_forward_functional
+    pt2_fn = torch.compile(NanoGPTBlock_forward_functional)
+
+    shape_str = f"2x{n}x768"
+    name = f"nanogpt_block{shape_str}_{dtype}"
+
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
+    _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
+
+
+# TODO: revise with real shapes
+def nanogpt_block_2x8x768_float32(iters, make_arg):
+    _nanogpt_csa_factory(8, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
 
 
 benchmarks = {
@@ -813,9 +964,9 @@ benchmarks = {
     "nanogpt_new_gelu_64x64": nanogpt_new_gelu_64x64,
     "nanogpt_new_gelu_512x512": nanogpt_new_gelu_512x512,
     "nanogpt_new_gelu_1024x1024": nanogpt_new_gelu_1024x1024,
-    "nanogpt_mlp_64x64_float32": nanogpt_mlp_64x64_float32,
-    "nanogpt_mlp_1024x1024_float32": nanogpt_mlp_1024x1024_float32,
-    "nanogpt_csa_2x512x512_float32": nanogpt_csa_2x512x512_float32,
+    "nanogpt_mlp_8x768_float32": nanogpt_mlp_8x768_float32,
+    "nanogpt_csa_2x8x768_float32": nanogpt_csa_2x8x768_float32,
+    "nanogpt_block_2x8x768_float32": nanogpt_block_2x8x768_float32,
 }
 
 
