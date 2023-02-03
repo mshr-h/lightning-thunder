@@ -17,7 +17,7 @@ class Transforms(Enum):
 
 
 @lru_cache(maxsize=None)
-def symbol_to_eval(symbol: prims.Prim):
+def symbol_to_eval(symbol: prims.Symbol):
     """Map a symbol to a function that evaluates it.
 
     Args:
@@ -30,10 +30,9 @@ def symbol_to_eval(symbol: prims.Prim):
         return prim_func
 
     def _fn(*args, **kwargs):
-        t = get_trace()
         result = meta_func(*args, **kwargs)
-        sym = prims.Prim(symbol.op, symbol.name, result, *args, **kwargs)
-        t.add_symbol(sym)
+        sym = prims.make_symbol(symbol.op, symbol.name, result, args, kwargs)
+        get_trace().add_symbol(sym)
         return result
 
     return _fn
@@ -73,9 +72,7 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval, **kwargs):
         result = prim_func(*args, **kwargs)
         if not isinstance(result, Sequence):
             result = (result,)
-        if not isinstance(symbol.result, Sequence):
-            symbol.result = (symbol.result,)
-        safe_map(write, symbol.result, result)
+        safe_map(write, symbol.outputs, result)
 
     if not isinstance(trace.outputs, Sequence):
         return read(trace.outputs)
@@ -129,10 +126,10 @@ ops_to_torch_ops_map[Transforms.IdentityOp] = _identity_call_pytorch
 # The inline transform is a special case of the identity transform.
 # It is used to inline the transformation of a function in the trace without
 # removing separate transform primitives from the trace.
-inline_transforms_map: Dict[prims.Prim, Callable] = dict()
+inline_transforms_map: Dict[prims.Symbol, Callable] = dict()
 
 
-def inline_symbol_mapper(symbol: prims.Prim):
+def inline_symbol_mapper(symbol: prims.Symbol):
     if symbol.op in inline_transforms_map:
         return inline_transforms_map[symbol.op]
 
@@ -176,18 +173,18 @@ def add_jvp(a, b, ȧ, ḃ):
     return a + b, ȧ + ḃ
 
 
-jvp_impls: Dict[prims.Prim, Callable] = dict()
+jvp_impls: Dict[prims.Symbol, Callable] = dict()
 
 jvp_impls[prims.Ops.SIN] = sin_jvp
 jvp_impls[prims.Ops.MUL] = mul_jvp
 jvp_impls[prims.Ops.ADD] = add_jvp
 
 
-def jvp_symbol_mapper(symbol: prims.Prim):
+def jvp_symbol_mapper(symbol: prims.Symbol):
     """Maps a symbol to a JVP function that evaluates it.
 
     Args:
-        symbol (prims.Prim): Symbol to evaluate.
+        symbol (prims.Symbol): Symbol to evaluate.
 
     Raises:
         NotImplementedError: If the JVP for the symbol is not implemented.

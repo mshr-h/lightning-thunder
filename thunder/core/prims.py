@@ -1,16 +1,17 @@
 import builtins
 import math
 import operator
+import sys
+from dataclasses import dataclass, field
 from enum import auto, Enum
 from functools import partial, reduce
 from numbers import Number
-from typing import Sequence
+from typing import Dict, Sequence, Tuple, Union
 
 import thunder.core.dtypes as dtypes
 import thunder.core.utils as utils
 
-
-from .proxies import NumberProxy, proxy, TensorProxy
+from .proxies import NumberProxy, Proxy, proxy, TensorProxy
 from .trace import get_trace
 from .utils import check, get_numberlike_value, same_shape
 
@@ -148,27 +149,69 @@ ops_to_pretty_name_map = {}
 # TODO: add error context
 
 
-class Prim:
-    """A call to a primitive.
+_dataclass_params = {
+    "frozen": True,
+}
+if sys.version_info >= (3, 10):
+    _dataclass_params["slots"] = True
 
-    Holds the inputs, outputs, and printing information.
+
+@dataclass(**_dataclass_params)
+class Symbol:
+    """A symbolic representation for the call to a primitive.
+
+    Attributes:
+        op: the operator enum
+        name: the name of the operator
+        outputs: the result of the operation
+        args: the arguments to the operation
+        kwargs: the keyword arguments to the operation
     """
 
-    # TODO: support returning multiple values
-    def __init__(self, op, name, result, *args, **kwargs):
-        self.op = op
-        self.name = name
-        self.result = result
-        self.args = args
-        self.kwargs = kwargs
+    op: Enum = field(repr=False)
+    name: str
+    outputs: Tuple[Proxy]
+    args: Tuple[Proxy]
+    kwargs: Dict[str, Proxy]
 
     def __repr__(self):
-        result_string = str(self.result)
+        result_string = ", ".join(str(output) for output in self.outputs)
         arg_string = ", ".join(str(arg) for arg in self.args)
         kwarg_string = ", ".join(f"{k}={v}" for k, v in self.kwargs.items())
-        return (
-            f"[Prim {self.name}, \n\tresult=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
-        )
+        return f"[Symbol {self.name}, \n\toutputs=({result_string}), \n\targs=({arg_string}), \n\tkwargs={{{kwarg_string}}}]"
+
+    # Symbols are hashable and comparable by identity
+    # This is necessary for using them as keys in a dict.
+    # See symbols_to_region_map in thunder/executors/nvfuser.py for the usage.
+    # TODO: if kwargs were hashable (frozendict), we could use a tuple of (op, args, kwargs) as the key
+    #       and avoid the need for this.
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return self is other
+
+
+def make_symbol(id, name, outputs, args, kwargs):
+    """Creates a Symbol and adds it to the current trace.
+
+    Prepares the arguments and outputs for the Symbol.
+
+    Args:
+        id: the operator enum
+        name: the name of the operator
+        outputs: the result of the operation
+        args: the arguments to the operation
+        kwargs: the keyword arguments to the operation
+
+    Returns:
+        The symbol.
+    """
+    # Normalize the outputs and args to tuples
+    symbol_outputs = tuple(outputs) if isinstance(outputs, Sequence) else (outputs,)
+    symbol_args = tuple(map(lambda a: tuple(a) if isinstance(a, Sequence) else a, args))
+    symbol = Symbol(id, name, symbol_outputs, symbol_args, kwargs)
+    return symbol
 
 
 def make_prim(id, name, meta):
@@ -180,10 +223,9 @@ def make_prim(id, name, meta):
 
     # TODO: update the signature
     def _fn(*args, **kwargs):
-        t = get_trace()
         result = meta(*args, **kwargs)
-        sym = Prim(id, name, result, *args, **kwargs)
-        t.add_symbol(sym)
+        sym = make_symbol(id, name, result, args, kwargs)
+        get_trace().add_symbol(sym)
         return result
 
     return _fn
