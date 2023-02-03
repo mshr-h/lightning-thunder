@@ -609,11 +609,12 @@ def thunder_NanoGPTMLP_forward_functional(a, c_fc_weight, c_fc_bias, c_proj_weig
     e = ttorch.dropout(d)
     return e
 
+
 # TODO: update factory to accept different model sizes
 def _nanogpt_mlp_factory(n, *, dtype, iters, make_arg):
     class Config:
         pass
-    
+
     # These numbers from the "gpt" config
     config = Config()
     config.n_embd = 768
@@ -745,6 +746,7 @@ def thunder_NanoGPTCausalSelfAttention_forward_functional(
 
     return y
 
+
 # TODO: allow other gpt sizes to be specified
 def _nanogpt_csa_factory(n, *, dtype, iters, make_arg):
     class Config:
@@ -782,6 +784,7 @@ def _nanogpt_csa_factory(n, *, dtype, iters, make_arg):
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
 
+
 # TODO: revise with real shapes
 def nanogpt_csa_2x8x768_float32(iters, make_arg):
     _nanogpt_csa_factory(8, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
@@ -799,6 +802,7 @@ class NanoGPTBlock(nn.Module):
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
+
 
 def NanoGPTBlock_forward_functional(
     a,
@@ -880,6 +884,7 @@ def thunder_NanoGPTBlock_forward_functional(
 
     return a
 
+
 # TODO: allow other gpt sizes to be specified
 def _nanogpt_block_factory(n, *, dtype, iters, make_arg):
     class Config:
@@ -929,9 +934,11 @@ def _nanogpt_block_factory(n, *, dtype, iters, make_arg):
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="PyTorch", other_fn=pt_fn)
     _benchmark(name, gen=gen, iters=iters, thunder_fn=thunder_fn, other_name="pt2", other_fn=pt2_fn)
 
+
 # TODO: revise with real shapes
 def nanogpt_block_2x8x768_float32(iters, make_arg):
     _nanogpt_csa_factory(8, dtype=dtypes.float32, iters=iters, make_arg=make_arg)
+
 
 benchmarks = {
     # Elementwise Binary benchmarks
