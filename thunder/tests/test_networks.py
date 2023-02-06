@@ -335,9 +335,9 @@ class NanoGPT(nn.Module):
             t <= self.config.block_size
         ), f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
 
-        return None
+        pos = torch.arange(0, t, dtype=torch.int64, device=device).unsqueeze(0)  # shape (1, t)
 
-        # pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+        return pos
 
         # # forward the GPT model itself
         # tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
@@ -362,9 +362,9 @@ def thunder_NanoGPT_forward_functional(idx, targets=None, *, cfg_block_size):
 
     assert t <= cfg_block_size, f"Cannot forward sequence of length {t}, block size is only {cfg_block_size}"
 
-    return None
+    pos = ttorch.arange(0, t, dtype=thunder.int64, device=device).unsqueeze(0)  # shape (1, t)
 
-    # pos = ttorch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+    return pos
 
 
 @executors(dtypes=(thunder.float32,))

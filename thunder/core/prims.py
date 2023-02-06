@@ -223,12 +223,14 @@ def make_prim(id, name, meta):
     ops_to_meta_functions_map[id] = meta
     ops_to_pretty_name_map[id] = name
 
-    # TODO: update the signature
     def _fn(*args, **kwargs):
         result = meta(*args, **kwargs)
         sym = make_symbol(id, name, result, args, kwargs)
         get_trace().add_symbol(sym)
         return result
+
+    # TODO: update more of the signature
+    _fn.__name__ = name
 
     return _fn
 
@@ -864,7 +866,32 @@ where = make_prim(Ops.WHERE, "where", where_meta)
 #
 
 
+# TODO: may want to update these error types
+# NOTE: broadcast_dimensions is a sequence with length equal to a.shape
 def broadcast_in_dim_meta(a, shape, broadcast_dimensions, **kwargs):
+    utils.check(
+        len(a.shape) == len(broadcast_dimensions),
+        lambda: f"Expected one broadcast dimension (broadcast_dimensions={broadcast_dimensions}) for each dimension of a={a.shape}",
+    )
+
+    # Checks that dimensions are strictly increasing and valid
+    prev_idx = -1
+    for original_length, idx in zip(a.shape, broadcast_dimensions):
+        utils.check(
+            idx > prev_idx,
+            lambda: f"Expected the dimensions in broadcast_dimensions={broadcast_dimensions} to be strictly increasing",
+        )
+        prev_idx = idx
+
+        utils.check(
+            idx < len(shape),
+            lambda: f"One of the broadcast_dimensions={broadcast_dimensions} was {idx}, which is out-of-bounds for a tensor with {len(shape)} dimensions",
+        )
+        utils.check(
+            original_length == 1 or shape[idx] == original_length,
+            lambda: f"A dimension of length {original_length} cannot be broadcast to a dimension of length {shape[idx]}",
+        )
+
     proxy_name = get_trace().make_proxy_name()
     return TensorProxy(name=proxy_name, shape=shape, device=a.device, dtype=a.true_dtype)
 

@@ -188,6 +188,7 @@ class OpInfo:
         devicetypes=None,
         dtypes=None,
         sample_input_generator,
+        error_input_generator=None,
         benchmark_generator=None,
         method_variant=None,
         operator_variant=None,
@@ -202,6 +203,7 @@ class OpInfo:
         self._devicetypes = devicetypes if devicetypes is not None else _all_device_types()
         self._dtypes = dtypes if dtypes is not None else (datatypes.exact, datatypes.inexact)
         self.sample_input_generator = sample_input_generator
+        self.error_input_generator = error_input_generator
         self.benchmark_generator = benchmark_generator
         self.method_variant = method_variant
         self.operator_variant = operator_variant
@@ -221,6 +223,9 @@ class OpInfo:
     def sample_inputs(self, device_type, dtype, *, requires_grad=False, **kwargs):
         dtype = torch_dtype(dtype)
         return self.sample_input_generator(self, device_type, dtype, requires_grad, **kwargs)
+
+    def error_inputs(self, device, **kwargs):
+        return self.error_input_generator(self, device, **kwargs)
 
     # NOTE: Today all benchmarks are generated with PyTorch, so Thunder objects,
     #   like dtypes, need to be translated into PyTorch objects
@@ -862,6 +867,56 @@ opinfos.extend(elementwise_ternary_ops)
 #
 shape_ops = []
 
+# TODO: these samples could be improved
+def broadcast_in_dim_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # The first 5 test cases below are taken from JAX's broadcast_in_dim tests
+    #   https://github.com/google/jax/blob/main/tests/lax_test.py#L1171
+
+    # inshape, outshape, dims
+    cases = (
+        ([2], [2, 2], [0]),
+        ([2], [2, 2], [1]),
+        ([2], [2, 3], [0]),
+        ([], [2, 3], []),
+        ([1], [2, 3], [1]),
+        ((4, 6, 3, 1), (5, 4, 7, 6, 3, 6, 6), (1, 3, 4, 5)),
+    )
+
+    for inshape, outshape, dims in cases:
+        a = make(inshape)
+        yield SampleInput(a, outshape, dims)
+
+
+def broadcast_in_dim_error_generator(op, device, **kwargs):
+    make = partial(make_tensor, device=device, dtype=torch.float32)
+
+    # inshape, outshape, dims, ex_info
+    cases = (
+        # broadcast dimensions must be strictly ascending
+        ((2, 2), (2, 2), (1, 0), RuntimeError),
+        # broadcast dimensions must have the same length as a.ndim
+        ((3, 2, 2), (3, 2, 2), (0, 1), RuntimeError),
+        ((3, 2, 2), (3, 2, 2), (0, 1, 2, 3), RuntimeError),
+        # Invalid outshape
+        ((3, 2, 2), (6, 2, 2), (0, 1, 2), RuntimeError),
+        ((3, 2, 2), (3, 1, 2), (0, 1, 2), RuntimeError),
+    )
+
+    for inshape, outshape, dims, ex_info in cases:
+        a = make(inshape)
+        yield SampleInput(a, outshape, dims), ex_info
+
+
+broadcast_in_dim_opinfo = OpInfo(
+    prims.broadcast_in_dim,
+    sample_input_generator=broadcast_in_dim_sample_generator,
+    error_input_generator=broadcast_in_dim_error_generator,
+    jax_reference=jax.lax.broadcast_in_dim if JAX_AVAILABLE else None,
+)
+shape_ops.append(broadcast_in_dim_opinfo)
+
 
 # TODO: only remove these cases when the executor is nvFuser
 # FIXME: Zero-dim cases are skipped due to https://github.com/csarofeen/pytorch/issues/2383
@@ -950,6 +1005,7 @@ def slice_prim_sample_generator(op, device, dtype, requires_grad, **kwargs):
 
 slice_prim_opinfo = OpInfo(
     prims.slice_prim,
+    name="slice_prim",
     sample_input_generator=slice_prim_sample_generator,
     jax_reference=jax.lax.slice if JAX_AVAILABLE else None,
 )
@@ -1058,6 +1114,33 @@ transpose_opinfo = OpInfo(
     torch_reference=torch.permute,
 )
 shape_ops.append(transpose_opinfo)
+
+
+def unsqueeze_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # a.shape, dims
+    cases = (
+        ((4, 2), (0, 1, 4)),
+        ((2, 1, 3), ()),
+        ((2, 1, 3), (-1,)),
+        ((2, 1, 3), (-1, 1, 2, -2)),
+        ((), (0, -1)),
+        ((2, 2), (1,)),
+    )
+
+    for shape, dims in cases:
+        a = make(shape)
+        yield SampleInput(a, dims)
+
+
+unsqueeze_opinfo = OpInfo(
+    tlang.unsqueeze,
+    sample_input_generator=unsqueeze_sample_generator,
+    jax_reference=jax.lax.expand_dims,
+)
+shape_ops.append(unsqueeze_opinfo)
+
 
 opinfos.extend(shape_ops)
 

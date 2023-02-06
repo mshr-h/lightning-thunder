@@ -31,6 +31,7 @@ __all__ = [
     "split",
     "tensor_split",
     "transpose",
+    "unsqueeze",
     "view",
     # Elementwise Unary Ops
     "abs",
@@ -184,6 +185,9 @@ class TorchLangCtx:
 
     def transpose(self, a, dim0, dim1):
         return _transpose_disambiguator(a, dim0, dim1)
+
+    def unsqueeze(self, a, dim):
+        return _unsqueeze_disambiguator(a, dim)
 
     def view(self, a, *shape):
         shape = utils.extract_shape_from_varargs(shape)
@@ -459,6 +463,14 @@ def transpose(a, dim0, dim1):
     permutation[dim0] = dim1
     permutation[dim1] = dim0
     return tlang.transpose(a, permutation)
+
+
+def _unsqueeze_disambiguator(*args, **kwargs):
+    return unsqueeze(*args, **kwargs)
+
+
+def unsqueeze(a, dim):
+    return tlang.unsqueeze(a, (dim,))
 
 
 def _view_disambiguator(*args, **kwargs):

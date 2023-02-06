@@ -588,6 +588,12 @@ def validate_idx(rank: int, idx: int):
 
 
 def check_no_duplicates(dims: Sequence):
+    def _reify(x):
+        if isinstance(x, NumberProxy):
+            return x.value
+
+    dims = tuple(_reify(x) for x in dims)
+
     check(len(dims) == len(set(dims)), lambda: f"Duplicate value in list of dimensions {dims}!")
 
 
