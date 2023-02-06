@@ -6,7 +6,8 @@ from typing import Any, Callable, Dict, Sequence
 from .. import make_trace, make_traced
 from ..executors.torch import ops_to_torch_ops_map
 from . import prims
-from .proxies import Proxy
+from .lang import full_like
+from .proxies import NumberProxy, Proxy, TensorProxy
 from .trace import detached_trace, get_trace, Trace
 from .utils import safe_map, safe_zip, unzip2
 
@@ -186,18 +187,26 @@ def jvp_symbol_mapper(symbol: prims.Symbol):
     Returns:
         Callable: JVP function that evaluates the symbol.
     """
-    # NOTE: I'm sorry for this code, but it's the best I could do.
-    # if symbol.args doesn't have subclasses of Proxy, then we need to return a zero tangent
+    # If symbol.args doesn't have subclasses of Proxy, then we need to return a zero tangent
+    # TODO: there may be a better way to detect constants in the trace
     if not any(isinstance(arg, Proxy) for arg in symbol.args):
 
-        def _jvp_impl_const(symbol, *args, **kwargs):
-            # TODO: this is weird, but we need to return a tuple of tuples
-            out = symbol_to_eval(symbol)(*args, **kwargs)
-            if isinstance(out, Sequence):
-                return ((out, tuple(0 for x in out)),)
-            return ((out, 0),)
+        def zeros_like(x):
+            if isinstance(x, TensorProxy):
+                return full_like(x, fill_value=0)
+            elif isinstance(x, NumberProxy):
+                return type(x.value)(0)
+            else:
+                raise ValueError(f"zeros_like inside JVP got an unsupported type {type(x)}")
 
-        return partial(_jvp_impl_const, symbol)
+        def jvp_impl_const(symbol, *args, **kwargs):
+            primals = symbol_to_eval(symbol)(*args, **kwargs)
+            if isinstance(primals, Sequence):
+                tangents = tuple(zeros_like(p) for p in primals)
+                return ((primals, tangents),)
+            return ((primals, zeros_like(primals)),)
+
+        return partial(jvp_impl_const, symbol)
 
     # Normal case, we have a proxy tangent
     jvp_impl = jvp_impls.get(symbol.op)
@@ -205,27 +214,39 @@ def jvp_symbol_mapper(symbol: prims.Symbol):
         raise NotImplementedError(f"JVP for {symbol.op} is not implemented")
 
     def _jvp_impl(*args, **kwargs):
+        # Expecting a tuple of pairs of primals and tangents
+        assert all(len(arg) == 2 for arg in args)
         primals, tangents = unzip2(args)
-        return (jvp_impl(*primals, *tangents, **kwargs),)
+        out_primal, out_tangent = jvp_impl(*primals, *tangents, **kwargs)
+        if isinstance(out_primal, Sequence):
+            return safe_zip(out_primal, out_tangent)
+        return ((out_primal, out_tangent),)
 
     return _jvp_impl
 
 
 def _jvp_call_metafunc(primals, tangents, trace: Trace, detached: bool, **kwargs):
-    assert len(kwargs) == 0, "JVP for kwargs is not implemented"
+    """Metafunction for the JVP transform.
 
-    def jvp_func(*primals_and_tangents):
-        _primals, _tangents = (
-            primals_and_tangents[: len(primals)],
-            primals_and_tangents[len(primals) :],
-        )
-        primals_tangents_pairs = safe_zip(_primals, _tangents)
-        outs = eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
-        return outs
+    Args:
+        primals (Tuple[Proxy]): Primal values.
+        tangents (Tuple[Proxy]): Tangent values.
+        trace (Trace): Trace of the function to be transformed.
+        detached (bool): Whether to detach the trace.
+        kwargs: Keyword arguments.
+
+    Raises:
+        AssertionError: If the JVP for keyword arguments is not implemented.
+
+    Returns:
+        Result of the JVP transform.
+    """
+    assert len(kwargs) == 0, "JVP for kwargs is not implemented"
 
     ctx = detached_trace() if detached else nullcontext()
     with ctx:
-        return jvp_func(*primals, *tangents)
+        primals_tangents_pairs = safe_zip(primals, tangents)
+        return eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
 
 
 jvp_call = prims.make_prim(Transforms.JvpOp, "jvp_call", partial(_jvp_call_metafunc, detached=True))
