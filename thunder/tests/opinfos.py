@@ -1137,7 +1137,7 @@ def unsqueeze_sample_generator(op, device, dtype, requires_grad, **kwargs):
 unsqueeze_opinfo = OpInfo(
     tlang.unsqueeze,
     sample_input_generator=unsqueeze_sample_generator,
-    jax_reference=jax.lax.expand_dims,
+    jax_reference=jax.lax.expand_dims if JAX_AVAILABLE else None,
 )
 shape_ops.append(unsqueeze_opinfo)
 
