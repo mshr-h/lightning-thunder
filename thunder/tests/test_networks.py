@@ -1,6 +1,7 @@
 from functools import partial, reduce
 from itertools import product
 import math
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -284,6 +285,104 @@ def test_nanogpt_block_functional(executor, device, dtype):
         block.mlp.c_fc.bias,
         block.mlp.c_proj.weight,
         block.mlp.c_proj.bias,
+    )
+
+    assert_close(torch_result, thunder_result)
+
+
+@dataclass
+class GPTConfig:
+    block_size: int = 1024
+    vocab_size: int = 50257
+    n_layer: int = 12
+    n_head: int = 12
+    n_embd: int = 768
+    dropout: float = 0.1
+
+
+# A version of the above with smaller values
+class GPTConfigTest:
+    block_size: int = 4
+    vocab_size: int = 256
+    n_layer: int = 4
+    n_head: int = 4
+    n_embd: int = 4
+    dropout: float = 0.1
+
+
+class NanoGPT(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        assert config.vocab_size is not None
+        assert config.block_size is not None
+        self.config = config
+
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte=nn.Embedding(config.vocab_size, config.n_embd),
+                wpe=nn.Embedding(config.block_size, config.n_embd),
+                drop=nn.Dropout(config.dropout),
+                h=nn.ModuleList([NanoGPTBlock(config) for _ in range(config.n_layer)]),
+                ln_f=nn.LayerNorm(config.n_embd),
+            )
+        )
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+    def forward(self, idx, targets=None):
+        device = idx.device
+        b, t = idx.size()
+        assert (
+            t <= self.config.block_size
+        ), f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+
+        return None
+
+        # pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+
+        # # forward the GPT model itself
+        # tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+        # pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (1, t, n_embd)
+        # x = self.transformer.drop(tok_emb + pos_emb)
+        # for block in self.transformer.h:
+        #     x = block(x)
+        # x = self.transformer.ln_f(x)
+        # logits = self.lm_head(x)
+
+        # # if we are given some desired targets also calculate the loss
+        # loss = None
+        # if targets is not None:
+        #     loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+
+        # return logits, loss
+
+
+def thunder_NanoGPT_forward_functional(idx, targets=None, *, cfg_block_size):
+    device = idx.device
+    b, t = idx.size()
+
+    assert t <= cfg_block_size, f"Cannot forward sequence of length {t}, block size is only {cfg_block_size}"
+
+    return None
+
+    # pos = ttorch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+
+
+@executors(dtypes=(thunder.float32,))
+def test_nanogpt_functional(executor, device, dtype):
+    tdtype = ttorch.torch_dtype(dtype)
+    make = partial(make_tensor, dtype=tdtype, device=device)
+
+    config = GPTConfigTest()
+    gpt = NanoGPT(config)
+
+    idx = make(4, 4, dtype=torch.int64, low=0, high=3)
+    # TODO: add targets
+    torch_result = gpt(idx)
+
+    thunder_fn = thunder.make_traced(thunder_NanoGPT_forward_functional, executor=executor)
+    thunder_result = thunder_fn(
+        idx,
+        cfg_block_size=config.block_size,
     )
 
     assert_close(torch_result, thunder_result)

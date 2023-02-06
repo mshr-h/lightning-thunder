@@ -2,6 +2,7 @@ import math
 from collections import namedtuple
 from functools import partial
 import numpy as np
+import itertools
 
 import pytest
 
@@ -1139,6 +1140,44 @@ opinfos.extend(reduction_ops)
 # Tensor Creation OpInfos
 #
 tensor_creation_ops = []
+
+
+def arange_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    # start, end, step
+    common_cases = (
+        (0, 1, 2),
+        (-5, -8, -1),
+        (-3, 11, 3),
+    )
+    extra_cases = ()
+
+    if datatypes.is_inexact_dtype(dtype):
+        # start, end, step
+        extra_cases = (
+            (5, 11, 0.3),
+            (3, -4.2, -1),
+        )
+
+    for start, end, step in itertools.chain(common_cases, extra_cases):
+        yield SampleInput(start=start, end=end, step=step, dtype=dtype, device=device)
+
+
+arange_opinfo = OpInfo(
+    ttorch.arange,
+    sample_input_generator=arange_sample_generator,
+    torch_reference=torch.arange,
+    dtypes=(datatypes.signedinteger, datatypes.unsignedinteger, datatypes.floating),
+    test_directives=(
+        # https://github.com/csarofeen/pytorch/issues/2370
+        DecorateInfo(
+            pytest.mark.xfail,
+            dtypes=(datatypes.bfloat16, datatypes.float16),
+            executors=("nvFuser",),
+        ),
+    ),
+)
+tensor_creation_ops.append(arange_opinfo)
+
 
 # TODO: match fill values to dtype
 def full_sample_generator(op, device, dtype, requires_grad, **kwargs):

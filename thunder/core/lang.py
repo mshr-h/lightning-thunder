@@ -2,6 +2,7 @@ from functools import reduce
 from numbers import Number
 from typing import Sequence
 import copy
+import math
 
 import thunder.core.dtypes as dtypes
 
@@ -20,6 +21,7 @@ __all__ = [
     # Data movement and transformation operations
     "maybe_convert_to_dtype",
     # Tensor creation operations
+    "arange",
     "full",
     "full_like",
     "uniform",
@@ -106,6 +108,58 @@ def maybe_convert_to_dtype(a, dtype, *, enforce_safe_casting=False):
 #
 # Tensor creation operations
 #
+
+
+def arange(*, start, step, stop, device, dtype=None):
+    # Validates inputs
+    # Checks that start, step, and stop are finite
+    # TODO: semantically an infinite step seems fine?
+    utils.check(math.isfinite(start), lambda: f"start={start} was non-finite")
+    utils.check(math.isfinite(step), lambda: f"step={step} was non-finite")
+    utils.check(math.isfinite(stop), lambda: f"stop={stop} was non-finite")
+
+    # Checks that start, step, and stop are not complex
+    utils.check(not isinstance(start, complex), lambda: f"start={start} was complex")
+    utils.check(not isinstance(step, complex), lambda: f"step={step} was complex")
+    utils.check(not isinstance(stop, complex), lambda: f"stop={stop} was complex")
+
+    # Checks that step makes progress
+    utils.check(
+        (step < 0 and stop < start) or (step > 0 and stop > start),
+        lambda: f"step={step} must make progress from start={start} to stop={stop}",
+    )
+
+    # (Optionally) infers dtype
+    # TODO: replace with default datatypes for integer and float
+    if dtype is None:
+        if all(tuple(isinstance(x, int) for x in (start, step, stop))):
+            dtype = dtypes.int64
+        else:
+            dtype = dtypes.float32
+
+    length = math.ceil((stop - start) / step)
+
+    if utils.is_exact_dtype(dtype):
+        return prims.iota(
+            length,
+            start=start,
+            step=step,
+            device=device,
+            dtype=dtype,
+        )
+
+    index = prims.iota(
+        length,
+        start=0,
+        step=1,
+        dtype=dtypes.int64,
+        device=device,
+    )
+
+    result = start + index * step
+    result = maybe_convert_to_dtype(result, dtype)
+    return result
+
 
 # TODO: add error checking
 def full(shape, fill_value, *, device, dtype=None):
