@@ -80,6 +80,8 @@ __all__ = [
     # Matmul prims
     "linear",
     "matmul",
+    # NN prims
+    "embedding",
 ]
 
 
@@ -133,6 +135,8 @@ class Ops(Enum):
     # Matmul prims
     LINEAR = auto()
     MATMUL = auto()
+    # NN prims
+    EMBEDDING = auto()
 
 
 # maps from operators to their meta functions
@@ -1143,3 +1147,28 @@ def matmul_meta(a, b):
 
 
 matmul = make_prim(Ops.MATMUL, "matmul", matmul_meta)
+
+#
+# NN prims
+#
+
+# TODO: these require review
+
+
+def embedding_meta(a, weight, padding_idx=-1, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False):
+    # TODO: canonicalize and validating padding idx with weight.shape[0]
+
+    if max_norm is not None:
+        raise NotImplemented
+
+    utils.check(a.dtype == dtypes.int64, lambda: f"Expected a.dtype={a.dtype} to be int64")
+    utils.check(weight.ndim == 2, lambda: f"Expected weight (weight.shape={weight.shape} to be a matrix)")
+
+    shape = list(a.shape)
+    shape.append(weight.shape[1])
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=shape, device=weight.device, dtype=weight.dtype)
+
+
+embedding = make_prim(Ops.EMBEDDING, "embedding", embedding_meta)

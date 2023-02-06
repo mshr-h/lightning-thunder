@@ -67,6 +67,7 @@ __all__ = [
     # NN Ops
     # TODO: move to torch.nn.functional
     "dropout",
+    "embedding",
     "softmax",
     # Norm Ops
     # Matmul Ops
@@ -847,6 +848,19 @@ def dropout(a, p=0.5):
     dropout_mask = _dropout_helper(a, 1 - p)
 
     return a * dropout_mask * scale
+
+
+def embedding(a, weight, padding_idx=None, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False):
+    padding_idx = padding_idx if padding_idx is not None else -1
+    return prims.embedding(
+        a,
+        weight,
+        padding_idx=padding_idx,
+        max_norm=max_norm,
+        norm_type=norm_type,
+        scale_grad_by_freq=scale_grad_by_freq,
+        sparse=sparse,
+    )
 
 
 # CompositeImplicitAutograd - don't register decomp
