@@ -343,17 +343,18 @@ def _nanogpt_mlp_helper(device, dtype, thunder_fn, torch_fn):
 
 # TODO: enable the following tests
 
-# @executors(dtypes=(thunder.float32,))
-# def test_nanogpt_mlp_functional_simplified(executor, device, dtype):
 
-#     def nanogpt_mlp_functional_simplified(a, c_fc_weight, c_proj_weight):
-#         b = torch.nn.functional.linear(a, c_fc_weight)
-#         d = torch.nn.functional.linear(b, c_proj_weight)
-#         e = torch.nn.functional.dropout(d)
-#         return e
+@executors(dtypes=(thunder.float32,))
+def test_nanogpt_mlp_functional_simplified(executor, device, dtype):
+    def nanogpt_mlp_functional_simplified(a, c_fc_weight, c_proj_weight):
+        b = torch.nn.functional.linear(a, c_fc_weight)
+        d = torch.nn.functional.linear(b, c_proj_weight)
+        e = torch.nn.functional.dropout(d, p=0.0)
+        return e
 
-#     thunder_fn = thunder.make_traced(nanogpt_mlp_functional_simplified, executor=executor, _preprocess=True)
-#     _nanogpt_mlp_helper(device, dtype, thunder_fn, nanogpt_mlp_functional_simplified)
+    thunder_fn = thunder.make_traced(nanogpt_mlp_functional_simplified, executor=executor, _preprocess=True)
+    _nanogpt_mlp_helper(device, dtype, thunder_fn, nanogpt_mlp_functional_simplified)
+
 
 # @executors(dtypes=(thunder.float32,))
 # def test_nanogpt_mlp_functional_inlined(executor, device, dtype):
