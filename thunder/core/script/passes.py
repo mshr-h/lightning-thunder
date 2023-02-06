@@ -113,7 +113,25 @@ def find_method_through_phi_parent(fn_value):
         parent_value, attr_lookups = find_method_through_phi_parent(fn_value.parent)
         attr_lookups.append(fn_value.name)
         return parent_value, attr_lookups
+    if fn_value.node is not None and fn_value.node.i.opname == "BINARY_SUBSCR" and fn_value.node.inputs[1].is_const:
+        parent_value, attr_lookups = find_method_through_phi_parent(fn_value.node.inputs[0])
+        attr_lookups.append(f"[{fn_value.node.inputs[1].value}]")
+        return parent_value, attr_lookups
+
     return fn_value, []
+
+
+def find_and_evaluate_method_through_phi_parent(v):
+    fn_parent_value, attr_lookups = find_method_through_phi_parent(v)
+    if fn_parent_value.value is None:
+        return None
+    fn_value = fn_parent_value.value
+    for al in attr_lookups:
+        if al.startswith("["):
+            fn_value = fn_value[int(al[1:-1])]  # non-int lookups?
+        else:
+            fn_value = getattr(fn_value, al)
+    return fn_value
 
 
 def inline_method_call(gr, n):  # criterion?
@@ -127,13 +145,9 @@ def inline_method_call(gr, n):  # criterion?
             break
     assert found_block
     if n.i.opname == "CALL_METHOD":
-        fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
-        if fn_parent_value.value is None:
+        fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
+        if fn_value is None:
             raise NotImplementedError("cannot inline non-explicit function")
-
-        fn_value = fn_parent_value.value
-        for al in attr_lookups:
-            fn_value = getattr(fn_value, al)
 
         ## TODO: value for self arg in Method calls?
         ### in general: What is with callables here?
@@ -151,19 +165,19 @@ def inline_method_call(gr, n):  # criterion?
         if inspect.isbuiltin(fn_value):
             raise NotImplementedError("cannot inline built-in (C-implemented) function")
     elif n.i.opname == "CALL_FUNCTION":
-        fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
-        if fn_parent_value.value is None:
+        fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
+        if fn_value is None:
             raise NotImplementedError("cannot inline non-explicit function")
 
-        fn_value = fn_parent_value.value
-        for al in attr_lookups:
-            fn_value = getattr(fn_value, al)
-
-        if not isinstance(fn_value, types.FunctionType):
-            raise NotImplementedError(f"inlining {n}")
-
-        mod1 = None
-        value_for_self1 = None
+        if isinstance(fn_value, torch.nn.Module):
+            mod1 = fn_value
+            value_for_self1 = n.inputs[0]
+            fn_value = fn_value.forward
+        else:
+            if not isinstance(fn_value, types.FunctionType):
+                raise NotImplementedError(f"inlining {n}")
+            mod1 = None
+            value_for_self1 = None
     else:
         raise NotImplementedError(f"inlining {n}")
 
@@ -197,8 +211,10 @@ def inline_method_call(gr, n):  # criterion?
     gr.blocks[i_bl + 1 : i_bl + 1] = gr1.blocks
 
     # TODO Error checking parameters
-    if gr1.ismethod:
+    if gr1.ismethod and n.i.opname == "CALL_METHOD":
         call_args = [value_for_self1, *n.inputs[2:]]
+    elif gr1.ismethod and n.i.opname == "CALL_FUNCTION":
+        call_args = [value_for_self1, *n.inputs[1:]]
     elif n.i.opname == "CALL_METHOD":
         call_args = n.inputs[2:]
     elif n.i.opname == "CALL_FUNCTION":
@@ -223,17 +239,11 @@ def inline_submodule_calls(gr):
     # inlines submodule calls
     # TODO: recursively and not from nested structures (ModuleList etc.)
     changed = False
+    gr.ensure_links()
     for bl in gr.blocks[:]:
         for n in bl.nodes[:]:
-            if n.i.opname == "CALL_METHOD":
-                fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
-                if fn_parent_value.value is None:
-                    continue
-
-                fn_value = fn_parent_value.value
-                for al in attr_lookups:
-                    fn_value = getattr(fn_value, al)
-
+            if n.i.opname in {"CALL_METHOD", "CALL_FUNCTION"}:
+                fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
                 if isinstance(fn_value, torch.nn.Module):
                     inline_method_call(gr, n)
                     changed = True
@@ -358,18 +368,7 @@ def find_blocks_of_for(gr, for_block):
 
 
 def unroll_for_over_modules(gr, for_iter_node):
-    for bl in gr.blocks:
-        bl.graph = gr
-        for n in bl.nodes:
-            n.block = bl
-            inps = set(n.inputs)
-            for o in n.outputs:
-                if o not in inps:  # not for inplace
-                    o.block = bl
-                    o.node = n
-        for i in bl.block_inputs:
-            i.block = bl
-
+    gr.ensure_links()
     get_iter_node = for_iter_node.inputs[0].values[0].node
     assert get_iter_node.i.opname == "GET_ITER"
 
@@ -460,9 +459,7 @@ def unroll_for_over_modules(gr, for_iter_node):
         else:
             for_iter_node.outputs[0].name += f"_0"
 
-    for bl in gr.blocks:
-        for n in bl.nodes:
-            n.block = bl
+    gr.ensure_links()
 
     fixup_data = []
     for idx, (nbls, td) in enumerate(unroll_blocks):
@@ -517,17 +514,7 @@ def unroll_for_over_modules(gr, for_iter_node):
 
 
 def find_and_unroll_for_loop(gr):
-    for bl in gr.blocks:
-        bl.graph = gr
-        for n in bl.nodes:
-            n.block = bl
-            inps = set(n.inputs)
-            for o in n.outputs:
-                if o not in inps:  # not for inplace
-                    o.block = bl
-                    o.node = n
-        for i in bl.block_inputs:
-            i.block = bl
+    gr.ensure_links()
 
     for bl in gr.blocks[:]:
         for n in bl.nodes[:]:

@@ -61,7 +61,7 @@ class Value:
     def __init__(
         self,
         *,
-        n=None,
+        node=None,
         nr=None,
         typ=None,
         value=None,
@@ -71,7 +71,7 @@ class Value:
         is_const=False,
         is_function_arg=False,
     ):
-        self.n = n
+        self.node = node
         self.nr = nr
         self.typ = typ if typ is not None or value is None else type(value)
         self.value = value
@@ -99,7 +99,7 @@ class Value:
             else:
                 parent = parent.clone(translation_dict=translation_dict)
         v = Value(
-            n=self.n,
+            node=self.node,
             nr=self.nr,
             typ=self.typ,
             value=self.value,
@@ -243,8 +243,8 @@ class Node:
 
     def __str__(self):
         # i.i.offset // 2, i.i.opname, i.i.arg, "(", i.i.argval, ")"
-        if self.i.opname == "CALL_METHOD":
-            return f"CALL_METHOD({self.inputs})"
+        if self.i.opname in {"CALL_METHOD", "CALL_FUNCTION"}:
+            return f"{self.i.opname}({self.inputs})"
         return f"{self.i.opname} {self.i.arg} ({self.i.argval})"  # str(self.i)
 
     def __repr__(self):
@@ -317,7 +317,20 @@ class Graph:
 
     def nodes(self):
         for b in self.blocks:
-            yield from self.nodes
+            yield from b.nodes
+
+    def ensure_links(self):
+        for bl in self.blocks:
+            bl.graph = self
+            for n in bl.nodes:
+                n.block = bl
+                inps = set(n.inputs)
+                for o in n.outputs:
+                    if o not in inps:  # not for inplace
+                        o.block = bl
+                        o.node = n
+            for i in bl.block_inputs:
+                i.block = bl
 
     def print(self):
         value_counter = 1
@@ -424,6 +437,8 @@ def make_dot(gr, format="png", add_names=False):
                 label = n.i.opname
                 if n.i.opname == "CALL_METHOD":
                     label = "CM " + n.inputs[0].name
+                elif n.i.opname == "CALL_FUNCTION" and n.inputs[0].name:
+                    label = "CF " + n.inputs[0].name
                 sub_dot.node(f"i {i_bl} {i_n}", label, shape="box")
                 for o in n.outputs:
                     if o not in value_idxes:

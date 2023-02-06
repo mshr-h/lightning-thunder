@@ -247,11 +247,11 @@ def make_ssa(gr, verbose=False):
             elif i.opname == "LOAD_CONST":
                 outputs = [Value(value=gr.method.__code__.co_consts[i.arg], is_const=True)]
             elif i.opname == "CALL_METHOD":
-                outputs = [Value(n=n, nr=k) for k in range(push)]
+                outputs = [Value(node=n, nr=k) for k in range(push)]
                 new_nodes.append(n)
             elif i.opname == "FOR_ITER":
                 # JUMP TARGETS
-                outputs = [inputs[0], Value(n=n, name=".for_iter_item")]
+                outputs = [inputs[0], Value(node=n, name=".for_iter_item")]
                 new_nodes.append(n)
             elif i.opname in {
                 "POP_JUMP_IF_FALSE",
@@ -270,7 +270,7 @@ def make_ssa(gr, verbose=False):
             else:
                 if verbose:
                     print("unhandled", i)
-                outputs = [Value(n=n, nr=k) for k in range(push)]
+                outputs = [Value(node=n, nr=k) for k in range(push)]
                 new_nodes.append(n)
             if n.jump_targets is not None:
                 all_block_outputs = set(local_variables)

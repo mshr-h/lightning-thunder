@@ -1,6 +1,7 @@
 import sys
 from functools import partial
 import math
+import types
 
 import pytest
 import torch
@@ -194,6 +195,68 @@ def test_inline_submodule_and_convert_to_thunder():
     fn = thunder.core.script.python_ir.generate_function(gr)
 
     ### now trace fn and check things work...
+
+
+def test_nanogpt_inlining_unrolling():
+    m = nanogpt_model.GPT(nanogpt_model.GPTConfig)
+
+    gr = thunder.core.script.frontend.acquire_method(m.forward, verbose=False)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+    thunder.core.script.passes.unroll_for_loops_and_inline_modules(gr)
+
+    ## Check on the graph
+    thunder.core.script.graph.check_graph(gr)
+
+    # these will likely change specialization, more inlining, ...
+    # but lets check when it happens
+    assert len(gr.blocks) == 5
+    assert sum(len(bl.nodes) for bl in gr.blocks) == 580
+
+    # has everything been inlined/unrolled?
+    funcs = set(
+        thunder.core.script.passes.find_and_evaluate_method_through_phi_parent(n.inputs[0])  # for function calls
+        or n.inputs[0].name  # for Tensor methods (but we don't check that)
+        or n.inputs[0].node.i.opname  # for the oddball assertion instantiation
+        for n in gr.nodes()
+        if n.i.opname in {"CALL_METHOD", "CALL_FUNCTION", "CALL_FUNCTION_KW"}
+    )
+    allowed_funcs = {
+        float,
+        math.sqrt,
+        ## This might eventually go (i.e. be inlined as well)...
+        nanogpt_model.new_gelu,
+        ## PyTorch functions
+        torch.arange,
+        torch.nn.functional.cross_entropy,
+        torch.nn.functional.dropout,
+        torch.nn.functional.embedding,
+        torch.nn.functional.layer_norm,
+        torch.nn.functional.linear,
+        torch.nn.functional.softmax,
+        ## these should be Tensor methods
+        "contiguous",
+        "masked_fill",
+        "size",
+        "split",
+        "transpose",
+        "unsqueeze",
+        "view",
+        ## there is an oddball (handled above) from instantiating the AssertionError
+        "LOAD_ASSERTION_ERROR",
+    }
+    assert not funcs - allowed_funcs
+
+    fn = thunder.core.script.python_ir.generate_function(gr)
+    x = torch.randint(0, 255, (5, 5))
+
+    torch.manual_seed(5)
+    o = fn(m, x, None)
+    torch.manual_seed(5)
+
+    o2 = m.forward(x)
+
+    assert_close(o[0], o2[0])
 
 
 def bar(a, b):
