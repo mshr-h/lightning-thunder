@@ -30,6 +30,7 @@ __all__ = [
     "convert_element_type",
     # Tensor creation prims
     "full",
+    "iota",
     # TODO: review randomness prims
     "uniform",
     # Shape prims
@@ -87,6 +88,7 @@ class Ops(Enum):
     CONVERT_ELEMENT_TYPE = auto()
     # Tensor creation prims
     FULL = auto()
+    IOTA = auto()
     UNIFORM = auto()
     # Shape prims
     BROADCAST_IN_DIM = auto()
@@ -258,15 +260,29 @@ convert_element_type = make_prim(Ops.CONVERT_ELEMENT_TYPE, "convert_element_type
 
 # TODO: add some architecture for constructing tensor creation prims
 # TODO: add device support to tensor proxies
-def _full_meta(shape, fill_value, *, dtype, device):
+def _full_meta(shape, fill_value, *, device, dtype):
     proxy_name = get_trace().make_proxy_name()
     return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
 
 
 full = make_prim(Ops.FULL, "full", _full_meta)
 
+
+def _iota_meta(length, *, start, step, device, dtype):
+    utils.check(utils.is_exact_dtype(dtype), lambda: f"dtype={dtype} was not an exact dtype")
+    utils.check(not utils.is_boolean_dtype(dtype), lambda: f"dtype={dtype} was not a non-boolean dtype")
+    utils.check(length >= 0, lambda: f"length={length} was not weakly positive")
+
+    shape = () if length == 0 else (length,)
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
+
+
+iota = make_prim(Ops.IOTA, "iota", _iota_meta)
+
 # TODO: should the uniform prim include minval maxval or always be [0, 1)?
-def _uniform_meta(shape, minval, maxval, *, dtype, device):
+def _uniform_meta(shape, minval, maxval, *, device, dtype):
     proxy_name = get_trace().make_proxy_name()
     return TensorProxy(name=proxy_name, shape=shape, device=device, dtype=dtype)
 

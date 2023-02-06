@@ -96,6 +96,11 @@ def is_tensor(a):
     return isinstance(a, torch.Tensor)
 
 
+def iota_helper(length, *, start, step, device, dtype):
+    end = start + length * step
+    return torch.arange(start=start, step=step, end=end, device=device, dtype=dtype)
+
+
 def uniform_helper(shape, minval=0.0, maxval=1.0, *, device, dtype):
     t = torch.empty(shape, device=device, dtype=dtype)
     t.uniform_(minval, maxval)
@@ -128,6 +133,7 @@ ops_to_torch_ops_map = {
     prims.Ops.CONVERT_ELEMENT_TYPE: convert_element_type,
     # Tensor creation prims
     prims.Ops.FULL: "torch.full",
+    prims.Ops.IOTA: iota_helper,
     prims.Ops.UNIFORM: uniform_helper,
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,

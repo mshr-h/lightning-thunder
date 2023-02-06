@@ -20,6 +20,7 @@ __all__ = [
     "ctx",
     "TorchLangCtx",
     # Tensor creation operations
+    "arange",
     "full",
     "full_like",
     "uniform",
@@ -270,6 +271,9 @@ class TorchLangCtx:
 #
 # Tensor Creation Ops
 #
+def arange(start, end, step=1, *, device="cpu", dtype=None):
+    return tlang.arange(start=start, step=step, stop=end, device=device, dtype=dtype)
+
 
 # TODO: check these signatures
 def full(shape, fill_value, *, device, dtype=None):
