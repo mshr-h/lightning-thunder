@@ -216,7 +216,7 @@ def make_symbol(id, name, outputs, args, kwargs):
     return symbol
 
 
-def eval_meta_and_record_symbol(meta, id, name, *args, **kwargs):
+def eval_meta_and_record_symbol_fn(meta, id, name, *args, **kwargs):
     """Returns the result of the meta function and records a corresponding Symbol in the current trace.
 
     Args:
@@ -229,10 +229,17 @@ def eval_meta_and_record_symbol(meta, id, name, *args, **kwargs):
     Returns:
         The result of the meta function.
     """
-    result = meta(*args, **kwargs)
-    sym = make_symbol(id, name, result, args, kwargs)
-    get_trace().add_symbol(sym)
-    return result
+
+    def _fn(*args, **kwargs):
+        result = meta(*args, **kwargs)
+        sym = make_symbol(id, name, result, args, kwargs)
+        get_trace().add_symbol(sym)
+        return result
+
+    # TODO: update more of the signature
+    _fn.__name__ = name
+
+    return _fn
 
 
 def make_prim(id, name, meta):
@@ -243,7 +250,7 @@ def make_prim(id, name, meta):
     ops_to_pretty_name_map[id] = name
 
     # TODO: update the signature
-    return partial(eval_meta_and_record_symbol, meta, id, name)
+    return eval_meta_and_record_symbol_fn(meta, id, name)
 
 
 #

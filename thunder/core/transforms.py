@@ -29,7 +29,7 @@ def symbol_to_eval(symbol: prims.Symbol):
     if prim_func is not None:
         return prim_func
 
-    return partial(prims.eval_meta_and_record_symbol, meta_func, symbol.op, symbol.name)
+    return prims.eval_meta_and_record_symbol_fn(meta_func, symbol.op, symbol.name)
 
 
 def eval_trace(trace, *args, symbol_mapper=symbol_to_eval, **kwargs):
