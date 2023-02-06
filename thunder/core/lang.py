@@ -32,6 +32,7 @@ __all__ = [
     "reshape",
     "slice_in_dim",
     "transpose",
+    "unsqueeze",
     # Elemenwise unary operations
     "abs",
     "acos",
@@ -191,7 +192,8 @@ def uniform(shape, minval=0.0, maxval=1.0, *, dtype, device):
 # Shape operations
 #
 
-
+# Expands a to the specified shape, possibly adding new dimensions and expanding
+#   dimensions of length 1 to any length
 def expand(a, *shape):
     shape = utils.extract_shape_from_varargs(shape)
 
@@ -283,6 +285,39 @@ def slice_in_dim(a, start_index, limit_index, stride=1, dim=0):
 def transpose(a, permutation):
     permutation = utils.canonicalize_dims(a.ndim, permutation)
     return prims.transpose(a, permutation)
+
+
+# Unsqueezes a, adding zero or more dimensions of length 1
+# Added dimensions are specified by their position in the final tensor
+# Based on https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.expand_dims.html
+# NOTE: the dimensions do not have to be specified in any order
+def unsqueeze(a, dims):
+    # Short-circuits if dims is empty
+    if len(dims) == 0:
+        return a
+
+    final_rank = a.ndim + len(dims)
+    # Canonicalizes and sorts dimensions
+    dims = sorted(utils.canonicalize_dims(final_rank, dims))
+
+    # Validates that (canonicalized) dimensions are unique
+    utils.check_no_duplicates(dims)
+
+    # Constructs expanded (unsqueezed) shape and determines final position of original dims
+    shape = []
+    broadcast_dims = []
+    dims_idx = 0
+    a_idx = 0
+    for idx in range(final_rank):
+        if dims_idx < len(dims) and dims[dims_idx] == idx:
+            shape.append(1)
+            dims_idx += 1
+        else:
+            shape.append(a.shape[a_idx])
+            broadcast_dims.append(a_idx + dims_idx)
+            a_idx += 1
+
+    return prims.broadcast_in_dim(a, shape, broadcast_dims)
 
 
 def compute_broadcast_shape(*_shapes):

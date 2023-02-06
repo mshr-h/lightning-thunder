@@ -122,12 +122,17 @@ def _all_executors():
     try:
         import torch
 
-        if LooseVersion(torch.__version__) >= "2.0":
+        try:
             import nvfuser
-        else:
-            import torch._C._nvfuser
 
-        executors.append(nvFuser())
+            executors.append(nvFuser())
+        except ImportError:
+            try:
+                import torch._C._nvfuser
+
+                executors.append(nvFuser())
+            except ImportError:
+                pass
     except ModuleNotFoundError:
         pass
 
@@ -222,6 +227,9 @@ class ops:
             datatypes.resolve_dtypes(supported_dtypes) if supported_dtypes is not None else datatypes.all_dtypes
         )
 
+        if supported_dtypes == NOTHING:
+            self.supported_dtypes = NOTHING
+
         # Acquires the caller's global scope
         if scope is None:
             previous_frame = inspect.currentframe().f_back
@@ -246,7 +254,7 @@ class ops:
 
                 # TODO: pass device_type to dtypes()
                 dtypes = opinfo.dtypes()
-                if self.supported_dtypes is not None:
+                if self.supported_dtypes is not (None,):
                     dtypes = dtypes.intersection(self.supported_dtypes)
 
                 for dtype in dtypes:

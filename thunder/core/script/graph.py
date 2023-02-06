@@ -4,6 +4,8 @@
 import copy
 import inspect
 
+from .python_ir_data import jump_instructions, stack_effect_detail, unconditional_jump_names
+
 
 class NULL:
     """marker for non-existant object."""
@@ -59,7 +61,7 @@ class Value:
     def __init__(
         self,
         *,
-        n=None,
+        node=None,
         nr=None,
         typ=None,
         value=None,
@@ -69,7 +71,7 @@ class Value:
         is_const=False,
         is_function_arg=False,
     ):
-        self.n = n
+        self.node = node
         self.nr = nr
         self.typ = typ if typ is not None or value is None else type(value)
         self.value = value
@@ -97,7 +99,7 @@ class Value:
             else:
                 parent = parent.clone(translation_dict=translation_dict)
         v = Value(
-            n=self.n,
+            node=self.node,
             nr=self.nr,
             typ=self.typ,
             value=self.value,
@@ -135,18 +137,19 @@ class Value:
 
 class PhiValue(Value):
     # node?
-    def __init__(self, values, jump_sources, block):
+    def __init__(self, values, jump_sources, block, _unfinished_clone=False):
         super().__init__()
-        self._unfinished_clone = False
+        self._unfinished_clone = _unfinished_clone
         self.block = block
         self._set_values_jump_sourcess(values, jump_sources)
 
     def _set_values_jump_sourcess(self, values, jump_sources):
         assert len(values) == len(jump_sources)
         self.values = list(values)
-        for v in self.values:
-            if v is not None:
-                v.phi_values.append(self)
+        if not self._unfinished_clone:
+            for v in self.values:
+                if v is not None:
+                    v.phi_values.append(self)
         self.jump_sources = jump_sources[:]
 
     def clone(self, translation_dict=None):
@@ -157,8 +160,7 @@ class PhiValue(Value):
             translation_dict = {}
         if self in translation_dict:
             return translation_dict[self]
-        v = PhiValue(self.values, self.jump_sources, translation_dict[self.block])
-        v._unfinished_clone = True
+        v = PhiValue(self.values, self.jump_sources, translation_dict[self.block], _unfinished_clone=True)
         translation_dict[self] = v
         return v
 
@@ -227,10 +229,22 @@ class Node:
         translation_dict[self] = n2
         return n2
 
+    def set_jump_target(self, jt, idx=None):
+        is_jump = (self.i.opname not in unconditional_jump_names) or (idx == 1) or (idx is None and self.jump_targets)
+        jt_plus = (stack_effect_detail(self.i.opname, self.i.arg, jump=False), jt)
+        if idx is None:
+            assert len(self.jump_targets) <= 1
+            self.jump_targets.append(jt_plus)
+        else:
+            old_jt = self.jump_targets[idx][1]
+            old_jt.jump_sources.remove(self)
+            self.jump_targets[idx] = jt_plus
+        jt.jump_sources.append(self)
+
     def __str__(self):
         # i.i.offset // 2, i.i.opname, i.i.arg, "(", i.i.argval, ")"
-        if self.i.opname == "CALL_METHOD":
-            return f"CALL_METHOD({self.inputs})"
+        if self.i.opname in {"CALL_METHOD", "CALL_FUNCTION"}:
+            return f"{self.i.opname}({self.inputs})"
         return f"{self.i.opname} {self.i.arg} ({self.i.argval})"  # str(self.i)
 
     def __repr__(self):
@@ -249,7 +263,7 @@ class Block:
         self.jump_sources = []
         self.nodes = []
         self.block_inputs = []
-        self.block_outputs = {}
+        self.block_outputs = set()
 
     def __str__(self):
         return "\n".join([f"  Block (reached from {self.jump_sources})"] + ["    " + str(n) for n in self.nodes])
@@ -303,7 +317,20 @@ class Graph:
 
     def nodes(self):
         for b in self.blocks:
-            yield from self.nodes
+            yield from b.nodes
+
+    def ensure_links(self):
+        for bl in self.blocks:
+            bl.graph = self
+            for n in bl.nodes:
+                n.block = bl
+                inps = set(n.inputs)
+                for o in n.outputs:
+                    if o not in inps:  # not for inplace
+                        o.block = bl
+                        o.node = n
+            for i in bl.block_inputs:
+                i.block = bl
 
     def print(self):
         value_counter = 1
@@ -410,6 +437,8 @@ def make_dot(gr, format="png", add_names=False):
                 label = n.i.opname
                 if n.i.opname == "CALL_METHOD":
                     label = "CM " + n.inputs[0].name
+                elif n.i.opname == "CALL_FUNCTION" and n.inputs[0].name:
+                    label = "CF " + n.inputs[0].name
                 sub_dot.node(f"i {i_bl} {i_n}", label, shape="box")
                 for o in n.outputs:
                     if o not in value_idxes:
@@ -468,7 +497,7 @@ def clone_blocks(blocks_to_clone: list[Block], translation_dict=None):
         bl.nodes = [n.clone(translation_dict=translation_dict) for n in obl.nodes]
     for obl in blocks_todo:
         bl = translation_dict[obl]
-        bl.jump_sources = [translation_dict.get(js, js) for js in obl.jump_sources]
+        bl.jump_sources = [translation_dict[js] for js in obl.jump_sources if js in translation_dict]
         for i in bl.block_inputs:
             i.post_process_clone(translation_dict=translation_dict)
     return [translation_dict[bl] for bl in blocks_to_clone], translation_dict
@@ -511,7 +540,9 @@ def check_graph(gr):
             if is_attr:
                 for v in o.phi_values:
                     phi_value_refs[v].append((o, None))
-            assert o_or_parent in known_values, f"{o_or_parent} (from {o}) unknown {known_values=}"
+            assert (
+                o_or_parent in known_values or o_or_parent.is_const or o_or_parent.is_global
+            ), f"{o_or_parent} (from {o}) unknown {known_values=}"
 
     for bl in gr.blocks:
         for i in bl.block_inputs:
@@ -519,7 +550,7 @@ def check_graph(gr):
             assert len(i.jump_sources) == len(i.values)
             # assert i.block is bl
             pvr = phi_value_refs.get(i, [])
-            assert len([v for v in i.values if not v.is_function_arg]) == len(
+            assert len([v for v in i.values if not (v.is_function_arg or v.is_const or v.is_global)]) == len(
                 pvr
             ), f"phi value {repr(i)} source count {len(i.values)} does not match sets {pvr}"
             if i in phi_value_refs:  # not for function args in first block
@@ -528,3 +559,24 @@ def check_graph(gr):
                 assert i in v.phi_values, f"phi value {repr(i)} not in phi_values of {repr(v)}"
 
     assert not phi_value_refs, f"phi_values not found {phi_value_refs}"
+
+    jump_targets = {}
+    jump_targets[None] = {gr.blocks[0]}  # function entry point
+
+    for bl in gr.blocks:
+        for n in bl.nodes[:-1]:
+            assert not n.jump_targets
+        n = bl.nodes[-1]
+        if n.i.opname in {"RETURN_VALUE", "RAISE_VARARGS", "RERAISE"}:
+            assert not n.jump_targets
+        else:
+            assert 1 <= len(n.jump_targets) <= 2, f"{n} should have one or two ump targets, but has {n.jump_targets}"
+            jump_targets[n] = {jt for _, jt in n.jump_targets}
+            assert len(n.jump_targets) == len(jump_targets[n])
+
+    for bl in gr.blocks:
+        for js in bl.jump_sources:
+            js_jt = jump_targets[js]
+            js_jt.remove(bl)
+
+    assert not any(jump_targets.values())

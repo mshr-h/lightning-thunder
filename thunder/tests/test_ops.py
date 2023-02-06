@@ -17,6 +17,25 @@ from .opinfos import opinfos
 # TODO: add error inputs tests (like test_elementwise_binary_prim_shape_mismatch and test_elementwise_binary_prim_dtype_mismatch)
 
 
+def snippet_errors(op, sample, ex_type):
+    ex = None
+    try:
+        op(*sample.args, **sample.kwargs)
+    except Exception as e:
+        ex = e
+
+    assert ex is not None, f"Expected an exception"
+    assert ex_type is type(ex), f"Expected an exception with type {ex_type}, but found ex={ex}"
+
+
+@ops(tuple(op for op in opinfos if op.error_input_generator is not None))
+def test_errors(op, device, _, executor):
+    for sample, ex_type in op.error_inputs(device):
+        result = run_snippet(snippet_errors, op, device, None, executor.make_callable(op.op), sample, ex_type)
+        if result is not None:
+            return result
+
+
 # Snippets run a single test using a single sample
 # TODO: should snippets be able to access the original opinfo? -- No?
 def snippet_torch_consistency(op, torch_op, sample):

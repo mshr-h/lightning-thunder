@@ -179,6 +179,8 @@ ops_to_torch_ops_map = {
     # Matmul prims
     prims.Ops.LINEAR: "torch.nn.functional.linear",
     prims.Ops.MATMUL: "torch.matmul",
+    # NN prims
+    prims.Ops.EMBEDDING: "torch.nn.functional.embedding",
 }
 
 # NOTE: this class is here to help with proper printing

@@ -31,6 +31,7 @@ __all__ = [
     "split",
     "tensor_split",
     "transpose",
+    "unsqueeze",
     "view",
     # Elementwise Unary Ops
     "abs",
@@ -66,6 +67,7 @@ __all__ = [
     # NN Ops
     # TODO: move to torch.nn.functional
     "dropout",
+    "embedding",
     "softmax",
     # Norm Ops
     # Matmul Ops
@@ -184,6 +186,9 @@ class TorchLangCtx:
 
     def transpose(self, a, dim0, dim1):
         return _transpose_disambiguator(a, dim0, dim1)
+
+    def unsqueeze(self, a, dim):
+        return _unsqueeze_disambiguator(a, dim)
 
     def view(self, a, *shape):
         shape = utils.extract_shape_from_varargs(shape)
@@ -459,6 +464,14 @@ def transpose(a, dim0, dim1):
     permutation[dim0] = dim1
     permutation[dim1] = dim0
     return tlang.transpose(a, permutation)
+
+
+def _unsqueeze_disambiguator(*args, **kwargs):
+    return unsqueeze(*args, **kwargs)
+
+
+def unsqueeze(a, dim):
+    return tlang.unsqueeze(a, (dim,))
 
 
 def _view_disambiguator(*args, **kwargs):
@@ -835,6 +848,19 @@ def dropout(a, p=0.5):
     dropout_mask = _dropout_helper(a, 1 - p)
 
     return a * dropout_mask * scale
+
+
+def embedding(a, weight, padding_idx=None, max_norm=None, norm_type=2.0, scale_grad_by_freq=False, sparse=False):
+    padding_idx = padding_idx if padding_idx is not None else -1
+    return prims.embedding(
+        a,
+        weight,
+        padding_idx=padding_idx,
+        max_norm=max_norm,
+        norm_type=norm_type,
+        scale_grad_by_freq=scale_grad_by_freq,
+        sparse=sparse,
+    )
 
 
 # CompositeImplicitAutograd - don't register decomp

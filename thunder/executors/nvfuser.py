@@ -21,7 +21,7 @@ from packaging.version import Version
 # Imports nvFuser
 # NOTE: nvFuser API changed after PyTorch 1.13
 nvfuser_version = Version("0.0.0")
-if LooseVersion(torch.__version__) >= "2.0":
+try:
     import nvfuser
 
     if hasattr(nvfuser, "version"):
@@ -32,12 +32,13 @@ if LooseVersion(torch.__version__) >= "2.0":
 
     nvTensor = nvfuser._C.Tensor
     nvNumber = nvfuser._C.Scalar
-else:
+except ImportError:
     import torch._C._nvfuser as nvfuser
     from torch._C._nvfuser import DataType, Fusion, FusionDefinition
 
     nvTensor = torch._C._nvfuser.Tensor
     nvNumber = torch._C._nvfuser.Scalar
+
 
 __all__ = [
     "nvFuserCtx",

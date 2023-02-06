@@ -9,7 +9,8 @@ import thunder
 from thunder.langs.torch import _torch_to_thunder_complete_map
 
 from .frontend import acquire_method, make_single_return, make_ssa
-from .graph import Block, Node, PhiValue, replace_values
+from .graph import Block, clone_blocks, Node, PhiValue, replace_values, Value
+from .python_ir import get_instruction
 
 
 def specify_inputs(gr, inps):
@@ -112,25 +113,41 @@ def find_method_through_phi_parent(fn_value):
         parent_value, attr_lookups = find_method_through_phi_parent(fn_value.parent)
         attr_lookups.append(fn_value.name)
         return parent_value, attr_lookups
+    if fn_value.node is not None and fn_value.node.i.opname == "BINARY_SUBSCR" and fn_value.node.inputs[1].is_const:
+        parent_value, attr_lookups = find_method_through_phi_parent(fn_value.node.inputs[0])
+        attr_lookups.append(f"[{fn_value.node.inputs[1].value}]")
+        return parent_value, attr_lookups
+
     return fn_value, []
+
+
+def find_and_evaluate_method_through_phi_parent(v):
+    fn_parent_value, attr_lookups = find_method_through_phi_parent(v)
+    if fn_parent_value.value is None:
+        return None
+    fn_value = fn_parent_value.value
+    for al in attr_lookups:
+        if al.startswith("["):
+            fn_value = fn_value[int(al[1:-1])]  # non-int lookups?
+        else:
+            fn_value = getattr(fn_value, al)
+    return fn_value
 
 
 def inline_method_call(gr, n):  # criterion?
     found_block = False
     for i_bl, bl in enumerate(gr.blocks):
         for i_n, n1 in enumerate(bl.nodes):
-            if n1 == n:  # is?
+            if n1 is n:  # is?
                 found_block = True
                 break
+        if found_block:
+            break
     assert found_block
     if n.i.opname == "CALL_METHOD":
-        fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
-        if fn_parent_value.value is None:
+        fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
+        if fn_value is None:
             raise NotImplementedError("cannot inline non-explicit function")
-
-        fn_value = fn_parent_value.value
-        for al in attr_lookups:
-            fn_value = getattr(fn_value, al)
 
         ## TODO: value for self arg in Method calls?
         ### in general: What is with callables here?
@@ -148,19 +165,19 @@ def inline_method_call(gr, n):  # criterion?
         if inspect.isbuiltin(fn_value):
             raise NotImplementedError("cannot inline built-in (C-implemented) function")
     elif n.i.opname == "CALL_FUNCTION":
-        fn_parent_value, attr_lookups = find_method_through_phi_parent(n.inputs[0])
-        if fn_parent_value.value is None:
+        fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
+        if fn_value is None:
             raise NotImplementedError("cannot inline non-explicit function")
 
-        fn_value = fn_parent_value.value
-        for al in attr_lookups:
-            fn_value = getattr(fn_value, al)
-
-        if not isinstance(fn_value, types.FunctionType):
-            raise NotImplementedError(f"inlining {n}")
-
-        mod1 = None
-        value_for_self1 = None
+        if isinstance(fn_value, torch.nn.Module):
+            mod1 = fn_value
+            value_for_self1 = n.inputs[0]
+            fn_value = fn_value.forward
+        else:
+            if not isinstance(fn_value, types.FunctionType):
+                raise NotImplementedError(f"inlining {n}")
+            mod1 = None
+            value_for_self1 = None
     else:
         raise NotImplementedError(f"inlining {n}")
 
@@ -194,8 +211,10 @@ def inline_method_call(gr, n):  # criterion?
     gr.blocks[i_bl + 1 : i_bl + 1] = gr1.blocks
 
     # TODO Error checking parameters
-    if gr1.ismethod:
+    if gr1.ismethod and n.i.opname == "CALL_METHOD":
         call_args = [value_for_self1, *n.inputs[2:]]
+    elif gr1.ismethod and n.i.opname == "CALL_FUNCTION":
+        call_args = [value_for_self1, *n.inputs[1:]]
     elif n.i.opname == "CALL_METHOD":
         call_args = n.inputs[2:]
     elif n.i.opname == "CALL_FUNCTION":
@@ -219,19 +238,16 @@ def inline_method_call(gr, n):  # criterion?
 def inline_submodule_calls(gr):
     # inlines submodule calls
     # TODO: recursively and not from nested structures (ModuleList etc.)
+    changed = False
+    gr.ensure_links()
     for bl in gr.blocks[:]:
         for n in bl.nodes[:]:
-            if n.i.opname == "CALL_METHOD":
-                fn_parent_value, attr_lookups = thunder.core.script.passes.find_method_through_phi_parent(n.inputs[0])
-                if fn_parent_value.value is None:
-                    continue
-
-                fn_value = fn_parent_value.value
-                for al in attr_lookups:
-                    fn_value = getattr(fn_value, al)
-
+            if n.i.opname in {"CALL_METHOD", "CALL_FUNCTION"}:
+                fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
                 if isinstance(fn_value, torch.nn.Module):
-                    thunder.core.script.passes.inline_method_call(gr, n)
+                    inline_method_call(gr, n)
+                    changed = True
+    return changed
 
 
 def torch_to_thunder(gr, fallback=False):
@@ -347,5 +363,187 @@ def find_blocks_of_for(gr, for_block):
             blocks_of_for_loop.add(start_block)
         return found
 
-    find_blocks_of_for_rec(for_block, gr.blocks[1].nodes[-1].jump_targets[0][1])
+    find_blocks_of_for_rec(for_block, for_block.nodes[-1].jump_targets[0][1])
     return blocks_of_for_loop
+
+
+def unroll_for_over_modules(gr, for_iter_node):
+    gr.ensure_links()
+    get_iter_node = for_iter_node.inputs[0].values[0].node
+    assert get_iter_node.i.opname == "GET_ITER"
+
+    iterated_module_list_parent, attr_lookups = thunder.core.script.passes.find_method_through_phi_parent(
+        get_iter_node.inputs[0]
+    )
+    assert iterated_module_list_parent.value is not None
+    iterated_module_list = iterated_module_list_parent.value
+    for al in attr_lookups:
+        iterated_module_list = getattr(iterated_module_list, al)
+
+    # what about more complex things?
+    assert isinstance(iterated_module_list, (torch.nn.Sequential, torch.nn.ModuleList))
+
+    for_loop_len = len(iterated_module_list)
+    for_iter_block = for_iter_node.block
+    get_iter_block = get_iter_node.block
+
+    (iter_v,) = get_iter_node.outputs
+    (iter_phi,) = for_iter_node.inputs
+    iter_item_v = for_iter_node.outputs[1]
+
+    assert isinstance(iter_phi, PhiValue)
+    assert iter_v in iter_phi.values
+
+    ### first we find the blocks of the for loop
+    bls = find_blocks_of_for(gr, for_iter_block)
+
+    jmp_nodes = {bl.nodes[-1] for bl in bls}
+    assert all((v is iter_v or js in jmp_nodes) for v, js in zip(iter_phi.values, iter_phi.jump_sources))
+
+    for_iter_node.i = get_instruction(opname="BINARY_SUBSCR", arg=None)
+    iter_phi.remove_value(iter_v)
+    assert len(iter_v.phi_values) == 0
+
+    get_iter_block.block_outputs.add(get_iter_node.inputs[0])
+
+    seen = set()
+
+    def delete_value_and_sources(v):
+        # check that it is possible?
+        if v in seen:
+            return
+        seen.add(v)
+        if isinstance(v, PhiValue):
+            for vv, js in zip(v.values, v.jump_sources):
+                delete_value_and_sources(vv)
+                js.block.block_outputs.remove(vv)
+            v.block.block_inputs.remove(v)
+
+    delete_value_and_sources(iter_phi)
+    seq_phi = PhiValue(values=[get_iter_node.inputs[0]], jump_sources=[get_iter_block.nodes[-1]], block=for_iter_block)
+    for_iter_block.block_inputs.append(seq_phi)
+
+    idx = Value(value=0, is_const=True)
+    for_iter_node.inputs = [seq_phi, idx]
+    for_iter_node.outputs = [for_iter_node.outputs[1]]
+
+    for_iter_block_jmp = Node(i=get_instruction(opname="JUMP_ABSOLUTE", arg=None))
+    for_iter_block.nodes.append(for_iter_block_jmp)
+    for_iter_block_jmp.jump_targets = [((0, 0), for_iter_node.jump_targets[0][1])]
+    _, for_iter_node_exit_jump_target = for_iter_node.jump_targets[1]
+    for_iter_node.jump_targets = []
+    for_iter_block_jmp.jump_targets[0][1].jump_sources = [
+        (js if js is not for_iter_node else for_iter_block_jmp)
+        for js in for_iter_block_jmp.jump_targets[0][1].jump_sources
+    ]
+
+    exit_block = Block()
+    gr.blocks.append(exit_block)
+    exit_node = Node(i=get_instruction(opname="JUMP_ABSOLUTE", arg=None))
+    exit_node.jump_targets = [((0, 0), for_iter_node_exit_jump_target)]
+    target_after_iter = exit_node.jump_targets[0][1]
+    exit_node.jump_targets[0][1].jump_sources = [
+        (js if js is not for_iter_node else exit_node) for js in exit_node.jump_targets[0][1].jump_sources
+    ]
+    exit_block.nodes.append(exit_node)
+    for i in for_iter_block.block_inputs:
+        exit_block.block_inputs.append(PhiValue([], [], exit_block))
+
+    unroll_blocks = [(list(bls), {})] + [clone_blocks(bls) for _ in range(1, for_loop_len)]
+    for i, (nbls, td) in enumerate(unroll_blocks):
+        if i > 0:
+            gr.blocks += nbls
+            idx = Value(value=i, is_const=True)
+            td[for_iter_node].inputs[1] = idx
+            td[for_iter_node].outputs[0].name += f"_{i}"
+        else:
+            for_iter_node.outputs[0].name += f"_0"
+
+    gr.ensure_links()
+
+    fixup_data = []
+    for idx, (nbls, td) in enumerate(unroll_blocks):
+        if idx == 0:
+            fib_i = for_iter_block
+            jump_sources_to_fix = [js for js in for_iter_block.jump_sources if js is not get_iter_block.nodes[-1]]
+        else:
+            fib_i = td[for_iter_block]
+            jump_sources_to_fix = td[for_iter_block].jump_sources[:]
+        if idx + 1 < len(unroll_blocks):
+            _, td_next = unroll_blocks[idx + 1]
+            fib_next = td_next[for_iter_block]
+        else:
+            fib_next = exit_block
+
+        fixup_data.append((fib_i, jump_sources_to_fix, fib_next, nbls))
+
+    for idx_it, (fib_i, jump_sources_to_fix, fib_next, nbls) in enumerate(fixup_data):
+        for js in jump_sources_to_fix:
+            for idx, (_, jt) in enumerate(js.jump_targets):
+                if jt == fib_i:
+                    js.set_jump_target(fib_next, idx=idx)
+
+        for idx_i, i in enumerate(fib_i.block_inputs):
+            if any((js.block in nbls) for js in i.jump_sources):
+                ## if this is a variable updated in the loop:
+                ##  - instead of looping back, point the update to the phi value of the next block (or the exit block)
+                ##  - if idx > 0: remove external (before the loop) value
+                for v, js in zip(i.values[:], i.jump_sources[:]):
+                    assert js.block is not None
+                    if js.block not in nbls and idx_it > 0:
+                        i.remove_value(v)
+
+    for idx_it, (fib_i, jump_sources_to_fix, fib_next, nbls) in enumerate(fixup_data):
+        for idx_i, i in enumerate(fib_i.block_inputs):
+            if any((js.block in nbls) for js in i.jump_sources):
+                for v, js in zip(i.values[:], i.jump_sources[:]):
+                    if js.block in nbls:
+                        i.remove_value(v)
+                        fib_next.block_inputs[idx_i].add_missing_value(v, jump_source=js)
+                if idx_it == 0:
+                    for pv in i.phi_values[:]:
+                        if pv.block is target_after_iter:
+                            pv.remove_value(i)
+                            pv.add_missing_value(exit_block.block_inputs[idx_i], jump_source=exit_node)
+
+    for i in exit_block.block_inputs[:]:
+        if i.phi_values:
+            exit_block.block_outputs.add(i)
+        else:
+            exit_block.block_inputs.remove(i)
+
+
+def find_and_unroll_for_loop(gr):
+    gr.ensure_links()
+
+    for bl in gr.blocks[:]:
+        for n in bl.nodes[:]:
+            if n.i.opname == "FOR_ITER":
+                for_iter_node = n
+                get_iter_node = for_iter_node.inputs[0].values[0].node
+                if get_iter_node.i.opname == "GET_ITER":
+                    (
+                        iterated_module_list_parent,
+                        attr_lookups,
+                    ) = thunder.core.script.passes.find_method_through_phi_parent(get_iter_node.inputs[0])
+                    if iterated_module_list_parent.value is None:
+                        continue
+                    iterated_module_list = iterated_module_list_parent.value
+                    for al in attr_lookups:
+                        iterated_module_list = getattr(iterated_module_list, al)
+                    # what about more complex things? in particular enumerate, but zip, ...
+                    if isinstance(iterated_module_list, (torch.nn.Sequential, torch.nn.ModuleList)):
+                        thunder.core.script.passes.unroll_for_over_modules(gr, for_iter_node)
+                        thunder.core.script.passes.merge_blocks_where_possible(gr)
+                        return True
+    return False
+
+
+def unroll_for_loops_and_inline_modules(gr):
+    iterate = True
+    while iterate:
+        iterate = find_and_unroll_for_loop(gr)
+        if not iterate:
+            iterate = inline_submodule_calls(gr)
+            if iterate:
+                thunder.core.script.passes.merge_blocks_where_possible(gr)

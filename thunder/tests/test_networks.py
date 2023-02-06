@@ -335,13 +335,13 @@ class NanoGPT(nn.Module):
             t <= self.config.block_size
         ), f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
 
-        return None
-
-        # pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+        pos = torch.arange(0, t, dtype=torch.int64, device=device).unsqueeze(0)  # shape (1, t)
 
         # # forward the GPT model itself
-        # tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
-        # pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (1, t, n_embd)
+        tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (1, t, n_embd)
+
+        return pos, tok_emb, pos_emb
         # x = self.transformer.drop(tok_emb + pos_emb)
         # for block in self.transformer.h:
         #     x = block(x)
@@ -356,15 +356,18 @@ class NanoGPT(nn.Module):
         # return logits, loss
 
 
-def thunder_NanoGPT_forward_functional(idx, targets=None, *, cfg_block_size):
+def thunder_NanoGPT_forward_functional(idx, cfg_block_size, wte_weight, wpe_weight):
     device = idx.device
     b, t = idx.size()
 
     assert t <= cfg_block_size, f"Cannot forward sequence of length {t}, block size is only {cfg_block_size}"
 
-    return None
+    pos = ttorch.arange(0, t, dtype=thunder.int64, device=device).unsqueeze(0)  # shape (1, t)
 
-    # pos = ttorch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # shape (1, t)
+    tok_emb = ttorch.embedding(idx, wte_weight)
+    pos_emb = ttorch.embedding(pos, wpe_weight)
+
+    return pos, tok_emb, pos_emb
 
 
 @executors(dtypes=(thunder.float32,))
@@ -373,7 +376,7 @@ def test_nanogpt_functional(executor, device, dtype):
     make = partial(make_tensor, dtype=tdtype, device=device)
 
     config = GPTConfigTest()
-    gpt = NanoGPT(config)
+    gpt = NanoGPT(config).to(device)
 
     idx = make(4, 4, dtype=torch.int64, low=0, high=3)
     # TODO: add targets
@@ -382,7 +385,9 @@ def test_nanogpt_functional(executor, device, dtype):
     thunder_fn = thunder.make_traced(thunder_NanoGPT_forward_functional, executor=executor)
     thunder_result = thunder_fn(
         idx,
-        cfg_block_size=config.block_size,
+        config.block_size,
+        gpt.transformer.wte.weight,
+        gpt.transformer.wpe.weight,
     )
 
     assert_close(torch_result, thunder_result)
