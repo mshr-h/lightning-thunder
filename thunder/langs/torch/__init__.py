@@ -130,6 +130,17 @@ def torch_dtype(thunder_dtype):
     return _thunder_to_torch_dtype_map[thunder_dtype]
 
 
+_torch_to_thunder_function_map = {}
+
+
+def torch_function(torch_fn):
+    def _torch_function_map_set(fn):
+        _torch_to_thunder_function_map[torch_fn] = fn
+        return fn
+
+    return _torch_function_map_set
+
+
 def ctx():
     return TorchLangCtx()
 
@@ -275,6 +286,7 @@ class TorchLangCtx:
 #
 # Tensor Creation Ops
 #
+@torch_function(torch.arange)
 def arange(start, end, step=1, *, device="cpu", dtype=None):
     return tlang.arange(start=start, step=step, stop=end, device=device, dtype=dtype)
 
@@ -516,6 +528,7 @@ def tanh(a):
 #
 
 
+@torch_function(torch.add)
 def add(a, b, *, alpha=None):
     if alpha is not None:
         b = b * alpha
@@ -831,6 +844,7 @@ def _dropout_helper(self, val):
 
 
 # full torch signature is: a, p, training, inplace
+@torch_function(torch.nn.functional.dropout)
 def dropout(a, p=0.5):
     utils.check(
         p <= 1 and p >= 0,
@@ -944,6 +958,7 @@ def linear_disambiguator(*args, **kwargs):
     return linear(*args, **kwargs)
 
 
+@torch_function(torch.nn.functional.linear)
 def linear(a, w, bias=None):
     return prims.linear(a, w, bias)
 
@@ -973,11 +988,6 @@ def matmul(a, b):
 #
 # torch -> thunder object mapping
 #
-
-_torch_to_thunder_function_map = {
-    torch.add: add,
-    torch.nn.functional.linear: linear,
-}
 
 _torch_to_thunder_complete_map = {
     **_torch_to_thunder_dtype_map,

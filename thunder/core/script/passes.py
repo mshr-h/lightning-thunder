@@ -275,6 +275,10 @@ def torch_to_thunder(gr, fallback=False):
                     i_or_parent.parent = None
                     i_or_parent.is_const = True
                     i_or_parent.is_global = False
+                    if n.i.opname == "CALL_METHOD":
+                        # todo get others, too
+                        n.i = get_instruction(opname="CALL_FUNCTION", arg=n.i.arg)
+                        del n.inputs[1]
                     done = True
 
                 if (not done) and fallback:  # fallback
