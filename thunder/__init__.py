@@ -233,7 +233,6 @@ def preprocess(fn):
     script.passes.inline_submodule_calls(gr)
     script.passes.merge_blocks_where_possible(gr)
     script.passes.strongly_inline_functions(gr)
-    print(gr)
     script.passes.torch_to_thunder(gr)
 
     thunder_fn = script.python_ir.generate_function(gr)
