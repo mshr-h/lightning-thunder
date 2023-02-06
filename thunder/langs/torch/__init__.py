@@ -500,26 +500,32 @@ def view(a, shape):
 #
 
 
+@torch_function(torch.acos)
 def acos(a):
     return tlang.acos(a)
 
 
+@torch_function(torch.cos)
 def cos(a):
     return tlang.cos(a)
 
 
+@torch_function(torch.exp)
 def exp(a):
     return tlang.exp(a)
 
 
+@torch_function(torch.rsqrt)
 def rsqrt(a):
     return tlang.rsqrt(a)
 
 
+@torch_function(torch.sin)
 def sin(a):
     return tlang.sin(a)
 
 
+@torch_function(torch.tanh)
 def tanh(a):
     return tlang.tanh(a)
 
@@ -541,10 +547,12 @@ def lt(a, b):
     return tlang.lt(a, b)
 
 
+@torch_function(torch.mul)
 def mul(a, b):
     return tlang.mul(a, b)
 
 
+@torch_function(torch.pow)
 def pow(a, b):
     return tlang.pow(a, b)
 

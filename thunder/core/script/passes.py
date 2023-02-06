@@ -250,6 +250,26 @@ def inline_submodule_calls(gr):
     return changed
 
 
+def strongly_inline_functions(gr):
+    loop = True
+    while loop:
+        loop = False
+        gr.ensure_links()
+        for bl in gr.blocks[:]:
+            for n in bl.nodes[:]:
+                if n.i.opname in {"CALL_METHOD", "CALL_FUNCTION"}:
+                    fn_value = find_and_evaluate_method_through_phi_parent(n.inputs[0])
+                    if (
+                        fn_value is not None
+                        and not inspect.isbuiltin(fn_value)
+                        and isinstance(fn_value, types.FunctionType)
+                        and fn_value not in _torch_to_thunder_complete_map
+                    ):
+                        ## handle methods or nn.Modules / other classes?
+                        inline_method_call(gr, n)
+                        loop = True
+
+
 def torch_to_thunder(gr, fallback=False):
     """replaces calls to torch.foo functions with calls into thunder's torch language."""
 
