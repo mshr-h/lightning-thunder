@@ -950,6 +950,7 @@ def slice_prim_sample_generator(op, device, dtype, requires_grad, **kwargs):
 
 slice_prim_opinfo = OpInfo(
     prims.slice_prim,
+    name="slice_prim",
     sample_input_generator=slice_prim_sample_generator,
     jax_reference=jax.lax.slice if JAX_AVAILABLE else None,
 )

@@ -216,6 +216,25 @@ def make_symbol(id, name, outputs, args, kwargs):
     return symbol
 
 
+def eval_meta_and_record_symbol(meta, id, name, *args, **kwargs):
+    """Returns the result of the meta function and records a corresponding Symbol in the current trace.
+
+    Args:
+        meta: the meta function
+        id: the operator enum
+        name: the name of the operator
+        args: the arguments to the operation
+        kwargs: the keyword arguments to the operation
+
+    Returns:
+        The result of the meta function.
+    """
+    result = meta(*args, **kwargs)
+    sym = make_symbol(id, name, result, args, kwargs)
+    get_trace().add_symbol(sym)
+    return result
+
+
 def make_prim(id, name, meta):
     # TODO: probably want to consolidate these maps by having one map
     #   to a prim data object with these attributes
@@ -224,13 +243,7 @@ def make_prim(id, name, meta):
     ops_to_pretty_name_map[id] = name
 
     # TODO: update the signature
-    def _fn(*args, **kwargs):
-        result = meta(*args, **kwargs)
-        sym = make_symbol(id, name, result, args, kwargs)
-        get_trace().add_symbol(sym)
-        return result
-
-    return _fn
+    return partial(eval_meta_and_record_symbol, meta, id, name)
 
 
 #
