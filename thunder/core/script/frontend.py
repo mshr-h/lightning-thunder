@@ -7,16 +7,11 @@ import sys
 import opcode
 
 from .graph import Block, Graph, MROAwareObjectRef, Node, NULL, PhiValue, unify_values, Value
-from .python_ir import stack_effect_detail
+from .python_ir_data import jump_instructions, stack_effect_detail, unconditional_jump_names
 
 
 class Super:
     pass
-
-
-jump_instructions = set(dis.hasjabs) | set(dis.hasjrel)
-
-unconditional_jump_names = {"JUMP_ABSOLUTE", "JUMP_FORWARD", "JUMP_BACKWARD", "JUMP_BACKWARD_NO_INTERRUPT"}
 
 
 def acquire_method(method, module=None, mro_klass=None, verbose=False):
