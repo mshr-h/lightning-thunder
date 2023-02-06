@@ -214,13 +214,13 @@ def test_nanogpt_inlining_unrolling():
     assert sum(len(bl.nodes) for bl in gr.blocks) == 580
 
     # has everything been inlined/unrolled?
-    funcs = set(
+    funcs = {
         thunder.core.script.passes.find_and_evaluate_method_through_phi_parent(n.inputs[0])  # for function calls
         or n.inputs[0].name  # for Tensor methods (but we don't check that)
         or n.inputs[0].node.i.opname  # for the oddball assertion instantiation
         for n in gr.nodes()
         if n.i.opname in {"CALL_METHOD", "CALL_FUNCTION", "CALL_FUNCTION_KW"}
-    )
+    }
     allowed_funcs = {
         float,
         math.sqrt,
