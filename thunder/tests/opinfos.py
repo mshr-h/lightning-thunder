@@ -694,6 +694,126 @@ tanh_opinfo = OpInfo(
 )
 elementwise_unary_ops.append(tanh_opinfo)
 
+log_opinfo = OpInfo(
+    tlang.log,
+    domain=(0, math.inf),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 or complex32 log
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log_opinfo)
+
+log10_opinfo = OpInfo(
+    tlang.log10,
+    domain=(0, math.inf),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log10,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 log10
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log10
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log10_opinfo)
+
+log1p_opinfo = OpInfo(
+    tlang.log1p,
+    domain=(0, math.inf),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log1p,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            executors=("nvFuser",),
+            dtypes=(datatypes.complexfloating,),
+        ),
+        # NOTE: Torch gives wrong result: https://github.com/pytorch/pytorch/issues/94333
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bfloat16,),
+            devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support CPU float16 log1p
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log1p
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32,),
+        ),
+        # PyTorch didn't support CPU complex log1p before 2.0
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complexfloating,),
+            devicetypes=("cpu",),
+            active_if=LooseVersion(torch.__version__) < "2.0",
+        ),
+    ),
+)
+elementwise_unary_ops.append(log1p_opinfo)
+
+log2_opinfo = OpInfo(
+    tlang.log2,
+    domain=(0, math.inf),
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log2,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 log2
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16,),
+            devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log2
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32,),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log2_opinfo)
+
 
 # Puts all opinfos into the "opinfos" list
 opinfos.extend(elementwise_unary_ops)

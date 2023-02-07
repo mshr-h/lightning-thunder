@@ -60,6 +60,10 @@ __all__ = [
     "rsqrt",
     "sin",
     "tanh",
+    "log",
+    "log10",
+    "log1P",
+    "log2",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -119,6 +123,10 @@ class Ops(Enum):
     RSQRT = auto()
     SIN = auto()
     TANH = auto()
+    LOG = auto()
+    LOG10 = auto()
+    LOG1P = auto()
+    LOG2 = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
@@ -370,10 +378,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "fill",
 # "imag",
 # "lgamma",
-# "log",
-# "log1p",
-# "log2",
-# "log10",
 # "ndtri",
 # "neg",
 # "real",
@@ -389,10 +393,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # nvFuser unary ops (from https://github.com/pytorch/pytorch/blob/master/torch/_prims/nvfuser_prims.py)
 # "imag",
 # "lgamma",
-# "log",
-# "log1p",
-# "log2",
-# "log10",
 # "reciprocal",
 # "neg",
 # "real",
@@ -648,6 +648,53 @@ tanh = make_prim(
     ),
 )
 
+log = make_prim(
+    Ops.LOG,
+    "log",
+    partial(
+        _elementwise_unary_meta,
+        name="log",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.log,
+    ),
+)
+
+log10 = make_prim(
+    Ops.LOG10,
+    "log10",
+    partial(
+        _elementwise_unary_meta,
+        name="log10",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.log10,
+    ),
+)
+
+log1p = make_prim(
+    Ops.LOG1P,
+    "log1p",
+    partial(
+        _elementwise_unary_meta,
+        name="log1p",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.log1p,
+    ),
+)
+
+log2 = make_prim(
+    Ops.LOG2,
+    "log2",
+    partial(
+        _elementwise_unary_meta,
+        name="log2",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.log2,
+    ),
+)
+
+# "log1p",
+# "log2",
+# "log10",
 
 #
 # Elementwise binary prims
