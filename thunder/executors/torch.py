@@ -135,6 +135,12 @@ def add_helper(a, b, alpha=1):
     return a + b * alpha
 
 
+# NOTE: PyTorch's torch.eq expects tensor x tensor or tensor x number
+#   but the == operator allows number x tensor
+def eq_helper(a, b):
+    return a == b
+
+
 # Maps the Thunder primitives to their corresponding torch operation names
 # TODO: handle more scalar arguments (like add does above)
 ops_to_torch_ops_map = {
@@ -176,7 +182,7 @@ ops_to_torch_ops_map = {
     prims.Ops.ATAN2: "torch.atan2",
     prims.Ops.BITWISE_AND: "torch.bitwise_and",
     prims.Ops.DIV: "torch.div",
-    prims.Ops.EQ: "torch.eq",
+    prims.Ops.EQ: eq_helper,
     prims.Ops.LT: "torch.lt",
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",
@@ -241,6 +247,7 @@ def _fuse_region(inputs, outputs, symbols):
     # Initializes context
     ctx = {
         "torch": torch,
+        "inf": float("inf"),  # NOTE: not always necessary
     }
 
     # Creates signature
@@ -318,6 +325,7 @@ def _fuse(trace):
         "tree_flatten": tree_flatten,
         "tree_unflatten": tree_unflatten,
         "output_structure": output_structure,
+        "inf": float("inf"),  # NOTE: not always necessary
     }
 
     # Acquires inputs
@@ -376,6 +384,8 @@ def _fuse(trace):
     code = compile(cstr, "torch.gen", mode="exec")
     exec(code, ctx)
     fusion = ctx["fusion"]
+
+    print(cstr)
 
     return fusion
 
