@@ -38,6 +38,7 @@ __all__ = [
     "broadcast_in_dim",
     "reshape",
     "slice",
+    "squeeze",
     "transpose",
     # Elementwise unary prims
     "abs",
@@ -96,6 +97,7 @@ class Ops(Enum):
     BROADCAST_IN_DIM = auto()
     RESHAPE = auto()
     SLICE = auto()
+    SQUEEZE = auto()
     TRANSPOSE = auto()
     # Elementwise unary prims
     ABS = auto()
@@ -974,6 +976,32 @@ def slice_meta(a, start_indices, end_indices, strides=None):
 
 # NOTE: slice is named "slice_prim" and not "slice" because it conflicts with Python's "slice" builtin
 slice_prim = make_prim(Ops.SLICE, "slice", slice_meta)
+
+
+def squeeze_meta(a, dims):
+    # Checks that no dims are redundant
+    utils.check_no_duplicates(dims)
+
+    # Checks that dims are valid
+    for x in dims:
+        utils.check(
+            x >= 0 and x < len(a.shape), lambda: f"dims={dims} contained an invalid dimension {x} for a.shape={a.shape}"
+        )
+
+    shape = []
+    for idx, l in enumerate(a.shape):
+        # Checks that squeezed dims have length one
+        if idx in dims:
+            utils.check(l == 1, lambda: f"Cannot squeeze dimension {idx} of length {l} in a.shape={a.shape}")
+            continue
+
+        shape.append(l)
+
+    proxy_name = get_trace().make_proxy_name()
+    return TensorProxy(tensor=a, name=proxy_name, shape=shape)
+
+
+squeeze = make_prim(Ops.SQUEEZE, "squeeze", squeeze_meta)
 
 
 def transpose_meta(a, permutation):

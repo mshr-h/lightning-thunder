@@ -29,6 +29,7 @@ __all__ = [
     "contiguous",
     "reshape",
     "split",
+    "squeeze",
     "tensor_split",
     "transpose",
     "unsqueeze",
@@ -180,6 +181,10 @@ class TorchLangCtx:
     def contiguous(self, a):
         return _contiguous_disambiguator(a)
 
+    # TODO: assumes basic indexing, add advanced indexing support
+    def get_item(self, a, key):
+        return basic_indexing(a, key)
+
     # TODO: refactor so disambiguator's aren't needed
     def split(self, a, sizes_or_sections, dim=0):
         return _split_disambiguator(a, sizes_or_sections, dim)
@@ -315,6 +320,31 @@ def contiguous(a):
     return a
 
 
+# TODO: we should probably be consistent about start/stop/step vs. start/end/stride language
+def basic_indexing(a, key):
+    start_indices = []
+    end_indices = []
+    strides = []
+
+    if len(a.shape) != len(key):
+        raise NotImplemented
+
+    for x in key:
+        if isinstance(x, slice):
+            # TODO: canonicalize start and stop
+            # TODO: handle negative step?
+            start_indices.append(x.start)
+            end_indices.append(x.stop)
+            strides.append(x.step)
+
+            if x.step < 1:
+                raise NotImplemented
+        else:
+            raise NotImplemented
+
+    return prims.slice_prim(a, start_indices, end_indices, strides)
+
+
 def reshape(a, shape):
     return tlang.reshape(a, shape)
 
@@ -429,6 +459,20 @@ def split(a, size_or_sections, dim=0):
         indices.append(cur)
 
     return _split_indices(a, indices, dim)
+
+
+# See https://pytorch.org/docs/master/generated/torch.squeeze.html
+def squeeze(a, dim=None):
+    dims = dim
+    if dim is None:
+        dims = []
+        for idx, l in enumerate(a.shape):
+            if l == 1:
+                dims.append(idx)
+    if isinstance(dim, Number):
+        dims = (dim,)
+
+    return tlang.squeeze(a, dims)
 
 
 # See https://pytorch.org/docs/master/generated/torch.tensor_split.html

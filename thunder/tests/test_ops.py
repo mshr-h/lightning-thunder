@@ -43,6 +43,9 @@ def snippet_torch_consistency(op, torch_op, sample):
     thunder_result = op(*sample.args, **sample.kwargs)
     torch_result = torch_op(*sample.args, **sample.kwargs)
 
+    print(f"thunder_result={thunder_result}")
+    print(f"torch_result={torch_result}")
+
     assert_close(thunder_result, torch_result, equal_nan=True)
 
 

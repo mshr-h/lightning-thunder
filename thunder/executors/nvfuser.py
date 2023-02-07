@@ -39,7 +39,6 @@ except ImportError:
     nvTensor = torch._C._nvfuser.Tensor
     nvNumber = torch._C._nvfuser.Scalar
 
-
 __all__ = [
     "nvFuserCtx",
 ]
@@ -163,6 +162,27 @@ def _reshape_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_arg
     return (nv_t, original_shape, realized_shape), {}
 
 
+def _squeeze_preprocessor(fd, proxy_to_nvfuser_map, sym_args, sym_kwargs, nv_args, nv_kwargs):
+    # TODO: FIXME
+    assert len(nv_kwargs) == 0
+
+    nv_t, nv_dims = nv_args
+    t, _ = sym_args
+    original_shape = t.shape
+
+    def _realize_numbers(x):
+        if isinstance(x, nvNumber):
+            for p, nv in proxy_to_nvfuser_map.items():
+                if nv is x:
+                    return p.value
+            raise AssertionError("Failed to find the value of nvNumber when preprocessing broadcast_in_dim()!")
+        return x
+
+    realized_dims = tuple(_realize_numbers(x) for x in nv_dims)
+
+    return (nv_t, original_shape, realized_dims), {}
+
+
 # TODO: combine constants
 # NOTE: nvFuser's elementwise operations do not accept Python numbers as arguments, so
 #   this converts Python numbers to nvConstants
@@ -250,6 +270,7 @@ ops_to_nvfuser_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     prims.Ops.RESHAPE: "view",
+    # prims.Ops.SQUEEZE: "squeeze",
     # See https://github.com/csarofeen/pytorch/issues/2396 for slice request
     # prims.Ops.SLICE
     # NOTE: nvFuser exposes the "transpose" prim as "permute"
@@ -299,6 +320,7 @@ ops_to_nvfuser_ops_map = {
 ops_to_nvfuser_preprocessors_map = {
     # Shape prims
     prims.Ops.RESHAPE: _reshape_preprocessor,
+    # prims.Ops.SQUEEZE: _squeeze_preprocessor,
     prims.Ops.TRANSPOSE: _nvScalars_to_Numbers_preprocessor,
     # Elementwise unary prims
     prims.Ops.ABS: _elementwise_preprocessor,

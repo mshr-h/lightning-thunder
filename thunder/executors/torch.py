@@ -1,4 +1,5 @@
 import operator
+from typing import Sequence
 
 import torch
 
@@ -92,6 +93,14 @@ def slice_helper(a, start_indices, end_indices, strides=None):
     return operator.getitem(a, slices)
 
 
+# TODO: dim as a sequence is only supported on PyTorch 2.0 and greater
+def squeeze_helper(a, dim):
+    for d in sorted(dim, reverse=True):
+        a = a.squeeze(d)
+
+    return a
+
+
 def is_tensor(a):
     return isinstance(a, torch.Tensor)
 
@@ -139,6 +148,7 @@ ops_to_torch_ops_map = {
     prims.Ops.BROADCAST_IN_DIM: broadcast_in_dim,
     prims.Ops.RESHAPE: "torch.reshape",
     prims.Ops.SLICE: slice_helper,
+    prims.Ops.SQUEEZE: squeeze_helper,
     # NOTE: PyTorch's transpose is not equivalent to the transpose prim
     prims.Ops.TRANSPOSE: "torch.permute",
     # Elementwise unary prims
