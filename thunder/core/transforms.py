@@ -1,6 +1,8 @@
 from contextlib import nullcontext
+from dataclasses import dataclass
 from enum import auto, Enum
 from functools import lru_cache, partial
+from numbers import Number
 from typing import Any, Callable, Dict, Sequence
 
 from .. import make_trace, make_traced
@@ -175,6 +177,39 @@ jvp_impls[prims.Ops.MUL] = mul_jvp
 jvp_impls[prims.Ops.ADD] = add_jvp
 
 
+@dataclass(frozen=True)
+class JVPDual:
+    """Dual number for the JVP transform.
+
+    Attributes:
+        primal: Primal value.
+        tangent: Tangent value.
+    """
+
+    primal: Any
+    tangent: Any
+
+    def __iter__(self):
+        yield self.primal
+        yield self.tangent
+
+
+def pair_to_jvp_dual(pair):
+    """Converts a pair to a JVPDual.
+
+    Args:
+        pair (Sequence): Pair to convert.
+
+    Returns:
+        JVPDual: JVPDual representation of the pair.
+    """
+    if isinstance(pair, JVPDual):
+        return pair
+    else:
+        assert isinstance(pair, Sequence) and len(pair) == 2
+        return JVPDual(*pair)
+
+
 def jvp_symbol_mapper(symbol: prims.Symbol):
     """Maps a symbol to a JVP function that evaluates it.
 
@@ -187,6 +222,15 @@ def jvp_symbol_mapper(symbol: prims.Symbol):
     Returns:
         Callable: JVP function that evaluates the symbol.
     """
+
+    def wrap_arg(x):
+        if isinstance(x, JVPDual):
+            return x
+        elif isinstance(x, Number):
+            return JVPDual(x, type(x)(0))
+        else:
+            raise ValueError(f"JVP wrap_arg got an unsupported type {type(x)}")
+
     # If symbol.args doesn't have subclasses of Proxy, then we need to return a zero tangent
     # TODO: there may be a better way to detect constants in the trace
     if not any(isinstance(arg, Proxy) for arg in symbol.args):
@@ -203,8 +247,8 @@ def jvp_symbol_mapper(symbol: prims.Symbol):
             primals = symbol_to_eval(symbol)(*args, **kwargs)
             if isinstance(primals, Sequence):
                 tangents = tuple(zeros_like(p) for p in primals)
-                return ((primals, tangents),)
-            return ((primals, zeros_like(primals)),)
+                return safe_map(pair_to_jvp_dual, safe_zip(primals, tangents))
+            return JVPDual(primals, zeros_like(primals))
 
         return partial(jvp_impl_const, symbol)
 
@@ -214,13 +258,14 @@ def jvp_symbol_mapper(symbol: prims.Symbol):
         raise NotImplementedError(f"JVP for {symbol.op} is not implemented")
 
     def _jvp_impl(*args, **kwargs):
-        # Expecting a tuple of pairs of primals and tangents
-        assert all(len(arg) == 2 for arg in args)
+        args = safe_map(wrap_arg, args)
+        # Expecting JVPDuals wrapping pairs of primals and tangents
+        assert all(isinstance(arg, JVPDual) for arg in args)
         primals, tangents = unzip2(args)
         out_primal, out_tangent = jvp_impl(*primals, *tangents, **kwargs)
         if isinstance(out_primal, Sequence):
-            return safe_zip(out_primal, out_tangent)
-        return ((out_primal, out_tangent),)
+            return safe_map(pair_to_jvp_dual, safe_zip(out_primal, out_tangent))
+        return JVPDual(out_primal, out_tangent)
 
     return _jvp_impl
 
@@ -245,8 +290,18 @@ def _jvp_call_metafunc(primals, tangents, trace: Trace, detached: bool, **kwargs
 
     ctx = detached_trace() if detached else nullcontext()
     with ctx:
-        primals_tangents_pairs = safe_zip(primals, tangents)
-        return eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
+        # Wrapping the primals and tangents in JVPDuals is not strictly necessary, but it makes
+        # the code more readable
+        # We propagate the JVPDuals through the trace, and then unwrap them at the end
+        primals_tangents_duals = safe_map(pair_to_jvp_dual, safe_zip(primals, tangents))
+        result = eval_trace(trace, *primals_tangents_duals, symbol_mapper=jvp_symbol_mapper)
+        # Unwrapping the JVPDuals
+        if isinstance(result, Sequence):
+            assert all(isinstance(x, JVPDual) for x in result)
+            primals, tangents = unzip2(result)
+            return primals, tangents
+        assert isinstance(result, JVPDual)
+        return result.primal, result.tangent
 
 
 jvp_call = prims.make_prim(Transforms.JvpOp, "jvp_call", partial(_jvp_call_metafunc, detached=True))
@@ -296,9 +351,7 @@ def jvp_eager(func, primals, tangents, executor="torch"):
 
     def jvp_func(*primals_and_tangents):
         _primals, _tangents = primals_and_tangents[: len(primals)], primals_and_tangents[len(primals) :]
-        primals_tangents_pairs = safe_zip(_primals, _tangents)
-        outs = eval_trace(trace, *primals_tangents_pairs, symbol_mapper=jvp_symbol_mapper)
-        return outs
+        return _jvp_call_metafunc(_primals, _tangents, trace, detached=False)
 
     jvp_trace = make_trace(jvp_func, executor=executor)(*primals, *tangents)
     jvp_traced = make_traced(partial(eval_trace, jvp_trace), executor=executor)
