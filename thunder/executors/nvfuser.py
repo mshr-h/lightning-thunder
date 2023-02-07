@@ -37,6 +37,13 @@ except ImportError:
     nvTensor = torch._C._nvfuser.Tensor
     nvNumber = torch._C._nvfuser.Scalar
 
+# NOTE: "reshape" used to be called "view"
+use_reshape = False
+try:
+    use_reshape = hasattr(FusionDefinition.Operators, "reshape")
+except:
+    pass
+
 __all__ = [
     "nvFuserCtx",
 ]
@@ -267,7 +274,8 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.FULL: "full",
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
-    prims.Ops.RESHAPE: "view",
+    # NOTE: "reshape" was called "view" in earlier versions of nvFuser
+    prims.Ops.RESHAPE: "reshape" if use_reshape else "view",
     # TODO: can re-enable squeeze by allowing one prim to become multiple nvFuser prims
     # prims.Ops.SQUEEZE: "squeeze",
     # See https://github.com/csarofeen/pytorch/issues/2396 for slice request
@@ -303,6 +311,7 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.ATAN2: "atan2",
     prims.Ops.BITWISE_AND: "bitwise_and",
     prims.Ops.DIV: "div",
+    prims.Ops.EQ: "eq",
     prims.Ops.LT: "lt",
     prims.Ops.MUL: "mul",
     prims.Ops.POW: "pow",
@@ -345,10 +354,13 @@ ops_to_nvfuser_preprocessors_map = {
     prims.Ops.ATAN2: _elementwise_preprocessor,
     prims.Ops.BITWISE_AND: _elementwise_preprocessor,
     prims.Ops.DIV: _elementwise_preprocessor,
+    prims.Ops.EQ: _elementwise_preprocessor,
     prims.Ops.LT: _elementwise_preprocessor,
     prims.Ops.MUL: _elementwise_preprocessor,
     prims.Ops.POW: _elementwise_preprocessor,
     prims.Ops.SUB: _elementwise_preprocessor,
+    # Elementwise ternary prims
+    prims.Ops.WHERE: _elementwise_preprocessor,
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: _nvScalars_to_Numbers_preprocessor,
     # Reduction prims

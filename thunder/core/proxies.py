@@ -52,6 +52,7 @@ class NumberProxy(Proxy):
     def __hash__(self):
         return Proxy.__hash__(self)
 
+    # TODO: update these comparisons to support Number x Tensor
     def __eq__(self, other):
         other_value = other.value if isinstance(other, NumberProxy) else other
         return self.value == other_value
@@ -233,6 +234,16 @@ class TensorProxy(Proxy):
     def __radd__(self, other):
         ctx = get_language_context()
         return ctx.add(other, self)
+
+    # NOTE: equal is such a common operation in Python that this
+    #   disambiguates between an equality operation that could
+    #   launch a kernel and a comparison of Python objects
+    # ==
+    def __eq__(self, other):
+        if isinstance(other, (Number, Proxy)):
+            ctx = get_language_context()
+            return ctx.eq(other, self)
+        return super().__eq__(other)
 
     # <
     def __lt__(self, other):

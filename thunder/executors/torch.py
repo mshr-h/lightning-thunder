@@ -176,6 +176,7 @@ ops_to_torch_ops_map = {
     prims.Ops.ATAN2: "torch.atan2",
     prims.Ops.BITWISE_AND: "torch.bitwise_and",
     prims.Ops.DIV: "torch.div",
+    prims.Ops.EQ: "torch.eq",
     prims.Ops.LT: "torch.lt",
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",

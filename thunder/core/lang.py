@@ -58,6 +58,7 @@ __all__ = [
     "add",
     "atan2",
     "bitwise_and",
+    "eq",
     "lt",
     "mul",
     "pow",
@@ -517,6 +518,10 @@ def bitwise_and(a, b):
         b,
         supported_dtypes=(dtypes.exact,),
     )
+
+
+def eq(a, b):
+    return _elementwise_binary_helper(prims.eq, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.ALWAYS_BOOL, a, b)
 
 
 def lt(a, b):
