@@ -16,16 +16,14 @@ from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.executors.torch import _fuse_region as _fuse_torch_region
 
-from packaging.version import Version
-
 # Imports nvFuser
 # NOTE: nvFuser API changed after PyTorch 1.13
-nvfuser_version = Version("0.0.0")
+nvfuser_version = LooseVersion("0.0.0")
 try:
     import nvfuser
 
     if hasattr(nvfuser, "version"):
-        nvfuser_version = nvfuser.version()
+        nvfuser_version = LooseVersion(nvfuser.version())
         from nvfuser import DataType, FusionDefinition
     else:
         from nvfuser._C import DataType, Fusion, FusionDefinition
@@ -494,7 +492,7 @@ def _fuse_region(inputs, outputs, symbols):
 
     proxy_to_nvfuser_map = {}
 
-    if nvfuser_version >= Version("0.0.1"):
+    if nvfuser_version >= LooseVersion("0.0.1"):
         fd = FusionDefinition()
         fs = fd
     else:
