@@ -235,16 +235,6 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.add(other, self)
 
-    # NOTE: equal is such a common operation in Python that this
-    #   disambiguates between an equality operation that could
-    #   launch a kernel and a comparison of Python objects
-    # ==
-    def __eq__(self, other):
-        if isinstance(other, (Number, Proxy)):
-            ctx = get_language_context()
-            return ctx.eq(other, self)
-        return super().__eq__(other)
-
     # <
     def __lt__(self, other):
         ctx = get_language_context()

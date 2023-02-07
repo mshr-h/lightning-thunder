@@ -254,7 +254,7 @@ class ops:
 
                 # TODO: pass device_type to dtypes()
                 dtypes = opinfo.dtypes()
-                if self.supported_dtypes is not (None,):
+                if self.supported_dtypes != (None,):
                     dtypes = dtypes.intersection(self.supported_dtypes)
 
                 for dtype in dtypes:
