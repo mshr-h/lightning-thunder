@@ -291,6 +291,34 @@ def test_transforms_jvp(executor, device, _):
 
 @executors(
     dtypes=NOTHING,
+)
+def test_transforms_jvp_python_number(executor, device, _):
+    from thunder.core.transforms import jvp, inline
+
+    scalars = (
+        2,
+        2.0,
+        True,
+    )
+    for scalar in scalars:
+
+        def func(a):
+            return tlang.mul(a, scalar)
+
+        a = make_tensor((2, 3), device=device, dtype=torch.float32)
+
+        primals = (a,)
+        tangents = (a,)
+        out_p, out_t = thunder.make_traced(inline(jvp(func)), executor=executor)(primals, tangents)
+
+        expected_out_p = a * scalar
+        expected_out_t = a * scalar
+        assert_close(out_p, expected_out_p)
+        assert_close(out_t, expected_out_t)
+
+
+@executors(
+    dtypes=NOTHING,
     executors=[
         TorchEx(),
     ],
