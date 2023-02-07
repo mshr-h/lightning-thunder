@@ -332,29 +332,119 @@ def contiguous(a):
     return a
 
 
+# TODO: should this allow negative steps?
 # TODO: we should probably be consistent about start/stop/step vs. start/end/stride language
 def basic_indexing(a, key):
     start_indices = []
     end_indices = []
     strides = []
 
-    if len(a.shape) != len(key):
-        raise NotImplemented
-
-    for x in key:
-        if isinstance(x, slice):
-            # TODO: canonicalize start and stop
-            # TODO: handle negative step?
-            start_indices.append(x.start)
-            end_indices.append(x.stop)
-            strides.append(x.step)
-
-            if x.step < 1:
-                raise NotImplemented
+    # Resolves ellipses and unsqueezes
+    unsqueeze_dims_pre_ellipsis = []
+    unsqueeze_dims_post_ellipsis = []
+    specified_slices = 0
+    ellipsis_idx = None
+    for idx, x in enumerate(key):
+        if x is Ellipsis:
+            utils.check(ellipsis_idx is None, lambda: f"Found two (or more) ellipses in key={key}")
+            ellipsis_idx = idx
+        elif isinstance(x, (Number, slice)):
+            specified_slices += 1
+        elif x is None:
+            if ellipsis_idx is None:
+                unsqueeze_dims_pre_ellipsis.append(idx)
+            else:
+                unsqueeze_dims_post_ellipsis.append(idx)
         else:
-            raise NotImplemented
+            raise ValueError(f"Found unexpected value {x} in key={key}")
 
-    return prims.slice_prim(a, start_indices, end_indices, strides)
+    utils.check(
+        specified_slices <= len(a.shape),
+        lambda: f"Too many slices ({specified_slices}) specified for a.shape={a.shape}",
+    )
+
+    ellipsis_dims = len(a.shape) - specified_slices
+    # NOTE: both these checks are required
+    #   ellipsis_dims > 0 handles the implicit ellipsis matching 1+ dimensions
+    #   ellipsis_idx not being None handles an explicit ellipsis which matches no dimensions
+    if ellipsis_idx is not None or ellipsis_dims > 0:
+        ellipsis_slices = [slice(None, None, None)] * ellipsis_dims
+        if ellipsis_idx is not None:
+            key = list(key)[:ellipsis_idx] + ellipsis_slices + list(key)[ellipsis_idx + 1 :]
+        else:
+            # NOTE: without an explicit ellipsis, there is an implicit ellipsis at the end of the key
+            key = list(key) + ellipsis_slices
+
+    # Unsqueezes
+    unsqueeze_dims_post_ellipsis = [x + ellipsis_dims - 1 for x in unsqueeze_dims_post_ellipsis]
+    unsqueeze_dims = unsqueeze_dims_pre_ellipsis + unsqueeze_dims_post_ellipsis
+    if len(unsqueeze_dims) > 0:
+        a = tlang.unsqueeze(a, unsqueeze_dims)
+
+    def _convert_none(x):
+        if x is None:
+            return slice(None, None, None)
+
+        return x
+
+    key = tuple(_convert_none(x) for x in key)
+
+    # Handles numbers and slices
+    squeeze_dims = []
+    for idx, (l, x) in enumerate(zip(a.shape, key)):
+        if isinstance(x, slice):
+            start = x.start if x.start is not None else 0
+            stop = x.stop if x.stop is not None else l
+            step = x.step if x.step is not None else 1
+
+            # Tests for negative step (PyTorch doesn't allow step < 1)
+            utils.check(step >= 1, lambda: f"Expected step={step} to be weakly greater than 1")
+
+            # Canonicalizes start and stop (allowing for values like -1)
+            # NOTE: canonicalization is custom because start and stop beyond the length are allowed
+            if start < 0:
+                start = start + l
+            utils.check(start >= 0, lambda: f"start={x.start} is not a valid index for length {l}")
+            if stop < 0:
+                stop = stop + l
+            utils.check(stop >= 0, lambda: f"end={x.stop} is not a valid index for length {l}")
+
+            # Handles start > stop, which occurs with slices like 3:1:1
+            # NOTE: because step is always strictly positive, it's sufficient to check start
+            #   and stop only here
+            if start > stop:
+                start = 0
+                stop = 0
+
+            # Handles overflow
+            # NOTE: This is a little odd, but we just want the slice to be zero
+            if start >= l:
+                start = 0
+                stop = 0
+
+            if stop >= l:
+                stop = l
+
+            start_indices.append(start)
+            end_indices.append(stop)
+            strides.append(step)
+        elif isinstance(x, Number):
+            # NOTE: numbers must be valid indices after canonicalization, unlike start and stop
+            x = utils.canonicalize_dim(l, x)
+            start_indices.append(x)
+            end_indices.append(x + 1)
+            strides.append(1)
+            squeeze_dims.append(idx)
+        else:
+            # NOTE: this is redundant with the ValueError exception above
+            raise ValueError(f"Found unexpected value {x} in key={key}")
+
+    result = prims.slice_prim(a, start_indices, end_indices, strides)
+
+    if len(squeeze_dims) > 0:
+        result = prims.squeeze(result, squeeze_dims)
+
+    return result
 
 
 def reshape(a, shape):
