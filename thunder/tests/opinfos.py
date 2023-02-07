@@ -923,19 +923,47 @@ shape_ops.append(broadcast_in_dim_opinfo)
 def getitem_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=torch.float32)
 
+    # TODO: all these cases are basic indexing
+    # NOTE: PyTorch does not allow negative steps
     # a.shape, key
     cases = (
         # Fully specified slicing
         ((5, 5), (slice(1, 3, 1), slice(2, 4, 2))),
         ((11, 23), (slice(4, 9, 6), slice(3, 21, 4))),
+        ((11, 23), (slice(4, 9, 33), slice(3, 21, 1))),
+        # NOTE: PyTorch allows start > stop and will return a 0 length dim
+        ((5, 3), (slice(3, 1), slice(1, 2))),
+        # NOTE: NumPy allows slicing beyond the end of a dimension
+        ((5, 3), (slice(6, 7), slice(0, 2))),
+        ((5, 3), (slice(6, 2), slice(0, 2))),
+        ((5, 3), (slice(1, 9), slice(0, 2))),
         # Inferred start
+        ((5, 3), (slice(None, 9), slice(0, 2))),
         # Inferred end
-        # Inferred stard and end
+        ((5, 3), (slice(2, None), slice(0, 2))),
+        # Inferred start and end
+        ((5, 3), (slice(None, None), slice(0, 2))),
+        # Negative start and stop
+        ((5, 3), (slice(-3, -1), slice(0, -2))),
+        ((5, 3), (slice(-4, -1), slice(-1, -2))),
         # Partially specified slicing
+        ((5, 3), (slice(-4, -1),)),
         # Slicing and numbers
+        ((1, 5, 3), (0, slice(2, 3), 2)),
+        ((1, 5, 3), (-1, slice(2, 3), -2)),
         # All numbers
+        ((1, 5, 3), (-1, 3, -2)),
         # Ellipses
+        ((1, 5, 3), (..., slice(1, 2))),
+        ((1, 5, 3), (0, ..., slice(1, 2))),
         # Newaxis/None
+        # TODO: nvFuser only supports kernels with <= 8 dimensions
+        # ((1, 5, 3), (None, None, 0, None, 2, ..., None, None, None)),
+        ((1, 5, 3), (None, None, 0, None, 2, ..., None, None)),
+        # Addtl. cases
+        ((7, 9, 5), (slice(2, 6, 2), None, ..., slice(3, 7), None, 2, None)),
+        # TODO: nvFuser only supports kernels with <= 8 dimensions
+        # ((11, 7, 9, 5), (None, slice(2, 6, 2), None, ..., slice(3, 7), None, 2, None, None)),
     )
 
     for shape, key in cases:
