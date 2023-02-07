@@ -774,7 +774,7 @@ log1p_opinfo = OpInfo(
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.complexfloating,),
             devicetypes=("cpu",),
-            active_if=LooseVersion(torch.__version__) <= "1.13",
+            active_if=LooseVersion(torch.__version__) < "2.0.0",
         ),
     ),
 )
