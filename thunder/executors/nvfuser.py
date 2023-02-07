@@ -270,6 +270,7 @@ ops_to_nvfuser_ops_map = {
     # Shape prims
     prims.Ops.BROADCAST_IN_DIM: "broadcast_in_dim",
     prims.Ops.RESHAPE: "view",
+    # TODO: can re-enable squeeze by allowing one prim to become multiple nvFuser prims
     # prims.Ops.SQUEEZE: "squeeze",
     # See https://github.com/csarofeen/pytorch/issues/2396 for slice request
     # prims.Ops.SLICE

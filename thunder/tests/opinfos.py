@@ -1070,6 +1070,7 @@ split_opinfo = OpInfo(
 )
 shape_ops.append(split_opinfo)
 
+
 def squeeze_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
 
