@@ -55,6 +55,9 @@ __all__ = [
     "sin",
     "tanh",
     "log",
+    "log10",
+    "log1p",
+    "log2",
     # Elementwise binary operations
     "add",
     "atan2",
@@ -475,8 +478,21 @@ def sin(a):
 def tanh(a):
     return _elementwise_unary_helper(prims.tanh, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
+
 def log(a):
     return _elementwise_unary_helper(prims.log, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def log10(a):
+    return _elementwise_unary_helper(prims.log10, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def log1p(a):
+    return _elementwise_unary_helper(prims.log1p, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
+
+
+def log2(a):
+    return _elementwise_unary_helper(prims.log2, utils.ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT, a)
 
 
 #

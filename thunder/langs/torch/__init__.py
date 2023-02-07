@@ -48,6 +48,9 @@ __all__ = [
     "sin",
     "tanh",
     "log",
+    "log10",
+    "log1p",
+    "log2",
     # Elementwise Binary Ops
     "add",
     "lt",
@@ -578,6 +581,21 @@ def tanh(a):
 @torch_function(torch.log)
 def log(a):
     return tlang.log(a)
+
+
+@torch_function(torch.log10)
+def log10(a):
+    return tlang.log10(a)
+
+
+@torch_function(torch.log1p)
+def log1p(a):
+    return tlang.log1p(a)
+
+
+@torch_function(torch.log2)
+def log2(a):
+    return tlang.log2(a)
 
 
 #

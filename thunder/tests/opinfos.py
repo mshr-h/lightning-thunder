@@ -714,6 +714,66 @@ log_opinfo = OpInfo(
 )
 elementwise_unary_ops.append(log_opinfo)
 
+log10_opinfo = OpInfo(
+    tlang.log10,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log10,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 or complex32 log10
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log10_opinfo)
+
+log1p_opinfo = OpInfo(
+    tlang.log1p,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log1p,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 or complex32 log1p
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log1p_opinfo)
+
+log2_opinfo = OpInfo(
+    tlang.log2,
+    sample_input_generator=elementwise_unary_generator,
+    torch_reference=torch.log2,
+    test_directives=(
+        # See https://github.com/csarofeen/pytorch/issues/2360
+        DecorateInfo(
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+        ),
+        # NOTE: Torch doesn't support CPU float16 or complex32 log2
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.float16, datatypes.complex32),
+            devicetypes=("cpu",),
+        ),
+    ),
+)
+elementwise_unary_ops.append(log2_opinfo)
+
 
 # Puts all opinfos into the "opinfos" list
 opinfos.extend(elementwise_unary_ops)

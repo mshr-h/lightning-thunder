@@ -301,6 +301,9 @@ ops_to_nvfuser_ops_map = {
     prims.Ops.SIN: "sin",
     prims.Ops.TANH: "tanh",
     prims.Ops.LOG: "log",
+    prims.Ops.LOG10: "log10",
+    prims.Ops.LOG1P: "log1p",
+    prims.Ops.LOG2: "log2",
     # Elementwise binary prims
     prims.Ops.ADD: "add",
     prims.Ops.ATAN2: "atan2",
