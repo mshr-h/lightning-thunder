@@ -321,7 +321,7 @@ def to_dtype(x, *, true_dtype=False):
         return x.python_type
     if isinstance(x, Number):
         return _numberclass_to_numbertype(type(x))
-    if issubclass(x, Number):
+    if isinstance(x, type) and issubclass(x, Number):
         return _numberclass_to_numbertype(x)
 
     raise ValueError(f"Trying to extract a dtype from object {x} with unknown type {type(x)}!")

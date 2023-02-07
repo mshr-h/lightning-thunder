@@ -274,6 +274,8 @@ def make_traced(
         trace = make_trace(fn, executor, language_ctx)(*args, **kwargs)
         acquisition_end = time.time_ns()
 
+        print(trace)
+
         translation_start = time.time_ns()
         fusion = ex.fuse(trace)
         translation_end = time.time_ns()

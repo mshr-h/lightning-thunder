@@ -1,5 +1,6 @@
 import operator
 from typing import Sequence
+from numbers import Number
 
 import torch
 
@@ -8,6 +9,7 @@ from thunder.core import prims
 from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.core.trace import Trace
+import thunder.langs.torch as ttorch
 
 __all__ = [
     "torchCtx",
@@ -53,18 +55,11 @@ def convert_element_type(a, dtype):
     # Handles converting a tensor to a numbertype, which Thunder allows but
     #   Torch does not
     if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
-        # TODO: respect default scalar types?
-        if dtype is bool:
-            dtype = torch.bool
-        elif dtype is int:
-            dtype = torch.int64
-        elif dtype is float:
-            dtype = torch.float32
-        elif dtype is complex:
-            dtype = torch.complex64
+        dtype = dtypes.numbertype_to_dtype(dtype)
 
     # Handles number conversions
-    if dtype in (bool, int, float, complex):
+    if isinstance(a, Number):
+        dtype = dtypes.dtype_to_numbertype(ttorch.thunder_dtype(dtype))
         return dtype(a)
 
     return a.to(dtype)
@@ -384,8 +379,6 @@ def _fuse(trace):
     code = compile(cstr, "torch.gen", mode="exec")
     exec(code, ctx)
     fusion = ctx["fusion"]
-
-    print(cstr)
 
     return fusion
 
