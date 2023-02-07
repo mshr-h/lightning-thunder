@@ -60,6 +60,7 @@ __all__ = [
     "rsqrt",
     "sin",
     "tanh",
+    "log",
     # Elementwise binary prims
     "add",
     "atan2",
@@ -119,6 +120,7 @@ class Ops(Enum):
     RSQRT = auto()
     SIN = auto()
     TANH = auto()
+    LOG = auto()
     # Elementwise binary prims
     ADD = auto()
     ATAN2 = auto()
@@ -370,7 +372,6 @@ def _prim_type_promotion(typ, type_promotion_kind):
 # "fill",
 # "imag",
 # "lgamma",
-# "log",
 # "log1p",
 # "log2",
 # "log10",
@@ -645,6 +646,17 @@ tanh = make_prim(
         name="tanh",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=math.tanh,
+    ),
+)
+
+log = make_prim(
+    Ops.LOG,
+    "log",
+    partial(
+        _elementwise_unary_meta,
+        name="log",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
+        number_handler=math.log,
     ),
 )
 

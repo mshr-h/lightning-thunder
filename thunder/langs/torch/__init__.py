@@ -47,6 +47,7 @@ __all__ = [
     "rsqrt",
     "sin",
     "tanh",
+    "log",
     # Elementwise Binary Ops
     "add",
     "lt",
@@ -572,6 +573,11 @@ def sin(a):
 @torch_function(torch.tanh)
 def tanh(a):
     return tlang.tanh(a)
+
+
+@torch_function(torch.log)
+def log(a):
+    return tlang.log(a)
 
 
 #
