@@ -1070,7 +1070,6 @@ split_opinfo = OpInfo(
 )
 shape_ops.append(split_opinfo)
 
-# TODO: re-enable me once PyTorch sorts out its named tensor bugs
 def squeeze_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):
     make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
 
@@ -1131,7 +1130,7 @@ def squeeze_sample_generator(op, device, dtype, requires_grad, **kwargs):
 squeeze_opinfo = OpInfo(
     tlang.squeeze,
     sample_input_generator=squeeze_sample_generator,
-    jax_reference=jax.lax.squeeze,
+    jax_reference=jax.lax.squeeze if JAX_AVAILABLE else None,
 )
 shape_ops.append(squeeze_opinfo)
 
