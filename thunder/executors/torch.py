@@ -1,5 +1,6 @@
 import operator
 from typing import Sequence
+from numbers import Number
 
 import torch
 
@@ -8,6 +9,7 @@ from thunder.core import prims
 from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.core.trace import Trace
+import thunder.langs.torch as ttorch
 
 __all__ = [
     "torchCtx",
@@ -50,21 +52,20 @@ _thunder_to_torch_dtype_map = {
 
 
 def convert_element_type(a, dtype):
+    print(f"type(a)={type(a)}")
+    print(f"a={a}")
+    print(f"dtype={dtype}")
+    print(f"dtypes.is_numbertype(dtype)={dtypes.is_numbertype(dtype)}")
     # Handles converting a tensor to a numbertype, which Thunder allows but
     #   Torch does not
-    if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
-        # TODO: respect default scalar types?
-        if dtype is bool:
-            dtype = torch.bool
-        elif dtype is int:
-            dtype = torch.int64
-        elif dtype is float:
-            dtype = torch.float32
-        elif dtype is complex:
-            dtype = torch.complex64
+    if isinstance(a, torch.Tensor) and dtypes.is_numbertype(dtype):
+        dtype = ttorch.torch_dtype(dtypes.numbertype_to_dtype(dtype))
 
     # Handles number conversions
-    if dtype in (bool, int, float, complex):
+    if isinstance(a, Number):
+        print("number")
+        if not dtypes.is_numbertype(dtype):
+            dtype = dtypes.dtype_to_numbertype(ttorch.thunder_dtype(dtype))
         return dtype(a)
 
     return a.to(dtype)
@@ -135,6 +136,12 @@ def add_helper(a, b, alpha=1):
     return a + b * alpha
 
 
+# NOTE: PyTorch's torch.eq expects tensor x tensor or tensor x number
+#   but the == operator allows number x tensor
+def eq_helper(a, b):
+    return a == b
+
+
 # Maps the Thunder primitives to their corresponding torch operation names
 # TODO: handle more scalar arguments (like add does above)
 ops_to_torch_ops_map = {
@@ -180,6 +187,7 @@ ops_to_torch_ops_map = {
     prims.Ops.ATAN2: "torch.atan2",
     prims.Ops.BITWISE_AND: "torch.bitwise_and",
     prims.Ops.DIV: "torch.div",
+    prims.Ops.EQ: eq_helper,
     prims.Ops.LT: "torch.lt",
     prims.Ops.MUL: "torch.mul",
     prims.Ops.POW: "torch.pow",
@@ -244,6 +252,7 @@ def _fuse_region(inputs, outputs, symbols):
     # Initializes context
     ctx = {
         "torch": torch,
+        "inf": float("inf"),  # NOTE: not always necessary
     }
 
     # Creates signature
@@ -321,6 +330,7 @@ def _fuse(trace):
         "tree_flatten": tree_flatten,
         "tree_unflatten": tree_unflatten,
         "output_structure": output_structure,
+        "inf": float("inf"),  # NOTE: not always necessary
     }
 
     # Acquires inputs

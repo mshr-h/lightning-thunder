@@ -111,8 +111,7 @@ class NanoGPTCausalSelfAttention(nn.Module):
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
         # TODO: re-enable me when indexing is supported
-        # att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
         att = F.softmax(att, dim=-1)
 
         # TODO: re-enable me
@@ -144,11 +143,13 @@ def thunder_NanoGPTCausalSelfAttention_forward_functional(
     # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
     att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
-    # att = att.masked_fill(bias[:, :, :T, :T] == 0, float("-inf"))
-
+    # TODO: convert ttorch.eq to ==
+    att = att.masked_fill(ttorch.eq(bias[:, :, :T, :T], 0), float("-inf"))
     att = ttorch.softmax(att, dim=-1)
+
     y = att @ v
     y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+
     y = ttorch.linear(y, c_proj_weight, c_proj_bias)
 
     return y

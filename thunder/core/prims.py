@@ -69,6 +69,7 @@ __all__ = [
     "atan2",
     "bitwise_and",
     "div",
+    "eq",
     "lt",
     "mul",
     "pow",
@@ -132,6 +133,7 @@ class Ops(Enum):
     ATAN2 = auto()
     BITWISE_AND = auto()
     DIV = auto()
+    EQ = auto()
     LT = auto()
     MUL = auto()
     POW = auto()
@@ -834,6 +836,17 @@ div = make_prim(
         name="div",
         type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.DEFAULT,
         number_handler=_div_number_handler,
+    ),
+)
+
+eq = make_prim(
+    Ops.EQ,
+    "eq",
+    partial(
+        _elementwise_binary_meta,
+        name="eq",
+        type_promotion_kind=ELEMENTWISE_PRIM_TYPE_PROMOTION_KIND.ALWAYS_BOOL,
+        number_handler=operator.eq,
     ),
 )
 

@@ -179,15 +179,23 @@ class Trace:
         return sym
 
     def _make_proxy_name(self, generated_name_counter, names):
-        chars = tuple(string.ascii_uppercase)
+        chars = tuple(string.ascii_lowercase)
 
         def _gen_name(ctr):
+            place = 0
             s = ""
-            while ctr >= len(chars):
-                s = chars[ctr % len(chars)] + s
-                ctr = ctr - len(chars)
+            while ctr >= 0:
+                if place > 0:
+                    ctr = ctr // (place * len(chars))
+                idx = ctr % (len(chars))
+                c = chars[idx]
+                s = c + s
+                ctr = ctr - (ord(c) + place * len(chars))
+                place += 1
 
-            return chars[ctr] + s
+            # NOTE: adds "__" to avoid collision with keywords
+            # TODO: improve naming to avoid conflicts
+            return "__" + s
 
         ctr = generated_name_counter
         name = None

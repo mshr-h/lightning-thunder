@@ -53,6 +53,7 @@ __all__ = [
     "log2",
     # Elementwise Binary Ops
     "add",
+    "eq",
     "lt",
     "mul",
     "pow",
@@ -252,6 +253,10 @@ class TorchLangCtx:
     def add(self, a, b):
         return tlang.add(a, b)
 
+    # ==
+    def eq(self, a, b):
+        return tlang.eq(a, b)
+
     # <
     def lt(self, a, b):
         return tlang.lt(a, b)
@@ -272,8 +277,8 @@ class TorchLangCtx:
     # Elementwise ternary methods
     #
 
-    def masked_fill(a, mask, value):
-        return maksed_fill_disambiguator(a, mask, value)
+    def masked_fill(self, a, mask, value):
+        return masked_fill_disambiguator(a, mask, value)
 
     #
     # Reduction Methods
@@ -699,6 +704,10 @@ def add(a, b, *, alpha=None):
         b = b * alpha
 
     return a + b
+
+
+def eq(a, b):
+    return tlang.eq(a, b)
 
 
 def lt(a, b):

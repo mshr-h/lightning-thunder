@@ -52,6 +52,7 @@ class NumberProxy(Proxy):
     def __hash__(self):
         return Proxy.__hash__(self)
 
+    # TODO: update these comparisons to support Number x Tensor
     def __eq__(self, other):
         other_value = other.value if isinstance(other, NumberProxy) else other
         return self.value == other_value

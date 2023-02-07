@@ -11,7 +11,7 @@ from . import prims
 from .lang import full_like
 from .proxies import NumberProxy, Proxy, TensorProxy
 from .trace import detached_trace, get_trace, Trace
-from .utils import safe_map, safe_zip, unzip2
+from .utils import safe_map, safe_zip, unzip2, check
 
 
 class Transforms(Enum):
@@ -56,7 +56,7 @@ def eval_trace(trace, *args, symbol_mapper=symbol_to_eval, **kwargs):
             return x
 
     def write(v: Proxy, val: Any) -> None:
-        assert v not in env
+        check(v not in env, lambda: f"Found v={v} in env={env}!")
         env[v] = val
 
     safe_map(write, trace.args, args)
