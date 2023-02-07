@@ -54,12 +54,13 @@ _thunder_to_torch_dtype_map = {
 def convert_element_type(a, dtype):
     # Handles converting a tensor to a numbertype, which Thunder allows but
     #   Torch does not
-    if isinstance(a, torch.Tensor) and dtype in (bool, int, float, complex):
+    if isinstance(a, torch.Tensor) and dtypes.is_numbertype(dtype):
         dtype = dtypes.numbertype_to_dtype(dtype)
 
     # Handles number conversions
     if isinstance(a, Number):
-        dtype = dtypes.dtype_to_numbertype(ttorch.thunder_dtype(dtype))
+        if not dtypes.is_numbertype(dtype):
+            dtype = dtypes.dtype_to_numbertype(ttorch.thunder_dtype(dtype))
         return dtype(a)
 
     return a.to(dtype)
