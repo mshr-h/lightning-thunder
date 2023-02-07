@@ -9,12 +9,16 @@ import opcode
 from .graph import Block, Graph, MROAwareObjectRef, Node, NULL, PhiValue, unify_values, Value
 from .python_ir_data import jump_instructions, stack_effect_detail, unconditional_jump_names
 
+import torch
+
 
 class Super:
     pass
 
 
 def acquire_method(method, module=None, mro_klass=None, verbose=False):
+    if isinstance(method, torch.nn.Module):
+        method = method.forward
     assert sys.version_info >= (3, 9) and sys.version_info < (3, 11)
     if verbose:
         print(inspect.getsource(method))
@@ -318,12 +322,18 @@ def make_ssa(gr, verbose=False):
 
 
 def remove_unused_values(gr):
+    gr.ensure_links()
     values_used = set()
+
+    INDEX_OPS = {"BINARY_SUBSCR"}
 
     def mark_used(v):
         if v in values_used:
             return
         values_used.add(v)
+        if v.node and v.node.i.opname in INDEX_OPS:
+            for i in v.node.inputs:
+                mark_used(i)
         if v.parent is not None:
             mark_used(v.parent)
         if isinstance(v, PhiValue):
@@ -332,16 +342,24 @@ def remove_unused_values(gr):
 
     for bl in gr.blocks:
         for n in bl.nodes:
-            for i in n.inputs:
-                mark_used(i)
+            if n.i.opname not in INDEX_OPS:
+                for i in n.inputs:
+                    mark_used(i)
 
     for bl in gr.blocks:
-        bl.block_inputs = [i for i in bl.block_inputs if i in values_used]
+        for i in bl.block_inputs[:]:
+            if i not in values_used:
+                for v in i.values[:]:
+                    if v is not None:
+                        i.remove_value(v)
+                bl.block_inputs.remove(i)
         bl.block_outputs = {o for o in bl.block_outputs if o in values_used}
-        for i in bl.block_inputs:
+        for n in bl.nodes[:]:
+            if n.i.opname in INDEX_OPS and not any((o in values_used) for o in n.outputs):
+                bl.nodes.remove(n)
+    for i in gr.local_variables_at_start:
+        if i is not None:
             i.phi_values = [pv for pv in i.phi_values if pv in values_used]
-        for o in bl.block_outputs:
-            o.phi_values = [pv for pv in o.phi_values if pv in values_used]
 
     for bl in gr.blocks:
         for n in bl.nodes:
