@@ -7,6 +7,8 @@ from typing import Sequence
 from looseversion import LooseVersion
 
 import torch
+from torch.torch_version import Version
+
 import thunder.core.dtypes as dtypes
 
 # TODO: review language and executor dependencies
@@ -15,8 +17,6 @@ from thunder.core import prims, utils
 from thunder.core.proxies import NumberProxy, Proxy, TensorProxy
 from thunder.core.pytree import tree_flatten, tree_map, tree_unflatten
 from thunder.executors.torch import _fuse_region as _fuse_torch_region
-
-from packaging.version import Version
 
 # Imports nvFuser
 # NOTE: nvFuser API changed after PyTorch 1.13
