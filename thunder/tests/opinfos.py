@@ -723,12 +723,18 @@ log10_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
         ),
-        # NOTE: Torch doesn't support CPU float16 or complex32 log10
+        # NOTE: Torch doesn't support CPU float16 log10
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.float16, datatypes.complex32),
+            dtypes=(datatypes.float16,),
             devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log10
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32),
         ),
     ),
 )
@@ -741,14 +747,20 @@ log1p_opinfo = OpInfo(
     test_directives=(
         # See https://github.com/csarofeen/pytorch/issues/2360
         DecorateInfo(
-            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
+            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64, datatypes.complex128)
         ),
-        # NOTE: Torch doesn't support CPU float16 or complex32 log1p
+        # NOTE: Torch doesn't support CPU float16 log1p
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.float16, datatypes.complex32),
+            dtypes=(datatypes.float16,),
             devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log1p
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32),
         ),
     ),
 )
@@ -763,12 +775,18 @@ log2_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64,)
         ),
-        # NOTE: Torch doesn't support CPU float16 or complex32 log2
+        # NOTE: Torch doesn't support CPU float16 log2
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.float16, datatypes.complex32),
+            dtypes=(datatypes.float16,),
             devicetypes=("cpu",),
+        ),
+        # NOTE: Torch doesn't support complex32 log2
+        DecorateInfo(
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complex32),
         ),
     ),
 )
