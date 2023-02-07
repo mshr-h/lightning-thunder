@@ -7,8 +7,6 @@ from typing import Sequence
 from looseversion import LooseVersion
 
 import torch
-from torch.torch_version import Version
-
 import thunder.core.dtypes as dtypes
 
 # TODO: review language and executor dependencies
@@ -20,12 +18,12 @@ from thunder.executors.torch import _fuse_region as _fuse_torch_region
 
 # Imports nvFuser
 # NOTE: nvFuser API changed after PyTorch 1.13
-nvfuser_version = Version("0.0.0")
+nvfuser_version = LooseVersion("0.0.0")
 try:
     import nvfuser
 
     if hasattr(nvfuser, "version"):
-        nvfuser_version = nvfuser.version()
+        nvfuser_version = LooseVersion(nvfuser.version())
         from nvfuser import DataType, FusionDefinition
     else:
         from nvfuser._C import DataType, Fusion, FusionDefinition
@@ -471,7 +469,7 @@ def _fuse_region(inputs, outputs, symbols):
 
     proxy_to_nvfuser_map = {}
 
-    if nvfuser_version >= Version("0.0.1"):
+    if nvfuser_version >= LooseVersion("0.0.1"):
         fd = FusionDefinition()
         fs = fd
     else:
