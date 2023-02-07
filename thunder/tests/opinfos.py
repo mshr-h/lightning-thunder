@@ -3,6 +3,8 @@ from collections import namedtuple
 from functools import partial
 import numpy as np
 import itertools
+import operator
+from typing import Sequence
 
 import pytest
 
@@ -918,6 +920,37 @@ broadcast_in_dim_opinfo = OpInfo(
 shape_ops.append(broadcast_in_dim_opinfo)
 
 
+def getitem_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=torch.float32)
+
+    # a.shape, key
+    cases = (
+        # Fully specified slicing
+        ((5, 5), (slice(1, 3, 1), slice(2, 4, 2))),
+        ((11, 23), (slice(4, 9, 6), slice(3, 21, 4))),
+        # Inferred start
+        # Inferred end
+        # Inferred stard and end
+        # Partially specified slicing
+        # Slicing and numbers
+        # All numbers
+        # Ellipses
+        # Newaxis/None
+    )
+
+    for shape, key in cases:
+        a = make(shape)
+        yield SampleInput(a, key)
+
+
+getitem_opinfo = OpInfo(
+    operator.getitem,
+    sample_input_generator=getitem_sample_generator,
+    torch_reference=operator.getitem,
+    jax_reference=operator.getitem,
+)
+shape_ops.append(getitem_opinfo)
+
 # TODO: only remove these cases when the executor is nvFuser
 # FIXME: Zero-dim cases are skipped due to https://github.com/csarofeen/pytorch/issues/2383
 # FIXME: tensors with no elements are skipped because of no nvFuser support
@@ -1036,6 +1069,71 @@ split_opinfo = OpInfo(
     torch_reference=torch.split,
 )
 shape_ops.append(split_opinfo)
+
+
+def squeeze_torch_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # a.shape, dim
+    cases = (
+        ((1, 2, 1, 1, 3, 1), None),
+        ((), None),
+        ((1, 1, 1), None),
+        ((1, 2, 1, 1, 3, 1), 0),
+        ((1, 2, 1, 1, 3, 1), 2),
+        ((1, 2, 1, 1, 3, 1), 5),
+        ((1, 2, 1, 1, 3, 1), (2, 3)),
+        ((1, 1, 1), (0, 1, 2)),
+    )
+
+    for shape, dim in cases:
+        a = make(shape)
+        yield SampleInput(a, dim)
+
+
+def torch_squeeze_helper(a, dim):
+    # TODO: dim as a sequence is only supported on PyTorch 2.0 and greater
+    if isinstance(dim, Sequence):
+        for dim in sorted(dim, reverse=True):
+            a = a.squeeze(dim)
+        return a
+
+    if dim is None:
+        return torch.squeeze(a)
+
+    # dim is a number
+    return torch.squeeze(a, dim)
+
+
+squeeze_torch_opinfo = OpInfo(
+    ttorch.squeeze,
+    name="squeeze_torch",
+    sample_input_generator=squeeze_torch_sample_generator,
+    torch_reference=torch_squeeze_helper,
+)
+shape_ops.append(squeeze_torch_opinfo)
+
+
+def squeeze_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # a.shape, dim
+    cases = (
+        ((1, 2, 1, 1, 3, 1), (2, 3)),
+        ((1, 1, 1), (0, 1, 2)),
+    )
+
+    for shape, dim in cases:
+        a = make(shape)
+        yield SampleInput(a, dim)
+
+
+squeeze_opinfo = OpInfo(
+    tlang.squeeze,
+    sample_input_generator=squeeze_sample_generator,
+    jax_reference=jax.lax.squeeze if JAX_AVAILABLE else None,
+)
+shape_ops.append(squeeze_opinfo)
 
 
 def tensor_split_sample_generator(op, device, dtype, requires_grad, **kwargs):

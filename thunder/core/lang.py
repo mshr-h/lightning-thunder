@@ -31,6 +31,7 @@ __all__ = [
     "maybe_broadcast",
     "reshape",
     "slice_in_dim",
+    "squeeze",
     "transpose",
     "unsqueeze",
     # Elemenwise unary operations
@@ -280,6 +281,12 @@ def slice_in_dim(a, start_index, limit_index, stride=1, dim=0):
     strides[dim] = stride
 
     return prims.slice_prim(a, start_indices, limit_indices, strides)
+
+
+def squeeze(a, dims):
+    dims = utils.canonicalize_dims(a.ndim, dims)
+    result = prims.squeeze(a, dims)
+    return result
 
 
 def transpose(a, permutation):

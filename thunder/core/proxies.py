@@ -264,6 +264,10 @@ class TensorProxy(Proxy):
         ctx = get_language_context()
         return ctx.matmul(self, other)
 
+    def __getitem__(self, key):
+        ctx = get_language_context()
+        return ctx.get_item(self, key)
+
     # NOTE: If an attribute wasn't found, this assumes the attribute is a method defined
     #  by the language context. Just returning that method wouldn't work, however,
     #  since the TensorProxy, passed as self here, wouldn't be passed through to the
