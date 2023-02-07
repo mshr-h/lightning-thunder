@@ -755,6 +755,13 @@ log1p_opinfo = OpInfo(
             executors=("nvFuser",),
             dtypes=(datatypes.complexfloating,),
         ),
+        # NOTE: Torch gives wrong result: https://github.com/pytorch/pytorch/issues/94333
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bfloat16,),
+            devicetypes=("cpu",),
+        ),
         # NOTE: Torch doesn't support CPU float16 log1p
         DecorateInfo(
             pytest.mark.xfail,
