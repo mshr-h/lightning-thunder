@@ -734,7 +734,7 @@ log10_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.complex32),
+            dtypes=(datatypes.complex32,),
         ),
     ),
 )
@@ -760,7 +760,7 @@ log1p_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.complex32),
+            dtypes=(datatypes.complex32,),
         ),
     ),
 )
@@ -786,7 +786,7 @@ log2_opinfo = OpInfo(
         DecorateInfo(
             pytest.mark.xfail,
             "test_core_vs_torch_consistency",
-            dtypes=(datatypes.complex32),
+            dtypes=(datatypes.complex32,),
         ),
     ),
 )

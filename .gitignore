@@ -117,3 +117,10 @@ lightning_logs
 *.gz
 .DS_Store
 .*_submit.py
+
+# Editor temporary file
+*.swn
+*.swo
+*.swp
+*.swm
+*~
