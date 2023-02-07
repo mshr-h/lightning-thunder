@@ -696,6 +696,7 @@ elementwise_unary_ops.append(tanh_opinfo)
 
 log_opinfo = OpInfo(
     tlang.log,
+    domain=(-1, 1),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log,
     test_directives=(
@@ -716,6 +717,7 @@ elementwise_unary_ops.append(log_opinfo)
 
 log10_opinfo = OpInfo(
     tlang.log10,
+    domain=(-1, 1),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log10,
     test_directives=(
@@ -742,12 +744,16 @@ elementwise_unary_ops.append(log10_opinfo)
 
 log1p_opinfo = OpInfo(
     tlang.log1p,
+    domain=(-1, 1),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log1p,
     test_directives=(
         # See https://github.com/csarofeen/pytorch/issues/2360
         DecorateInfo(
-            pytest.mark.xfail, "test_core_vs_torch_consistency", executors=("nvFuser",), dtypes=(datatypes.complex64, datatypes.complex128)
+            pytest.mark.xfail,
+            "test_core_vs_torch_consistency",
+            executors=("nvFuser",),
+            dtypes=(datatypes.complexfloating,),
         ),
         # NOTE: Torch doesn't support CPU float16 log1p
         DecorateInfo(
@@ -762,12 +768,21 @@ log1p_opinfo = OpInfo(
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.complex32,),
         ),
+        # PyTorch didn't support CPU complex log1p before 1.13
+        DecorateInfo(
+            pytest.mark.skip,
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.complexfloating,),
+            devicetypes=("cpu",),
+            active_if=LooseVersion(torch.__version__) <= "1.13",
+        ),
     ),
 )
 elementwise_unary_ops.append(log1p_opinfo)
 
 log2_opinfo = OpInfo(
     tlang.log2,
+    domain=(-1, 1),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log2,
     test_directives=(
