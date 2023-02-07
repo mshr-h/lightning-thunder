@@ -8,7 +8,7 @@ import torch  # # aehem.
 import thunder
 from thunder.langs.torch import _torch_to_thunder_complete_map
 
-from .frontend import acquire_method, make_single_return, make_ssa
+from .frontend import acquire_method, make_single_return, make_ssa, remove_unused_values
 from .graph import Block, clone_blocks, Node, PhiValue, replace_values, Value
 from .python_ir import get_instruction
 
@@ -427,6 +427,7 @@ def unroll_for_over_modules(gr, for_iter_node):
     for_iter_node.i = get_instruction(opname="BINARY_SUBSCR", arg=None)
     iter_phi.remove_value(iter_v)
     assert len(iter_v.phi_values) == 0
+    get_iter_block.block_outputs.remove(iter_v)
 
     get_iter_block.block_outputs.add(get_iter_node.inputs[0])
 
@@ -445,6 +446,7 @@ def unroll_for_over_modules(gr, for_iter_node):
 
     delete_value_and_sources(iter_phi)
     seq_phi = PhiValue(values=[get_iter_node.inputs[0]], jump_sources=[get_iter_block.nodes[-1]], block=for_iter_block)
+    get_iter_block.nodes.remove(get_iter_node)
     for_iter_block.block_inputs.append(seq_phi)
 
     idx = Value(value=0, is_const=True)
@@ -571,3 +573,52 @@ def unroll_for_loops_and_inline_modules(gr):
             iterate = inline_submodule_calls(gr)
             if iterate:
                 thunder.core.script.passes.merge_blocks_where_possible(gr)
+
+
+def module_to_function(gr):
+    attr_dict = {}
+    attr_list = []
+    gr.local_variables_at_start = [lv for lv in gr.local_variables_at_start if lv is not None]
+    offset = len(gr.local_variables_at_start)
+    for bl in gr.blocks:
+        for n in bl.nodes:
+            for idx_i, i in enumerate(n.inputs):
+                # TODO: inefficient because it looks twice
+                v = find_and_evaluate_method_through_phi_parent(i)
+                maybe_self, attrs = find_method_through_phi_parent(i)
+
+                if maybe_self.value is gr.module and isinstance(v, torch.Tensor):
+                    attr_string = ".".join(attrs)
+                    idx = attr_dict.setdefault(attr_string, offset + len(attr_dict))
+                    if idx >= len(gr.local_variables_at_start):
+                        func_arg = Value(name=attr_string, is_function_arg=True)
+                        gr.local_variables_at_start.append(func_arg)
+                        attr_list.append(attr_string)
+                    else:
+                        func_arg = gr.local_variables_at_start[idx]
+
+                    pvs = [pv for pv in func_arg.phi_values if pv.block is bl]
+                    if not pvs:
+                        pv = PhiValue([func_arg], [None], bl)
+                        bl.block_inputs.append(pv)
+                    else:
+                        (pv,) = pvs
+                    n.inputs[idx_i] = pv
+                    ## remove old input from phi_values etc?
+                elif maybe_self.value is gr.module and (
+                    n.i.opname not in {"BINARY_SUBSCR"} or not isinstance(v, torch.nn.Module)
+                ):
+
+                    ## inline to const...
+                    i.value = v
+
+                    i.typ = type(i.value)
+                    i.parent = None
+                    i.is_const = True
+                    i.is_global = False
+
+    remove_unused_values(gr)
+    if gr.local_variables_at_start[0].phi_values:
+        raise RuntimeError("could not eliminate self argument")
+    del gr.local_variables_at_start[0]
+    return attr_list

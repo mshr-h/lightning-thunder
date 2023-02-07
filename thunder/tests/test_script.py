@@ -211,7 +211,7 @@ def test_nanogpt_inlining_unrolling():
     # these will likely change specialization, more inlining, ...
     # but lets check when it happens
     assert len(gr.blocks) == 5
-    assert sum(len(bl.nodes) for bl in gr.blocks) == 580
+    assert sum(len(bl.nodes) for bl in gr.blocks) == 579
 
     # has everything been inlined/unrolled?
     funcs = {
@@ -252,6 +252,32 @@ def test_nanogpt_inlining_unrolling():
 
     torch.manual_seed(5)
     o = fn(m, x, None)
+    torch.manual_seed(5)
+
+    o2 = m.forward(x)
+
+    assert_close(o[0], o2[0])
+
+
+def test_nanogpt_functionalization():
+    m = nanogpt_model.GPT(nanogpt_model.GPTConfig)
+
+    gr = thunder.core.script.frontend.acquire_method(m.forward, verbose=False)
+    thunder.core.script.frontend.make_ssa(gr)
+    thunder.core.script.frontend.make_single_return(gr)
+    thunder.core.script.passes.unroll_for_loops_and_inline_modules(gr)
+    additional_param_names = thunder.core.script.passes.module_to_function(gr)
+    thunder.core.script.graph.check_graph(gr)
+
+    fn = thunder.core.script.python_ir.generate_function(gr)
+
+    x = torch.randint(0, 255, (5, 5))
+
+    sd = m.state_dict()
+    additional_params = [sd[n.replace("[", "").replace("]", "")] for n in additional_param_names]
+
+    torch.manual_seed(5)
+    o = fn(x, None, *additional_params)
     torch.manual_seed(5)
 
     o2 = m.forward(x)

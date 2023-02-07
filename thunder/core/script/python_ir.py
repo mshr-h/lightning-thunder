@@ -2,7 +2,7 @@ import dis
 import sys
 import types
 
-from .graph import MROAwareObjectRef, Node
+from .graph import MROAwareObjectRef, Node, insert_before, insert_after
 
 
 def get_instruction(opname, arg):
@@ -17,18 +17,6 @@ def get_instruction(opname, arg):
         is_jump_target=None,
     )
     return i
-
-
-def insert_before(new_n, n):
-    idx = n.block.nodes.index(n)
-    n.block.nodes.insert(idx, new_n)
-    new_n.block = n.block
-
-
-def insert_after(new_n, n):
-    idx = n.block.nodes.index(n)
-    n.block.nodes.insert(idx + 1, new_n)
-    new_n.block = n.block
 
 
 def undo_ssa(gr):
