@@ -696,7 +696,7 @@ elementwise_unary_ops.append(tanh_opinfo)
 
 log_opinfo = OpInfo(
     tlang.log,
-    domain=(-1, 1),
+    domain=(0, math.inf),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log,
     test_directives=(
@@ -717,7 +717,7 @@ elementwise_unary_ops.append(log_opinfo)
 
 log10_opinfo = OpInfo(
     tlang.log10,
-    domain=(-1, 1),
+    domain=(0, math.inf),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log10,
     test_directives=(
@@ -744,7 +744,7 @@ elementwise_unary_ops.append(log10_opinfo)
 
 log1p_opinfo = OpInfo(
     tlang.log1p,
-    domain=(-1, 1),
+    domain=(0, math.inf),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log1p,
     test_directives=(
@@ -768,13 +768,13 @@ log1p_opinfo = OpInfo(
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.complex32,),
         ),
-        # PyTorch didn't support CPU complex log1p before 1.13
+        # PyTorch didn't support CPU complex log1p before 2.0
         DecorateInfo(
             pytest.mark.skip,
             "test_core_vs_torch_consistency",
             dtypes=(datatypes.complexfloating,),
             devicetypes=("cpu",),
-            active_if=LooseVersion(torch.__version__) < "2.0.0",
+            active_if=LooseVersion(torch.__version__) < "2.0",
         ),
     ),
 )
@@ -782,7 +782,7 @@ elementwise_unary_ops.append(log1p_opinfo)
 
 log2_opinfo = OpInfo(
     tlang.log2,
-    domain=(-1, 1),
+    domain=(0, math.inf),
     sample_input_generator=elementwise_unary_generator,
     torch_reference=torch.log2,
     test_directives=(
