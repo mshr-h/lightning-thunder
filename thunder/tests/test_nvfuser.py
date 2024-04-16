@@ -852,15 +852,17 @@ def test_optimization_fuel(executor, device, _):
     nvfuserex.set_fuel(thunder.extend.FUEL_LEVEL.UNLIMITED)
 
 
-@instantiate(dtypes=(thunder.float16, thunder.bfloat16), devicetypes=(devices.DeviceType.CUDA,), executors=(nvFuserExecutor,))
+@instantiate(
+    dtypes=(thunder.float16, thunder.bfloat16), devicetypes=(devices.DeviceType.CUDA,), executors=(nvFuserExecutor,)
+)
 def test_matmul(executor, device: str, dtype: dtypes.dtype):
     m, n, k = 128, 64, 32
     torch_dtype = ltorch.to_torch_dtype(dtype)
     a = torch.randn((m, k), dtype=torch_dtype, device=device)
     b = torch.randn((k, n), dtype=torch_dtype, device=device)
 
-    def fn(a , b):
-        return a.matmul(b);
+    def fn(a, b):
+        return a.matmul(b)
 
     compiled_func = thunder.compile(
         fn,

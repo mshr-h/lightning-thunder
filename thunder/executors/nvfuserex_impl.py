@@ -1948,6 +1948,7 @@ def var_mean(
 
 register_supported(PrimIDs.VAR_MEAN, var_mean, _var_mean_check)
 
+
 def _matmul_check(
     a: TensorProxy,
     b: TensorProxy,
@@ -1956,6 +1957,7 @@ def _matmul_check(
     if enable_matmul is None:
         enable_matmul = False
     return enable_matmul and is_supported_tensor(a) and is_supported_tensor(b)
+
 
 def matmul(
     a: TensorProxy,
@@ -1967,6 +1969,7 @@ def matmul(
     nva = getnv(a, fd, lc_to_nv_map)
     nvb = getnv(b, fd, lc_to_nv_map)
     return fd.ops.matmul(nva, nvb)
+
 
 register_supported(PrimIDs.MATMUL, matmul, _matmul_check)
 
