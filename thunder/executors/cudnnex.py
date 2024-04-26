@@ -25,7 +25,25 @@ if cudnn_available():
     cudnn_backend_version = cudnn.backend_version()
     # Mapping from device to cudnn handles
     device_to_cudnn_handle = {}
-
+    
+    per_device_seed_tensors = {}
+    per_device_offset_tensors = {}
+    
+def _get_seed_tensor(device):    
+    seed_tensor = per_device_seed_tensors.get(device, None)
+    if seed_tensor is None:
+        with torch.cuda.device(device):
+            seed_tensor = torch.full((1, 1, 1, 1), random.randint(0, 123902390), dtype=torch.int32, device=device)
+            per_device_seed_tensors[device] = seed_tensor
+    return seed_tensor
+            
+def _get_offset_tensor(device):    
+    offset_tensor = per_device_offset_tensors.get(device, None)
+    if offset_tensor is None:
+        with torch.cuda.device(device):
+            offset_tensor = torch.full((1, 1, 1, 1), random.randint(0, 123902390), dtype=torch.int32, device=device)
+            per_device_offset_tensors[device] = offset_tensor
+    return offset_tensor
 
 # This function creates a new handle for the device that cudnn should
 # run its kernels on. As the suggested approach by cudnn is to make a few handles
@@ -104,70 +122,76 @@ class CudnnexLRUCache(OrderedDict):
 _cudnnex_cache = CudnnexLRUCache(maxlen=1024)
 
 
-def _make_cudnn_sdpa_forward_graph(query, key, value, attn_mask, dropout_p, is_causal):
-    graph = cudnn.pygraph(
-        intermediate_data_type=cudnn.data_type.FLOAT,
-        compute_data_type=cudnn.data_type.FLOAT,
-        handle=_get_cudnn_handle(query.device_index),
-    )
+def _make_cudnn_sdpa_forward_graph(query, key, value, attn_mask, dropout_p, is_causal, attention_scale):
 
-    Q = graph.tensor(name="Q", dim=query.size, stride=query.stride, data_type=torch_to_cudnn_dtype(query.dtype))
-    K = graph.tensor(name="K", dim=key.size, stride=key.stride, data_type=torch_to_cudnn_dtype(key.dtype))
-    V = graph.tensor(name="V", dim=value.size, stride=value.stride, data_type=torch_to_cudnn_dtype(value.dtype))
-    Bias = None
-    if attn_mask is not None:
-        Bias = graph.tensor(
-            name="bias", dim=attn_mask.size, stride=attn_mask.stride, data_type=torch_to_cudnn_dtype(attn_mask.dtype)
-        )
-
-    scalar_dim_stride = tuple([1] * len(query.size))
-    dropout_tuple = None
-    Seed = None
-    Offset = None
-    if dropout_p != 0.0:
-        Seed = graph.tensor(
-            name="Seed", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
-        )
-        Offset = graph.tensor(
-            name="Offset", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
-        )
-        dropout_tuple = (dropout_p, Seed, Offset)
-
-    Attn_scale = graph.tensor(
-        name="Attn_scale",
-        dim=scalar_dim_stride,
-        stride=scalar_dim_stride,
-        data_type=cudnn.data_type.FLOAT,
-        is_pass_by_value=True,
-    )
-
-    O, softmax_stats = graph.scaled_dot_product_flash_attention(
-        name="scaled_dot_product_flash_attention",
-        q=Q,
-        k=K,
-        v=V,
-        is_inference=False,
-        bias=Bias,
-        use_causal_mask=is_causal,
-        attn_scale=Attn_scale,
-        dropout=dropout_tuple,
-    )
-
-    # TODO: update to do tensor.stride_order when available from FE
-    b, h, s_q, _ = query.size
-    _, _, _, d_v = value.size
-
-    dim_o = (b, h, s_q, d_v)
-    stride_o = (h * s_q * d_v, s_q * d_v, d_v, 1)
-    O.set_output(True).set_data_type(torch_to_cudnn_dtype(value.dtype)).set_dim(dim_o).set_stride(stride_o)
-
-    softmax_stats.set_output(True).set_data_type(torch_to_cudnn_dtype(torch.float32))
-
-    cache_key = graph.key()
+    b, h, s_q,  _   = query.size
+    _, _, s_kv, d_v = value.size
+    is_inference = False
+   
+    cache_key = (b, h , s_q, s_kv, d_v, attention_scale, is_inference, dropout_p, query.dtype, query.stride)
+    
     # If a built graph does not exist in cache already, make one and place it in
     if cache_key not in _cudnnex_cache:
-        graph.build([cudnn.heur_mode.A])
+        graph = cudnn.pygraph(
+            intermediate_data_type=cudnn.data_type.FLOAT,
+            compute_data_type=cudnn.data_type.FLOAT,
+            handle=_get_cudnn_handle(query.device_index),
+        )
 
+        Q = graph.tensor(name="Q", dim=query.size, stride=query.stride, data_type=torch_to_cudnn_dtype(query.dtype))
+        K = graph.tensor(name="K", dim=key.size, stride=key.stride, data_type=torch_to_cudnn_dtype(key.dtype))
+        V = graph.tensor(name="V", dim=value.size, stride=value.stride, data_type=torch_to_cudnn_dtype(value.dtype))
+        Bias = None
+        if attn_mask is not None:
+            Bias = graph.tensor(
+                name="bias", dim=attn_mask.size, stride=attn_mask.stride, data_type=torch_to_cudnn_dtype(attn_mask.dtype)
+            )
+
+        scalar_dim_stride = tuple([1] * len(query.size))
+        dropout_tuple = None
+        Seed = None
+        Offset = None
+        if dropout_p != 0.0:
+            Seed = graph.tensor(
+                name="Seed", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
+            )
+            Offset = graph.tensor(
+                name="Offset", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
+            )
+            dropout_tuple = (dropout_p, Seed, Offset)
+
+        Attn_scale = graph.tensor(
+            name="Attn_scale",
+            dim=scalar_dim_stride,
+            stride=scalar_dim_stride,
+            data_type=cudnn.data_type.FLOAT,
+            is_pass_by_value=True,
+        )
+
+        O, softmax_stats = graph.scaled_dot_product_flash_attention(
+            name="scaled_dot_product_flash_attention",
+            q=Q,
+            k=K,
+            v=V,
+            is_inference=False,
+            bias=Bias,
+            use_causal_mask=is_causal,
+            attn_scale=Attn_scale,
+            dropout=dropout_tuple,
+        )
+
+        # TODO: update to do tensor.stride_order when available from FE
+        b, h, s_q, _ = query.size
+        _, _, _, d_v = value.size
+
+        dim_o = (b, h, s_q, d_v)
+        stride_o = (h * s_q * d_v, s_q * d_v, d_v, 1)
+        O.set_output(True).set_data_type(torch_to_cudnn_dtype(value.dtype)).set_dim(dim_o).set_stride(stride_o)
+
+        softmax_stats.set_output(True).set_data_type(torch_to_cudnn_dtype(torch.float32))
+    
+        graph.build([cudnn.heur_mode.A])
+        
         _cudnnex_cache[cache_key] = (
             Q,
             K,
@@ -279,8 +303,22 @@ def _cudnn_sdpa_fwd_impl(
     *,
     scale: float | None = None,
 ) -> tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
+    
+    torch.cuda.nvtx.range_push("_transform_sdpa_inputs")
     query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
 
+    torch.cuda.nvtx.range_pop()
+    torch.cuda.nvtx.range_push("_make_cudnn_sdpa_forward_graph")
+    
+    b, h, s_q, d_q = query.size()
+    _, _, _, d_v = value.size()
+    
+    # Default value of scale, if not provided, in all torch versions
+    if scale is None:
+        scale = 1 / d_q**0.5
+        
+    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
+    
     (
         Q,
         K,
@@ -292,27 +330,25 @@ def _cudnn_sdpa_fwd_impl(
         O,
         softmax_stats,
         graph,
-    ) = _make_cudnn_sdpa_forward_graph(query_4d, key_4d, value_4d, attn_mask_4d, dropout_p, is_causal)
+    ) = _make_cudnn_sdpa_forward_graph(query_4d, key_4d, value_4d, attn_mask_4d, dropout_p, is_causal, scale)
 
-    b, h, s_q, d_q = query.size()
-    _, _, _, d_v = value.size()
+    torch.cuda.nvtx.range_pop()
+    torch.cuda.nvtx.range_push("seed_offset_output")
+    
+    seed_tensor = (
+        _get_seed_tensor(query.device) if Seed else None
+    )
+    offset_tensor = (
+        _get_offset_tensor(query.device) if Offset else None
+    )
+
+
     O_actual = torch.empty(b, h, s_q, d_v, dtype=value.dtype, device=query.device)
     softmax_stats_actual = torch.empty(b, h, s_q, 1, dtype=torch.float32, device=query.device)
     workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
-
-    seed_tensor = (
-        torch.full((1, 1, 1, 1), random.randint(0, 123902390), dtype=torch.int32, device=query.device) if Seed else None
-    )
-    offset_tensor = (
-        torch.full((1, 1, 1, 1), random.randint(0, 123902390), dtype=torch.int32, device=query.device)
-        if Offset
-        else None
-    )
-
-    # Default value of scale, if not provided, in all torch versions
-    if scale is None:
-        scale = 1 / d_q**0.5
-    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
+    
+    torch.cuda.nvtx.range_pop()
+    torch.cuda.nvtx.range_push("variant_pack")
 
     if attn_mask is not None and attn_mask.dtype == torch.bool:
         attn_bias = torch.zeros_like(attn_mask, dtype=query.dtype)
@@ -332,10 +368,14 @@ def _cudnn_sdpa_fwd_impl(
     if attn_mask is not None:
         cudnn_to_torch_tensor[Bias] = attn_mask.detach()
 
+    torch.cuda.nvtx.range_pop()
+    torch.cuda.nvtx.range_push("execute")
+
     # Even though the handle is created on query.device, cudnn still requires to set current device to query.device.
     # This is most probably a bug and is being actively looked into.
     with torch.cuda.device(query.device):
         graph.execute(cudnn_to_torch_tensor, workspace, handle=_get_cudnn_handle(query.device))
+    torch.cuda.nvtx.range_pop()
 
     return O_actual, softmax_stats_actual, seed_tensor, offset_tensor
 
@@ -378,90 +418,92 @@ cudnn_sdpa_fwd = cudnn_ex.register_operator(
 
 
 def _make_cudnn_sdpa_backward_graph(
-    query, key, value, attn_mask, dropout_p, is_causal, grad_query_stride, grad_key_stride, grad_value_stride
+    query, key, value, attn_mask, dropout_p, is_causal, grad_query_stride, grad_key_stride, grad_value_stride, attention_scale
 ):
     b, h, s_q, _ = query.size
-    _, _, _, d_v = value.size
+    _, _, s_kv, d_v = value.size
 
-    # cuDNN < 9.0.0 might produce nan gradients for sequence length < 64
-    assert s_q >= 64, "CUDNN SDPA requires sequence length to be at least 64 for backward pass"
-
-    graph = cudnn.pygraph(
-        io_data_type=torch_to_cudnn_dtype(query.dtype),
-        intermediate_data_type=cudnn.data_type.FLOAT,
-        compute_data_type=cudnn.data_type.FLOAT,
-        handle=_get_cudnn_handle(query.device_index),
-    )
-
-    Q = graph.tensor(name="Q", dim=query.size, stride=query.stride, data_type=torch_to_cudnn_dtype(query.dtype))
-    K = graph.tensor(name="K", dim=key.size, stride=key.stride, data_type=torch_to_cudnn_dtype(key.dtype))
-    V = graph.tensor(name="V", dim=value.size, stride=value.stride, data_type=torch_to_cudnn_dtype(value.dtype))
-
-    dim_o = (b, h, s_q, d_v)
-    stride_o = (h * s_q * d_v, s_q * d_v, d_v, 1)
-    O = graph.tensor(name="O", dim=dim_o, stride=stride_o, data_type=torch_to_cudnn_dtype(query.dtype))
-    dO = graph.tensor_like(O)
-
-    dim_stats = (b, h, s_q, 1)
-    stride_stats = (h * s_q, s_q, 1, 1)
-    Stats = graph.tensor(name="Stats", dim=dim_stats, stride=stride_stats, data_type=cudnn.data_type.FLOAT)
-
-    Bias = None
-    dBias = None
-    if attn_mask is not None:
-        Bias = graph.tensor(
-            name="bias", dim=attn_mask.size, stride=attn_mask.stride, data_type=torch_to_cudnn_dtype(attn_mask.dtype)
-        )
-        dBias = graph.tensor_like(Bias)
-
-    scalar_dim_stride = tuple([1] * len(query.size))
-    dropout_tuple = None
-    Seed = None
-    Offset = None
-    if dropout_p != 0.0:
-        Seed = graph.tensor(
-            name="Seed", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
-        )
-        Offset = graph.tensor(
-            name="Offset", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
-        )
-        dropout_tuple = (dropout_p, Seed, Offset)
-
-    Attn_scale = graph.tensor(
-        name="Attn_scale",
-        dim=scalar_dim_stride,
-        stride=scalar_dim_stride,
-        data_type=cudnn.data_type.FLOAT,
-        is_pass_by_value=True,
-    )
-
-    dQ, dK, dV = graph.scaled_dot_product_flash_attention_backward(
-        q=Q,
-        k=K,
-        v=V,
-        o=O,
-        dO=dO,
-        stats=Stats,
-        attn_scale=Attn_scale,
-        bias=Bias,
-        dBias=dBias,
-        use_causal_mask=is_causal,
-        dropout=dropout_tuple,
-    )
-
-    dQ.set_output(True).set_dim(query.size).set_stride(grad_query_stride).set_data_type(
-        torch_to_cudnn_dtype(query.dtype)
-    )
-    dK.set_output(True).set_dim(key.size).set_stride(grad_key_stride).set_data_type(torch_to_cudnn_dtype(key.dtype))
-    dV.set_output(True).set_dim(value.size).set_stride(grad_value_stride).set_data_type(
-        torch_to_cudnn_dtype(value.dtype)
-    )
-
-    cache_key = graph.key()
+    cache_key = (b, h , s_q, s_kv, d_v, attention_scale, dropout_p, query.dtype, query.stride)
+    
     # If a built graph does not exist in cache already, make one and place it in
     if cache_key not in _cudnnex_cache:
-        graph.build([cudnn.heur_mode.A])
 
+        # cuDNN < 9.0.0 might produce nan gradients for sequence length < 64
+        assert s_q >= 64, "CUDNN SDPA requires sequence length to be at least 64 for backward pass"
+
+        graph = cudnn.pygraph(
+            io_data_type=torch_to_cudnn_dtype(query.dtype),
+            intermediate_data_type=cudnn.data_type.FLOAT,
+            compute_data_type=cudnn.data_type.FLOAT,
+            handle=_get_cudnn_handle(query.device_index),
+        )
+
+        Q = graph.tensor(name="Q", dim=query.size, stride=query.stride, data_type=torch_to_cudnn_dtype(query.dtype))
+        K = graph.tensor(name="K", dim=key.size, stride=key.stride, data_type=torch_to_cudnn_dtype(key.dtype))
+        V = graph.tensor(name="V", dim=value.size, stride=value.stride, data_type=torch_to_cudnn_dtype(value.dtype))
+
+        dim_o = (b, h, s_q, d_v)
+        stride_o = (h * s_q * d_v, s_q * d_v, d_v, 1)
+        O = graph.tensor(name="O", dim=dim_o, stride=stride_o, data_type=torch_to_cudnn_dtype(query.dtype))
+        dO = graph.tensor_like(O)
+
+        dim_stats = (b, h, s_q, 1)
+        stride_stats = (h * s_q, s_q, 1, 1)
+        Stats = graph.tensor(name="Stats", dim=dim_stats, stride=stride_stats, data_type=cudnn.data_type.FLOAT)
+
+        Bias = None
+        dBias = None
+        if attn_mask is not None:
+            Bias = graph.tensor(
+                name="bias", dim=attn_mask.size, stride=attn_mask.stride, data_type=torch_to_cudnn_dtype(attn_mask.dtype)
+            )
+            dBias = graph.tensor_like(Bias)
+
+        scalar_dim_stride = tuple([1] * len(query.size))
+        dropout_tuple = None
+        Seed = None
+        Offset = None
+        if dropout_p != 0.0:
+            Seed = graph.tensor(
+                name="Seed", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
+            )
+            Offset = graph.tensor(
+                name="Offset", dim=scalar_dim_stride, stride=scalar_dim_stride, data_type=cudnn.data_type.INT32
+            )
+            dropout_tuple = (dropout_p, Seed, Offset)
+
+        Attn_scale = graph.tensor(
+            name="Attn_scale",
+            dim=scalar_dim_stride,
+            stride=scalar_dim_stride,
+            data_type=cudnn.data_type.FLOAT,
+            is_pass_by_value=True,
+        )
+
+        dQ, dK, dV = graph.scaled_dot_product_flash_attention_backward(
+            q=Q,
+            k=K,
+            v=V,
+            o=O,
+            dO=dO,
+            stats=Stats,
+            attn_scale=Attn_scale,
+            bias=Bias,
+            dBias=dBias,
+            use_causal_mask=is_causal,
+            dropout=dropout_tuple,
+        )
+
+        dQ.set_output(True).set_dim(query.size).set_stride(grad_query_stride).set_data_type(
+            torch_to_cudnn_dtype(query.dtype)
+        )
+        dK.set_output(True).set_dim(key.size).set_stride(grad_key_stride).set_data_type(torch_to_cudnn_dtype(key.dtype))
+        dV.set_output(True).set_dim(value.size).set_stride(grad_value_stride).set_data_type(
+            torch_to_cudnn_dtype(value.dtype)
+        )
+        
+        graph.build([cudnn.heur_mode.A])
+        
         _cudnnex_cache[cache_key] = (
             Q,
             K,
@@ -566,7 +608,11 @@ def _cudnn_sdpa_bwd_impl(
     query = _sdpa_enforce_input_tensor_contiguity(query)
     key = _sdpa_enforce_input_tensor_contiguity(key)
     value = _sdpa_enforce_input_tensor_contiguity(value)
-
+    
+    # Default value of scale, if not provided, in all torch versions
+    if scale is None:
+        scale = query.shape[-1] ** -0.5
+        
     # When cat_grad_qkv is on, allocate dQKV and make dQ, dK, and dV
     # slices of that. Otherwise, allocate them individually.
     grad_qkv: None | torch.Tensor = None
@@ -604,11 +650,9 @@ def _cudnn_sdpa_bwd_impl(
         grad_query.stride(),
         grad_key.stride(),
         grad_value.stride(),
+        scale
     )
 
-    # Default value of scale, if not provided, in all torch versions
-    if scale is None:
-        scale = query.shape[-1] ** -0.5
     Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
 
     cudnn_to_torch_tensor = {

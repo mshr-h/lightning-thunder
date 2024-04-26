@@ -276,15 +276,18 @@ def thunder_fwd_bwd(b: Benchmark, compile_fn: Callable):
             return result
 
         return wrapper
-
     @wraps(cfn)
     def wrapper(*args, **kwargs):
         clear_grads(module)
+        torch.cuda.nvtx.range_push("fwd")
         result = cfn(*args, **kwargs)
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("bwd")
         if isinstance(result, Sequence):
             torch.autograd.backward(result, [torch.ones_like(x) for x in result])
         else:
             result.backward(torch.ones_like(result))
+        torch.cuda.nvtx.range_pop()
         return result
 
     return wrapper
