@@ -304,12 +304,8 @@ def _cudnn_sdpa_fwd_impl(
     scale: float | None = None,
 ) -> tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
     
-    torch.cuda.nvtx.range_push("_transform_sdpa_inputs")
     query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
 
-    torch.cuda.nvtx.range_pop()
-    torch.cuda.nvtx.range_push("_make_cudnn_sdpa_forward_graph")
-    
     b, h, s_q, d_q = query.size()
     _, _, _, d_v = value.size()
     
@@ -332,9 +328,6 @@ def _cudnn_sdpa_fwd_impl(
         graph,
     ) = _make_cudnn_sdpa_forward_graph(query_4d, key_4d, value_4d, attn_mask_4d, dropout_p, is_causal, scale)
 
-    torch.cuda.nvtx.range_pop()
-    torch.cuda.nvtx.range_push("seed_offset_output")
-    
     seed_tensor = (
         _get_seed_tensor(query.device) if Seed else None
     )
@@ -347,9 +340,6 @@ def _cudnn_sdpa_fwd_impl(
     softmax_stats_actual = torch.empty(b, h, s_q, 1, dtype=torch.float32, device=query.device)
     workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
     
-    torch.cuda.nvtx.range_pop()
-    torch.cuda.nvtx.range_push("variant_pack")
-
     if attn_mask is not None and attn_mask.dtype == torch.bool:
         attn_bias = torch.zeros_like(attn_mask, dtype=query.dtype)
         attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
@@ -368,14 +358,10 @@ def _cudnn_sdpa_fwd_impl(
     if attn_mask is not None:
         cudnn_to_torch_tensor[Bias] = attn_mask.detach()
 
-    torch.cuda.nvtx.range_pop()
-    torch.cuda.nvtx.range_push("execute")
-
     # Even though the handle is created on query.device, cudnn still requires to set current device to query.device.
     # This is most probably a bug and is being actively looked into.
     with torch.cuda.device(query.device):
         graph.execute(cudnn_to_torch_tensor, workspace, handle=_get_cudnn_handle(query.device))
-    torch.cuda.nvtx.range_pop()
 
     return O_actual, softmax_stats_actual, seed_tensor, offset_tensor
 
