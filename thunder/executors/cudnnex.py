@@ -589,32 +589,10 @@ def _cudnn_sdpa_bwd_impl(
     
     torch.cuda.nvtx.range_push("cudnn_bwd")
     
-    torch.cuda.nvtx.range_pop("transform_bwd")
+    torch.cuda.nvtx.range_push("transform_bwd")
     query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
     torch.cuda.nvtx.range_pop()
     
-    torch.cuda.nvtx.range_pop("tensor_allocation_bwd")
-    query = _sdpa_enforce_input_tensor_contiguity(query)
-    key = _sdpa_enforce_input_tensor_contiguity(key)
-    value = _sdpa_enforce_input_tensor_contiguity(value)
-
-    # When cat_grad_qkv is on, allocate dQKV and make dQ, dK, and dV
-    # slices of that. Otherwise, allocate them individually.
-    grad_qkv: None | torch.Tensor = None
-    if cat_grad_qkv:
-        grad_qkv = _allocate_catted_grad_qkv(query, key, value)
-        grad_query, grad_key, grad_value = grad_qkv.split([query.size(1), key.size(1), value.size(1)], dim=1)
-    else:
-        grad_query = torch.empty_like(query)
-        grad_key = torch.empty_like(key)
-        grad_value = torch.empty_like(value)
-    workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
-    # Default value of scale, if not provided, in all torch versions
-    if scale is None:
-        scale = query.shape[-1] ** -0.5
-    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
-    torch.cuda.nvtx.range_pop()
-
     torch.cuda.nvtx.range_push("query_graph_bwd")
     (
         Q,
@@ -639,12 +617,33 @@ def _cudnn_sdpa_bwd_impl(
         attn_mask_4d,
         dropout_p,
         is_causal,
-        grad_query.stride(),
-        grad_key.stride(),
-        grad_value.stride(),
+        query.stride(),
+        key.stride(),
+        value.stride(),
     )
     torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("tensor_allocation_bwd")
+    query = _sdpa_enforce_input_tensor_contiguity(query)
+    key = _sdpa_enforce_input_tensor_contiguity(key)
+    value = _sdpa_enforce_input_tensor_contiguity(value)
+
+    # When cat_grad_qkv is on, allocate dQKV and make dQ, dK, and dV
+    # slices of that. Otherwise, allocate them individually.
+    grad_qkv: None | torch.Tensor = None
+    if cat_grad_qkv:
+        grad_qkv = _allocate_catted_grad_qkv(query, key, value)
+        grad_query, grad_key, grad_value = grad_qkv.split([query.size(1), key.size(1), value.size(1)], dim=1)
+    else:
+        grad_query = torch.empty_like(query)
+        grad_key = torch.empty_like(key)
+        grad_value = torch.empty_like(value)
+    workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
+    # Default value of scale, if not provided, in all torch versions
+    if scale is None:
+        scale = query.shape[-1] ** -0.5
+    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
+    torch.cuda.nvtx.range_pop()
     torch.cuda.nvtx.range_push("var_pack_bwd")
     cudnn_to_torch_tensor = {
         dO: grad_out.detach(),

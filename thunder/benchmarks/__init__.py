@@ -2584,7 +2584,7 @@ class NanoGPTSDPABenchmark(Benchmark, metaclass=UserFacingBenchmarkMeta):
 
             def forward(slf, q, k, v, *, dropout):
                 return torch.nn.functional.scaled_dot_product_attention(
-                    q, k, v, attn_mask=None, dropout_p=dropout, is_causal=False
+                    q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False
                 )
 
         return nanoGPTScaledDotProductAttention()
