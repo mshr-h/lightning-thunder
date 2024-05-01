@@ -105,6 +105,7 @@ _cudnnex_cache = CudnnexLRUCache(maxlen=1024)
 
 
 def _make_cudnn_sdpa_forward_graph(query, key, value, attn_mask, dropout_p, is_causal):
+    torch.cuda.nvtx.range_push("create_graph_fwd")
     graph = cudnn.pygraph(
         intermediate_data_type=cudnn.data_type.FLOAT,
         compute_data_type=cudnn.data_type.FLOAT,
@@ -162,8 +163,11 @@ def _make_cudnn_sdpa_forward_graph(query, key, value, attn_mask, dropout_p, is_c
     O.set_output(True).set_data_type(torch_to_cudnn_dtype(value.dtype)).set_dim(dim_o).set_stride(stride_o)
 
     softmax_stats.set_output(True).set_data_type(torch_to_cudnn_dtype(torch.float32))
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("key_query_fwd")
     cache_key = graph.key()
+    torch.cuda.nvtx.range_pop()
     # If a built graph does not exist in cache already, make one and place it in
     if cache_key not in _cudnnex_cache:
         graph.build([cudnn.heur_mode.A])
@@ -279,8 +283,15 @@ def _cudnn_sdpa_fwd_impl(
     *,
     scale: float | None = None,
 ) -> tuple[torch.tensor, torch.tensor, torch.tensor, torch.tensor]:
-    query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("cudnn_fwd")
+    
+    torch.cuda.nvtx.range_push("transform_fwd")
+    query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
+    torch.cuda.nvtx.range_pop()
+
+    torch.cuda.nvtx.range_push("graph_query_fwd")
     (
         Q,
         K,
@@ -293,7 +304,9 @@ def _cudnn_sdpa_fwd_impl(
         softmax_stats,
         graph,
     ) = _make_cudnn_sdpa_forward_graph(query_4d, key_4d, value_4d, attn_mask_4d, dropout_p, is_causal)
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("tensor_allocation_fwd")
     b, h, s_q, d_q = query.size()
     _, _, _, d_v = value.size()
     O_actual = torch.empty(b, h, s_q, d_v, dtype=value.dtype, device=query.device)
@@ -318,7 +331,9 @@ def _cudnn_sdpa_fwd_impl(
         attn_bias = torch.zeros_like(attn_mask, dtype=query.dtype)
         attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
         attn_mask = attn_bias
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("var_pack_fwd")
     cudnn_to_torch_tensor = {
         Q: _sdpa_enforce_input_tensor_contiguity(query).detach(),
         K: _sdpa_enforce_input_tensor_contiguity(key).detach(),
@@ -331,12 +346,16 @@ def _cudnn_sdpa_fwd_impl(
     }
     if attn_mask is not None:
         cudnn_to_torch_tensor[Bias] = attn_mask.detach()
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("execute_fwd")
     # Even though the handle is created on query.device, cudnn still requires to set current device to query.device.
     # This is most probably a bug and is being actively looked into.
     with torch.cuda.device(query.device):
         graph.execute(cudnn_to_torch_tensor, workspace, handle=_get_cudnn_handle(query.device))
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_pop()
     return O_actual, softmax_stats_actual, seed_tensor, offset_tensor
 
 
@@ -380,6 +399,7 @@ cudnn_sdpa_fwd = cudnn_ex.register_operator(
 def _make_cudnn_sdpa_backward_graph(
     query, key, value, attn_mask, dropout_p, is_causal, grad_query_stride, grad_key_stride, grad_value_stride
 ):
+    torch.cuda.nvtx.range_push("create_graph_bwd")
     b, h, s_q, _ = query.size
     _, _, _, d_v = value.size
 
@@ -456,8 +476,11 @@ def _make_cudnn_sdpa_backward_graph(
     dV.set_output(True).set_dim(value.size).set_stride(grad_value_stride).set_data_type(
         torch_to_cudnn_dtype(value.dtype)
     )
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("key_query_bwd")
     cache_key = graph.key()
+    torch.cuda.nvtx.range_pop()
     # If a built graph does not exist in cache already, make one and place it in
     if cache_key not in _cudnnex_cache:
         graph.build([cudnn.heur_mode.A])
@@ -562,7 +585,15 @@ def _cudnn_sdpa_bwd_impl(
     scale: None | float = None,
     cat_grad_qkv: bool,
 ) -> tuple[torch.Tensor, ...]:
+    torch.cuda.nvtx.range_pop()
+    
+    torch.cuda.nvtx.range_push("cudnn_bwd")
+    
+    torch.cuda.nvtx.range_pop("transform_bwd")
     query_4d, key_4d, value_4d, attn_mask_4d = _transform_sdpa_inputs(query, key, value, attn_mask)
+    torch.cuda.nvtx.range_pop()
+    
+    torch.cuda.nvtx.range_pop("tensor_allocation_bwd")
     query = _sdpa_enforce_input_tensor_contiguity(query)
     key = _sdpa_enforce_input_tensor_contiguity(key)
     value = _sdpa_enforce_input_tensor_contiguity(value)
@@ -577,7 +608,14 @@ def _cudnn_sdpa_bwd_impl(
         grad_query = torch.empty_like(query)
         grad_key = torch.empty_like(key)
         grad_value = torch.empty_like(value)
+    workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
+    # Default value of scale, if not provided, in all torch versions
+    if scale is None:
+        scale = query.shape[-1] ** -0.5
+    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
+    torch.cuda.nvtx.range_pop()
 
+    torch.cuda.nvtx.range_push("query_graph_bwd")
     (
         Q,
         K,
@@ -605,12 +643,9 @@ def _cudnn_sdpa_bwd_impl(
         grad_key.stride(),
         grad_value.stride(),
     )
+    torch.cuda.nvtx.range_pop()
 
-    # Default value of scale, if not provided, in all torch versions
-    if scale is None:
-        scale = query.shape[-1] ** -0.5
-    Attn_scale_cpu = torch.full((1, 1, 1, 1), scale, dtype=torch.float32, device="cpu")
-
+    torch.cuda.nvtx.range_push("var_pack_bwd")
     cudnn_to_torch_tensor = {
         dO: grad_out.detach(),
         Q: query.detach(),
@@ -635,13 +670,14 @@ def _cudnn_sdpa_bwd_impl(
 
         cudnn_to_torch_tensor[Bias] = attn_mask.detach()
         cudnn_to_torch_tensor[dBias] = grad_attn_mask
+    torch.cuda.nvtx.range_pop()
 
-    workspace = torch.empty(graph.get_workspace_size(), device=query.device, dtype=torch.uint8)
-
+    torch.cuda.nvtx.range_push("execute_bwd")
     # Even though the handle is created on query.device, cudnn still requires to set current device to query.device.
     # This is most probably a bug and is being actively looked into.
     with torch.cuda.device(query.device):
         graph.execute(cudnn_to_torch_tensor, workspace, handle=_get_cudnn_handle(query.device))
+    torch.cuda.nvtx.range_pop()
 
     if cat_grad_qkv:
         grads = (grad_qkv,)
@@ -650,6 +686,8 @@ def _cudnn_sdpa_bwd_impl(
 
     if attn_mask is not None:
         grads = grads + (grad_attn_mask,)
+    
+    torch.cuda.nvtx.range_pop()
     return grads
 
 
