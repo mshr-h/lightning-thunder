@@ -4,6 +4,7 @@ from numbers import Number
 from typing import Union, List, Any, Optional, Dict, Set, Tuple, Type
 from types import NoneType
 from collections.abc import Callable, Mapping, Hashable, Sequence
+import math
 import os
 import time
 from copy import copy
@@ -2234,7 +2235,10 @@ def linear(
     nva = getnv(a, fd, lc_to_nv_map)
     nvb = getnv(b, fd, lc_to_nv_map)
     nvbias = None if bias is None else getnv(bias, fd, lc_to_nv_map)
-    return fd.ops.linear(nva, nvb, nvbias)
+
+    nva_2d = fd.ops.reshape(nva, (math.prod(a.shape[:-1]), a.shape[-1]))
+    nvc_2d = fd.ops.linear(nva_2d, nvb, nvbias)
+    return fd.ops.reshape(nvc_2d, a.shape[:-1] + (b.shape[-2],))
 
 
 register_supported(PrimIDs.LINEAR, linear, _linear_check)
