@@ -801,7 +801,7 @@ instantiated) this heuristic actually leads to worse code.
             enable_bookend: None | bool = get_compile_option("nv_enable_bookend", bookend_help)
             # Set default value.
             if enable_bookend is None:
-                enable_bookend = True
+                enable_bookend = False
             assert isinstance(enable_bookend, bool)
 
             if enable_bookend:
@@ -2210,9 +2210,6 @@ def _linear_check(a: TensorProxy, b: TensorProxy, bias: TensorProxy | None) -> b
     if nv_version < LooseVersion("0.2.3"):
         return False
 
-    enable_linear: None | bool = get_compile_option("nv_enable_linear", "Enable nvFuser linear.")
-    if not enable_linear:
-        return False
     # Verify linear inputs and bias (optional) are supported tensors.
     if not are_supported_tensors(a, b) or (bias is not None and not is_supported_tensor(bias)):
         return False
@@ -2251,9 +2248,7 @@ def _matmul_check(
     if nv_version < LooseVersion("0.2.2"):
         return False
 
-    enable_matmul: None | bool = get_compile_option("nv_enable_matmul", "Enable nvFuser matmul.")
-
-    if not enable_matmul or not are_supported_tensors(a, b):
+    if not are_supported_tensors(a, b):
         return False
     if nv_version < LooseVersion("0.2.4"):
         warnings.warn("nvFuser v0.2.2 has limited support for matmuls. Consider using v0.2.4 or above")
