@@ -175,12 +175,6 @@ pytorch_executor: None | extend.Executor = extend.get_executor("torch")
 if nvfuser_executor:
     add_default_executor(nvfuser_executor)
 
-if sdpa_executor:
-    add_default_executor(sdpa_executor)
-
-if cudnn_executor:
-    add_default_executor(cudnn_executor)
-
 #
 # Promoted debugging functions
 #
