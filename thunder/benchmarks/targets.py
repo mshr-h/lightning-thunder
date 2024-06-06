@@ -379,7 +379,11 @@ def test_nanogpt_csa(benchmark, executor: Callable, compute_type: ComputeType):
 @parametrize_compute_type
 def test_nanogpt_block(benchmark, executor: Callable, compute_type: ComputeType):
     bench: Benchmark = NanoGPTBlockBenchmark(
-        config="gpt2-xl", device="cuda:0", dtype=thunder.bfloat16, requires_grad=is_requires_grad(compute_type)
+        config="gpt3",
+        batchdims=(1,),
+        device="cuda:0",
+        dtype=thunder.bfloat16,
+        requires_grad=is_requires_grad(compute_type),
     )
 
     args, kwargs = bench.make_batch()
