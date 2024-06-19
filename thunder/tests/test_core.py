@@ -2750,3 +2750,39 @@ def test_grad_ctx():
     # `torch.no_grad` has no effect on thunder's autodiff which determines whether to compute grad based on `requires_grad=True`.
     # Thus when backward is called it computes grad for the input.
     assert x.grad is not None
+
+
+def test_population_sampler():
+    from thunder.core.utils import PopulationSampler
+
+    lives = 2
+    pop_sampler = PopulationSampler([torch.rand(3, 3), torch.rand(3, 3)], lives_per_subject=lives)
+
+    x1, x2 = pop_sampler
+    y1, y2 = pop_sampler
+
+    with pytest.raises(StopIteration):
+        it = iter(pop_sampler)
+        next(it)
+
+    assert pop_sampler.subject_life_counts[0] == 2
+    del x1
+    assert pop_sampler.subject_life_counts[0] == 1
+    del y1
+    assert pop_sampler.subject_life_counts[0] == 0 and pop_sampler.population[0] == None
+
+    assert pop_sampler.subject_life_counts[1] == 2
+    del y2
+    assert pop_sampler.subject_life_counts[1] == 1
+    del x2
+    assert len(pop_sampler.population) == 0 and len(pop_sampler.subject_life_counts) == 0
+
+    # Test with None
+    pop_sampler = PopulationSampler([None], lives_per_subject=lives)
+    assert pop_sampler.population[0] is None
+    (x1,) = pop_sampler
+    (x2,) = pop_sampler
+    assert x1 is not None and x2 is not None
+    del x1
+    del x2
+    assert len(pop_sampler.population) == 0 and len(pop_sampler.subject_life_counts) == 0
