@@ -1300,7 +1300,7 @@ def test_boundsymbol_hash_eq_examples(executor, device, dtype: dtypes.dtype):
     def extract_bsyms(fn, args, ops):
         return [b for b in compile_bsyms(fn, args) if b.sym.name in ops]
 
-    # We want .rhs() for a * b and torch.mul() to hash and compare
+    # We want .rhs for a * b and torch.mul() to hash and compare
     # the same for writing the CSE pass.
     def mul_rhs(a, b):
         c = a + b
@@ -1309,10 +1309,9 @@ def test_boundsymbol_hash_eq_examples(executor, device, dtype: dtypes.dtype):
         return c, d, e
 
     bsyms = extract_bsyms(mul_rhs, (a, b), ("mul",))
-    all_eq([hash(b.rhs()) for b in bsyms])
-    all_eq([b.rhs() for b in bsyms])
+    all_eq([hash(b.rhs) for b in bsyms])
+    all_eq([b.rhs for b in bsyms])
 
-    # TODO Update needed here
     # The current way BoundSymbols are compared treats args and kwargs the same,
     # so the same semantic call can be considered 'equal' if the arguments are
     # passed differently.
@@ -1321,35 +1320,29 @@ def test_boundsymbol_hash_eq_examples(executor, device, dtype: dtypes.dtype):
         d = ltorch.mul(a, b)
         return c, d
 
-    # Assert the current behavior.
-    # When the test case is supported, switch this to all_eq.
     bsyms = extract_bsyms(mul_rhs_kwargs, (a, b), ("mul",))
-    all_eq([hash(b.rhs()) for b in bsyms])
-    all_eq([b.rhs() for b in bsyms])
+    all_eq([hash(b.rhs) for b in bsyms])
+    all_eq([b.rhs for b in bsyms])
 
     # Also make sure the symbols are the same.
     all_eq([b.sym for b in bsyms])
     all_eq([hash(b.sym) for b in bsyms])
 
-    # TODO: We also currently cannot assert that the right hand side of
-    #       identical operators with kwargs are equal.
+    # Assert that rhs of identical operators with same kwargs are equal.
     def same_kwargs(device, dtype):
         a = ltorch.full((2, 2), 5, device=device, dtype=dtype)
         b = ltorch.full((2, 2), 5, device=device, dtype=dtype)
         return a + b
 
-    # Assert the current behavior.
-    # When the test case is supported, switch the all_neq below to all_eq.
     bsyms = extract_bsyms(same_kwargs, (device, dtype), ("full",))
-    all_eq([hash(b.rhs()) for b in bsyms])
-    all_neq([b.rhs() for b in bsyms])
+    all_eq([hash(b.rhs) for b in bsyms])
+    all_eq([b.rhs for b in bsyms])
 
-    # Again, the symbols should be the same.
+    # The symbols should be the same.
     all_eq([b.sym for b in bsyms])
     all_eq([hash(b.sym) for b in bsyms])
 
-    # We can, however, know when the number of kwargs are different,
-    # or the args are different.
+    # Assert that the kwargs are different and hash differently.
     def diff_kwargs(device, dtype):
         a = ltorch.full((1, 2), 2, device=device, dtype=dtype)
         b = ltorch.full((2, 3), 5, device=device, dtype=dtype)
@@ -1357,8 +1350,8 @@ def test_boundsymbol_hash_eq_examples(executor, device, dtype: dtypes.dtype):
         return a, b, c
 
     bsyms = extract_bsyms(diff_kwargs, (device, dtype), ("full",))
-    all_eq([hash(b.rhs()) for b in bsyms])
-    all_neq([b.rhs() for b in bsyms])
+    all_neq([hash(b.rhs) for b in bsyms])
+    all_neq([b.rhs for b in bsyms])
 
     # Assert that boundsymbols for different ops hash/compare differently.
     def different_ops(a, b):
@@ -1369,10 +1362,10 @@ def test_boundsymbol_hash_eq_examples(executor, device, dtype: dtypes.dtype):
     c, d = extract_bsyms(different_ops, (a, b), ("add", "sub"))
     assert hash(c.sym) != hash(d.sym)
     assert hash(c) != hash(d)
-    assert hash(c.rhs()) != hash(d.rhs())
+    assert hash(c.rhs) != hash(d.rhs)
     assert c.sym != d.sym
     assert c != d
-    assert c.rhs() != d.rhs()
+    assert c.rhs != d.rhs
 
 
 # @instantiate(dtypes=NOTHING)
@@ -2128,7 +2121,8 @@ def test_inplace(executor, device, _):
 
     for t in tests:
         cfn = thunder.jit(t)
-        with pytest.raises(RuntimeError, match="not supported"):
+        # Some ops of `tests` already have in-place supported, leading to broadcast error
+        with pytest.raises(RuntimeError, match="not supported|Attempting"):
             cfn(t1, t2)
         # Note: Python maps inplace operations on (immutuables) to
         #       out of place operations, NumberProxy does this, too.
@@ -2663,3 +2657,97 @@ def test_refine_source_location(executor, device: str, dtype: dtypes.dtype):
     assert str(trace_thunder).count("return thunder.torch.softmax(x, 0)") == 1
     # torch.softmax should be traced as usual
     assert str(trace_torch).count(f"return torch.softmax(x, 0)") == 1
+
+
+def test_torch_device():
+    # Test `thunder.jit` support for `torch.device()`.
+    if not torch.cuda.is_available():
+        # thunder.core.devices.Device __init__ calls `torch.cuda.device_count()` when DeviceType is CUDA.
+        # https://github.com/Lightning-AI/lightning-thunder/blob/067f15aae47ad71229732ca6c35a5d190135e48c/thunder/core/devices.py#L96-L101
+        pytest.skip("CUDA not available")
+
+    # Check the output against the PyTorch eager output.
+    def _test(foo, inputs):
+        for input in inputs:
+            actual = thunder.jit(foo)(input)
+            expected = foo(input)
+            assert actual.device == expected.device
+
+    # Test with str input
+    device_strs = ("cpu", "cuda", "cuda:0", "meta")
+
+    def foo1(dev):
+        # If we return the device here, thunder.jit version will return `thunder.device`
+        # while eager will return `torch.device`
+        # https://github.com/Lightning-AI/lightning-thunder/issues/573
+        return torch.ones(3, 3, device=torch.device(dev))
+
+    _test(foo1, device_strs)
+
+    # Test with str and index input
+    device_strs_and_idxs = (("cpu", 0), ("cpu", 1), ("cuda", 0), ("meta", 0), ("meta", 1))
+
+    def foo2(dev_and_idx):
+        return torch.ones(3, 3, device=torch.device(*dev_and_idx))
+
+    _test(foo2, device_strs_and_idxs)
+
+    # Test with `torch.device` as input
+    torch_devices = (torch.device("cpu"), torch.device("cuda"), torch.device("meta"))
+
+    def foo3(device):
+        return torch.ones(3, 3, device=torch.device(device))
+
+    _test(foo3, torch_devices)
+
+    # Test with `thunder.device` as input
+    tensor_proxy_devices = (
+        torch.ones(1, device=torch.device("cpu")),
+        torch.ones(1, device=torch.device("cuda")),
+        torch.ones(1, device=torch.device("meta")),
+    )
+
+    # Here `torch.device()` will see a `thunder.device` as input.
+    def foo4(ref_t):
+        return torch.ones(3, 3, device=torch.device(ref_t.device))
+
+    _test(foo4, tensor_proxy_devices)
+
+    # Error inputs
+    error_inputs = (
+        ((torch.device("cpu"), 0), RuntimeError),
+        (("cuda:0", 0), RuntimeError),
+        (("cpu:",), ValueError),
+        (("cuda:",), ValueError),
+    )
+
+    def foo_error(args):
+        return torch.device(*args)
+
+    for inp, err in error_inputs:
+        with pytest.raises(err):
+            thunder.jit(foo_error)(inp)
+
+
+def test_grad_ctx():
+    @torch.enable_grad()
+    def foo1(x):
+        return x + 1
+
+    x = torch.randn(3, 3, requires_grad=True)
+    with pytest.warns(UserWarning, match="have no effect under thunder.jit"):
+        thunder.jit(foo1)(x).sum().backward()
+
+    assert x.grad is not None
+
+    @torch.no_grad()
+    def foo2(x):
+        return x + 1
+
+    x = torch.randn(3, 3, requires_grad=True)
+    with pytest.warns(UserWarning, match="have no effect under thunder.jit"):
+        thunder.jit(foo2)(x).sum().backward()
+
+    # `torch.no_grad` has no effect on thunder's autodiff which determines whether to compute grad based on `requires_grad=True`.
+    # Thus when backward is called it computes grad for the input.
+    assert x.grad is not None

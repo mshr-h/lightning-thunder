@@ -33,7 +33,6 @@ from thunder.tests.framework import instantiate
 from thunder.executors.transformer_engineex import (
     transformer_engine_ex,
     TE_AVAILABLE,
-    TE_VERSION_1_6_PLUS,
     te_sync_fp8_meta_bwd,
 )
 
@@ -961,7 +960,7 @@ class CompileDDPTest(DataParallelTestCase):
             def forward(self, x):
                 return self.fc1(x) + self.fc2(x)
 
-        def _test_model_output_and_gradients(model, x):
+        def _test_model_output_and_gradients(model, x, duplicate_all_gather):
             output = model(x)
             with device:
                 grad_output = torch.ones_like(output)
@@ -986,6 +985,23 @@ class CompileDDPTest(DataParallelTestCase):
             expected_grad = 2 * (grad_output.T @ x)
             torch.testing.assert_close(actual_grad_gathered, expected_grad)
 
+            forward_exec_trace = thunder.last_traces(model)[-1]
+            gathered_params = set()
+            for bsym in forward_exec_trace.bound_symbols:
+                if bsym.sym.id in (
+                    thunder.distributed.prims.PrimIDs.ALL_GATHER,
+                    thunder.executors.torchex.all_gather_prim_impl.id,
+                ):
+                    gathered_params.add(bsym.args[0].name)
+
+            # Check trace to see we don't have duplicate AllGather for shared parameters.
+            if duplicate_all_gather:
+                # Both params are gathered.
+                assert "t_fc1_weight" in gathered_params and "t_fc2_weight" in gathered_params
+            else:
+                # Either of the param was gathered but not both.
+                assert ("t_fc1_weight" in gathered_params) ^ ("t_fc2_weight" in gathered_params)
+
         with device:
             jit_fsdp_model = Model()
             fsdp_jit_model = Model()
@@ -996,14 +1012,14 @@ class CompileDDPTest(DataParallelTestCase):
 
         jit_fsdp_model = thunder.jit(thunder.distributed.fsdp(jit_fsdp_model), executors=["torch"])
 
-        _test_model_output_and_gradients(jit_fsdp_model, x)
+        _test_model_output_and_gradients(jit_fsdp_model, x, duplicate_all_gather=True)
 
         # Check `fsdp(jit(model))` works
         fsdp_jit_model.fc1.weight = fsdp_jit_model.fc2.weight
 
         fsdp_jit_model = thunder.distributed.fsdp(thunder.jit(fsdp_jit_model, executors=["torch"]))
 
-        _test_model_output_and_gradients(fsdp_jit_model, x)
+        _test_model_output_and_gradients(fsdp_jit_model, x, duplicate_all_gather=False)
 
 
 common_utils.instantiate_parametrized_tests(CompileDDPTest)
@@ -1549,34 +1565,22 @@ def _test_ddp_transformer_engine_llama_sanity(input_data):
             out = jit_model(x, y).sum()
             out.backward()
 
-        fwd_exec_trace = thunder.last_traces(jit_model)[-1]
         bwd_exec_trace = thunder.last_backward_traces(jit_model)[-1]
 
-        if TE_VERSION_1_6_PLUS:
-            # Verify that the symbol to sync backward
-            # fp8 metadata is present in backward trace.
-            for bsym in reversed(bwd_exec_trace.bound_symbols):
-                if bsym.sym.id == te_sync_fp8_meta_bwd.id:
-                    break
-            else:
-                raise RuntimeError("Backward sync symbol not found.")
+        # Last symbol of the trace should be `return`
+        return_sym_idx = len(bwd_exec_trace.bound_symbols) - 1
+        assert thunder.core.prims.PrimIDs.RETURN == bwd_exec_trace.bound_symbols[return_sym_idx].sym.id
 
+        # Verify that the symbol to sync backward
+        # fp8 metadata is present in backward trace.
+        for idx, bsym in enumerate(bwd_exec_trace.bound_symbols):
+            if bsym.sym.id == te_sync_fp8_meta_bwd.id:
+                # Verify that `te_sync_fp8_meta_bwd` is before the last symbol of the trace
+                # which is `return`
+                assert idx < return_sym_idx
+                break
         else:
-            # Verify that the first te_linear in fwd_exec_trace is the
-            # last one in bwd_exec_tarce.
-            # We verify that by managing the `ctx` (CollectionProxy) output by `te_linear` which is
-            # passed to backward.
-            # As CollectionProxy don't implement __eq__, we verify them by name.
-            first_ctx_name = None
-            for bsym in fwd_exec_trace.bound_symbols:
-                if bsym.sym.name.startswith("te_linear"):
-                    first_ctx_name = bsym.output[1].name
-                    break
-
-            for bsym in reversed(bwd_exec_trace.bound_symbols):
-                if bsym.sym.name.startswith("te_functional"):
-                    assert first_ctx_name == bsym.args[-1].name, (first_ctx_name, bsym.args[-1].name)
-                    break
+            raise RuntimeError("Backward sync symbol not found.")
     except Exception as e:
         sanity_exceptions.append(e)
 
@@ -1727,6 +1731,8 @@ def _test_fsdp_transformer_engine(input_data):
 @instantiate(
     dtypes=(thunder.float32,),
     num_devices=2,
+    # CPU broke around PyTorch 2.3.1, see PR #545
+    devicetypes=(devices.DeviceType.CUDA,),
     decorators=(pytest.mark.parametrize("bucket_size_in_mb", (0, 25)),),
 )
 @ddp_wrapper("test_native_ddp", _test_native_ddp_helper)
