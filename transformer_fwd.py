@@ -87,6 +87,9 @@ def nvfuser_fusion_id0(fd: FusionDefinition) -> None:
     S72 = fd.define_scalar(128, dtype=DataType.Int)
     V73 = fd.define_vector([S69, S70, S71, S72], dtype=DataType.Int)
     T74 = fd.ops.reshape(T67, new_shape=V73)
+    # The portion between {T82, T75, T89} and {T179} are SDPA compiled from
+    # https://github.com/Lightning-AI/lightning-thunder/blob/1aaa463323dfe875ee75da9a3454779b69cb665c/thunder/torch/__init__.py#L4820.
+    # T82 = Q, T75 = K, T89 = V, T179 = SDPA output
     T75 = fd.ops.permute(T74, dims=[0, 2, 1, 3])
     S76 = fd.define_scalar(1, dtype=DataType.Int)
     S77 = fd.define_scalar(2048, dtype=DataType.Int)
