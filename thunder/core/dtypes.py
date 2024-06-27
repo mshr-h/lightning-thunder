@@ -539,7 +539,7 @@ def are_same_dtypes(a, b, *, weak_and_strong_are_equivalent=True):
 # Converts PyTorch dtypes to and from thunder dtypes
 _thunder_to_torch_dtype_map = {
     bool: torch.bool,
-    int: torch.int32,
+    int: torch.int64,
     float: torch.float32,
     complex: torch.complex64,
     bool8_: torch.bool,
