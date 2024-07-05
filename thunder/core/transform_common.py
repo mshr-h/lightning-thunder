@@ -507,18 +507,17 @@ def functionalize_inplace_ops(
                     bsyms.append(reshape_bsym)
         new_bsym = new_bsym.from_bsym_swap_proxies(cur_orig_to_view_swap_map, skip_output=True)
 
-        # in-place functionalizable ops has `prims.copy_` as the last subsymbol.
         if not is_functionalizable(new_bsym):
             bsyms.append(new_bsym)
             continue
-
-        copy_bsym = bsym.subsymbols[-1]
-        copy_out = copy_bsym.flat_proxy_outs[0]
-        copy_dst = copy_bsym.flat_proxy_args[1]
-        swap_map[variableify(copy_dst)] = copy_out
-        # make sure an in-place bsym returns `prims.copy_` output
-        new_bsym = new_bsym.from_bsym_swap_proxies(swap_map, skip_inputs=True, skip_subsymbols=True)
-        bsyms.append(new_bsym)
+        else:
+            copy_bsym = bsym.subsymbols[-1]
+            copy_out = copy_bsym.flat_proxy_outs[0]
+            copy_dst = copy_bsym.flat_proxy_args[1]
+            swap_map[variableify(copy_dst)] = copy_out
+            # make sure an in-place bsym returns `prims.copy_` output
+            new_bsym = new_bsym.from_bsym_swap_proxies(swap_map, skip_inputs=True, skip_subsymbols=True)
+            bsyms.append(new_bsym)
 
     intermediate_trace = from_trace(computation_trace)
     intermediate_trace.bound_symbols = bsyms
@@ -529,12 +528,11 @@ def functionalize_inplace_ops(
     for t in filter(lambda p: isinstance(p, TensorProxy), return_bsym.flat_args):
         check(
             (var_t := variableify(t)) not in swap_map,
-            lambda: f"{return_bsym.flat_args=}. `{t}` should have been replaced by `{swap_map[var_t]}`, {new_return_bsym=}",
+            lambda: f"{return_bsym.flat_args=}. `{t}` should have been replaced by `{swap_map[var_t]}`",
         )
 
     # Step 2: Remove `prims.copy_` if it's the last one of `bsym.subsymbols`,
     # unless `copy_to` is `computation_trace.args` or `computation_trace.kwargs`
-    producer_map = producers(intermediate_trace)
     trace_args_set = ProxyDict()
     for a in filter(
         lambda a: isinstance(a, TensorProxy), tree_flatten((computation_trace.args, computation_trace.kwargs))[0]
@@ -567,10 +565,11 @@ def functionalize_inplace_ops(
         optional_inplace_arg_index: int
         functional_sym, optional_inplace_arg_index = thunder.torch._inplace_to_out_of_place[new_bsym.sym]
 
-        flat_args, flat_args_spec = tree_flatten((new_bsym.args, new_bsym.kwargs))
+        args, kwargs = new_bsym.args, new_bsym.kwargs
         if optional_inplace_arg_index > -1:
+            flat_args, flat_args_spec = tree_flatten((args, kwargs))
             flat_args[optional_inplace_arg_index] = False
-        args, kwargs = tree_unflatten(flat_args, flat_args_spec)
+            args, kwargs = tree_unflatten(flat_args, flat_args_spec)
         new_functional_bsym = functional_sym.bind(
             *args,
             **kwargs,
