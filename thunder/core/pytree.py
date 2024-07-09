@@ -44,10 +44,12 @@ def tree_flatten(args, namespace=""):
             type,
             type(Ellipsis),
             torch.Size,
+            torch._subclasses.fake_tensor.FakeTensor,
         }
         and not isinstance(args, (ProxyInterface))
         and not dataclasses.is_dataclass(args)
         and not isinstance(args, (FunctionType, BuiltinFunctionType))
+        and not type(args).__module__.startswith('torch.return_types')
     ):
         raise TypeError(f"tree_flatten of type {type(args)} is not supported.")
     return optree.tree_flatten(args, none_is_leaf=True, namespace=namespace)
