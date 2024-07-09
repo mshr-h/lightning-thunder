@@ -5462,18 +5462,73 @@ topk_opinfo = OpInfo(
     error_input_generator=topk_error_generator,
     torch_reference=torch.topk,
     dtypes=(datatypes.signedinteger, datatypes.unsignedinteger, datatypes.floating),
-    test_directives=(
-        DecorateInfo(
-            # See https://github.com/Lightning-AI/lightning-thunder/issues/120
-            pytest.mark.skip(reason="Cannot handle inputs/outputs which do not require grads"),
-            "test_vjp_correctness",
-        ),
-    ),
 )
 reduction_ops.append(topk_opinfo)
 
 
 opinfos.extend(reduction_ops)
+
+
+#
+# Sort and dim permutations operations
+#
+dim_perm_ops = []
+
+
+def sort_sample_generator(op, device, dtype, requires_grad, **kwargs):
+    make = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
+
+    # shape, dim
+    cases = (
+        ((),),
+        ((), 0),
+        ((3, 0),),
+        ((4, 4), 1),
+        ((4, 1, 6), -1),
+        ((4, 1, 6), 0),
+        ((4, 7, 5, 1), -3),
+        ((4, 2, 5, 1),),
+    )
+
+    for shape, *dim in cases:
+        if dim:
+            dim = dim[0]
+        else:
+            dim = -1
+
+        for descending, stable in itertools.product((True, False), repeat=2):
+            yield SampleInput(make(shape), dim=dim, descending=descending, stable=stable)
+
+
+sort_opinfo = OpInfo(
+    clang.sort,
+    name="sort",
+    supports_grad=True,
+    # Without the fixed seed this generator does not guarantee
+    # to produce inputs at which sort is differentiable
+    # (i.e. when sort(x, ...).indices == sort(x + dx, ...).indices).
+    # TODO: (@nikitaved): potentially modify these inputs to
+    # fix the issue.
+    sample_input_generator=sort_sample_generator,
+    torch_reference=torch.sort,
+    dtypes=(datatypes.bool8, datatypes.signedinteger, datatypes.unsignedinteger, datatypes.floating),
+    test_directives=(
+        DecorateInfo(
+            custom_comparator(partial(assert_close, atol=1e-6, rtol=1e-6)),
+            "test_vjp_correctness",
+        ),
+        DecorateInfo(
+            pytest.mark.skip(reason="PyTorch does not yet support boolean types in sort for CUDA"),
+            "test_core_vs_torch_consistency",
+            dtypes=(datatypes.bool8,),
+            devicetypes=(devices.DeviceType.CUDA,),
+        ),
+    ),
+)
+dim_perm_ops.append(sort_opinfo)
+
+
+opinfos.extend(dim_perm_ops)
 
 
 #
@@ -7779,13 +7834,6 @@ sdpa_opinfo = OpInfo(
             "test_vjp_correctness",
             dtypes=(datatypes.float64,),
         ),
-        DecorateInfo(
-            pytest.mark.skip(reason="https://github.com/pytorch/pytorch/issues/129579"),
-            "test_cudnn_vs_torch_consistency",
-            dtypes=(datatypes.bfloat16, datatypes.float16, datatypes.float32),
-            devicetypes=(devices.DeviceType.CUDA,),
-            active_if=version_between(torch.__version__, min_ver="2.5.0a0", max_ver="2.5.0a99"),
-        ),
     ),
 )
 nn_ops.append(sdpa_opinfo)
@@ -7899,15 +7947,6 @@ grad_sdpa_opinfo = OpInfo(
     # NOTE: NotImplementedError: Could not run 'aten::_scaled_dot_product_efficient_attention' with arguments from the 'CPU' backend.
     # NOTE: NotImplementedError: Could not run 'aten::_scaled_dot_product_efficient_attention_backward' with arguments from the 'CPU' backend
     devicetypes=(devices.DeviceType.CUDA,),
-    test_directives=(
-        DecorateInfo(
-            pytest.mark.skip(reason="https://github.com/pytorch/pytorch/issues/129579"),
-            "test_core_vs_torch_consistency",
-            dtypes=(datatypes.bfloat16, datatypes.float16, datatypes.float32),
-            devicetypes=(devices.DeviceType.CUDA,),
-            active_if=version_between(torch.__version__, min_ver="2.5.0a0", max_ver="2.5.0a99"),
-        ),
-    ),
 )
 nn_ops.append(grad_sdpa_opinfo)
 
